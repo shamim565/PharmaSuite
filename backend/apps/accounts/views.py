@@ -1,0 +1,227 @@
+from django.conf import settings
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.accounts import services
+from apps.accounts.models import Permission, Role, User
+from apps.accounts.serializers import (
+    LoginSerializer,
+    MeSerializer,
+    PermissionSerializer,
+    RoleCreateSerializer,
+    RoleDetailSerializer,
+    RolePermissionsWriteSerializer,
+    RoleSerializer,
+    RoleUpdateSerializer,
+    UserCreateSerializer,
+    UserSerializer,
+    UserUpdateSerializer,
+)
+from apps.common.exceptions import APIError
+from apps.common.permissions import HasPermission
+from apps.common.viewsets import PermissionMappedMixin
+
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = services.authenticate_user(
+            request, serializer.validated_data["identifier"], serializer.validated_data["password"]
+        )
+        access, refresh = services.issue_tokens(user)
+        response = Response({"access": access, "user": MeSerializer(user, context={"request": request}).data})
+        response.set_cookie(
+            key=settings.REFRESH_COOKIE_NAME,
+            value=refresh,
+            max_age=int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds()),
+            httponly=True,
+            samesite="Lax",
+            secure=settings.REFRESH_COOKIE_SECURE,
+            path=settings.REFRESH_COOKIE_PATH,
+        )
+        return response
+
+
+class RefreshView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        raw = request.COOKIES.get(settings.REFRESH_COOKIE_NAME)
+        if not raw:
+            raise APIError(
+                "NO_REFRESH_TOKEN", "No active session. Please sign in.", status.HTTP_401_UNAUTHORIZED
+            )
+        user, access, new_refresh = services.handle_refresh(raw, request)
+        response = Response({"access": access, "user": MeSerializer(user, context={"request": request}).data})
+        response.set_cookie(
+            key=settings.REFRESH_COOKIE_NAME,
+            value=new_refresh,
+            max_age=int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds()),
+            httponly=True,
+            samesite="Lax",
+            secure=settings.REFRESH_COOKIE_SECURE,
+            path=settings.REFRESH_COOKIE_PATH,
+        )
+        return response
+
+
+class LogoutView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        raw = request.COOKIES.get(settings.REFRESH_COOKIE_NAME)
+        if raw:
+            try:
+                RefreshToken(raw).blacklist()
+            except TokenError:
+                pass
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        response.delete_cookie(settings.REFRESH_COOKIE_NAME, path=settings.REFRESH_COOKIE_PATH)
+        return response
+
+
+class MeView(APIView):
+    def get(self, request):
+        return Response(MeSerializer(request.user, context={"request": request}).data)
+
+
+class UserViewSet(
+    PermissionMappedMixin,
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_map = {
+        "list": ["USER_VIEW"],
+        "retrieve": ["USER_VIEW"],
+        "create": ["USER_MANAGE"],
+        "update": ["USER_MANAGE"],
+        "partial_update": ["USER_MANAGE"],
+        "deactivate": ["USER_MANAGE"],
+        "activate": ["USER_MANAGE"],
+    }
+    permission_classes = [HasPermission]
+    filterset_fields = ["status", "user_roles__role__code"]
+    search_fields = ["full_name", "mobile", "email"]
+    ordering_fields = ["full_name", "created_at", "last_login_at"]
+    ordering = ["full_name"]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = User.objects.all().prefetch_related(
+            "user_roles__role", "user_branches__branch", "password_history"
+        )
+        if user.is_superuser or user.has_all_branch_scope:
+            return qs
+        return qs.filter(user_branches__branch_id__in=user.branch_ids).distinct()
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return UserCreateSerializer
+        if self.action in ("update", "partial_update"):
+            return UserUpdateSerializer
+        return UserSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = UserCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = services.create_user(request.user, serializer.validated_data, request=request)
+        return Response(UserSerializer(user, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        user = self.get_object()
+        serializer = UserUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = services.update_user(request.user, user, serializer.validated_data, request=request)
+        return Response(UserSerializer(user, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def deactivate(self, request, pk=None):
+        user = services.set_user_status(request.user, self.get_object(), active=False, request=request)
+        return Response(UserSerializer(user, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def activate(self, request, pk=None):
+        user = services.set_user_status(request.user, self.get_object(), active=True, request=request)
+        return Response(UserSerializer(user, context={"request": request}).data)
+
+
+class RoleViewSet(
+    PermissionMappedMixin,
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_map = {
+        "list": ["ROLE_VIEW"],
+        "retrieve": ["ROLE_VIEW"],
+        "create": ["ROLE_MANAGE"],
+        "update": ["ROLE_MANAGE"],
+        "partial_update": ["ROLE_MANAGE"],
+        "set_permissions": ["ROLE_MANAGE"],
+    }
+    permission_classes = [HasPermission]
+    queryset = Role.objects.all().prefetch_related("role_permissions__permission")
+    search_fields = ["code", "name"]
+    ordering = ["name"]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return RoleCreateSerializer
+        if self.action in ("update", "partial_update"):
+            return RoleUpdateSerializer
+        if self.action == "retrieve":
+            return RoleDetailSerializer
+        return RoleSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = RoleCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = services.create_role(request.user, serializer.validated_data, request=request)
+        return Response(RoleSerializer(role).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        role = self.get_object()
+        serializer = RoleUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = services.update_role(request.user, role, serializer.validated_data, request=request)
+        return Response(RoleDetailSerializer(role).data)
+
+    @action(detail=True, methods=["put"], url_path="permissions")
+    def set_permissions(self, request, pk=None):
+        role = self.get_object()
+        serializer = RolePermissionsWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = services.replace_role_permissions(
+            request.user, role, serializer.validated_data["permissions"], request=request
+        )
+        return Response(RoleDetailSerializer(role).data)
+
+
+class PermissionListView(APIView):
+    required_permissions = ["ROLE_VIEW"]
+
+    def get_permissions(self):
+        return [HasPermission()]
+
+    def get(self, request):
+        module = request.query_params.get("module")
+        qs = Permission.objects.all()
+        if module:
+            qs = qs.filter(module=module)
+        grouped: dict[str, list] = {}
+        for permission in qs:
+            grouped.setdefault(permission.module, []).append(PermissionSerializer(permission).data)
+        return Response(grouped)
