@@ -55,3 +55,50 @@
 
 ### Next
 Sprint 2 — Medicine catalog normalization and batch management (generics, manufacturers, categories, units/conversions, barcodes, batches with expiry), with catalog UI.
+
+---
+
+## Sprint — Medicine catalog normalization & batch management
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Catalog masters**: `Generic`, `Manufacturer`, `MedicineCategory` (self-nesting), `Unit` (count/weight/volume) with CRUD APIs, search/filters, audit logging.
+- **Medicine normalization**: FKs for generic/manufacturer/category/base unit replacing denormalized text fields; new flags `rx_required`, `cold_chain`, `no_batch`; `shelf_life_months`, `near_expiry_days`.
+- **Staged migration**: 0002 add models/fields → 0003 backfill masters from legacy text (`testserver`-safe, pure `RunPython`) → 0004 remove legacy fields and rename FKs. Verified `makemigrations --check` clean.
+- **Barcodes**: `MedicineBarcode` with unique barcode; single-barcode write support on medicine serializer; duplicate barcode and duplicate SKU rejected with field errors.
+- **Pack conversions**: `MedicineUnitConversion` (factor to base, purchase/sale defaults), nested endpoint `GET/POST /medicines/{id}/conversions/`, plus `PATCH/DELETE /medicines/conversions/{id}/`; duplicate conversion returns `CONVERSION_EXISTS`.
+- **Batches**: `MedicineBatch` with branch + medicine + batch number + expiry uniqueness, mfg/expiry validation, expiry required for batch-tracked medicines, auto-`EXPIRED` for past expiry, opening quantities (`qty_received_total ≥ qty_on_hand ≥ 0`), branch-scoped list, status/expiry/search filters.
+- **Audit fix**: audit snapshots now use `DjangoJSONEncoder` (UUID/Decimal/datetime safe).
+- **Frontend**: new `/catalog` masters page (tabs: generics, manufacturers, categories, units), new `/batches` page (filters + create + expiry countdown badges), items page upgraded (FK selects, barcode, flags, inline conversions manager), nav updated (desktop + mobile).
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Backend smoke script (20 checks: masters, backfill, FK update, duplicate barcode/SKU, conversions, batches) | ✅ 20/20 |
+| Duplicate barcode / SKU rejected with 400 | ✅ |
+| Duplicate batch identity rejected; expiry required; past-expiry auto `EXPIRED` | ✅ |
+| Live HTTP: login, batch list, medicine FK shape, conversions | ✅ |
+| Frontend routes `/login /items /batches /catalog` served | ✅ HTTP 200 |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build` (10 routes) | ✅ |
+
+### Key endpoints
+- `GET/POST /api/v1/generics/`, `/manufacturers/`, `/medicine-categories/`, `/units/`
+- `GET/POST /api/v1/medicines/` (FK filters + search incl. barcode)
+- `GET/POST /api/v1/medicines/{id}/conversions/`, `PATCH/DELETE /api/v1/medicines/conversions/{id}/`
+- `GET/POST /api/v1/batches/` (filters: branch, medicine, status, batch number, expiry ordering)
+
+### Key screens
+- `/catalog` (masters admin), `/batches` (batch & expiry), `/items` (updated catalog with conversions)
+
+### Migrations
+- `catalog.0002` (masters + fields), `catalog.0003` (data backfill), `catalog.0004` (cleanup/rename), `audit.0002` (JSON encoder)
+
+### Known limitations
+- Batch `qty_on_hand` is a direct field until the inventory-ledger sprint makes it ledger-derived; batch create/update requires `STOCK_ADJUST`.
+- Category hierarchy UI supports flat creation only (parent editable via API).
+- Automated tests deferred per project decision.
+
+### Next
+Sprint 3 — Inventory management: append-only `InventoryTransaction` ledger, opening stock, computed balances, stock ledger view, low-stock/out-of-stock/near-expiry/expired reports, negative-stock prevention.
+

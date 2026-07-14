@@ -1,3 +1,4 @@
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 
 from apps.common.models import BaseModel
@@ -21,8 +22,8 @@ class AuditLog(BaseModel):
     entity_type = models.CharField(max_length=80, db_index=True)
     entity_id = models.UUIDField(null=True, blank=True)
     action = models.CharField(max_length=50, db_index=True)
-    before = models.JSONField(null=True, blank=True)
-    after = models.JSONField(null=True, blank=True)
+    before = models.JSONField(null=True, blank=True, encoder=DjangoJSONEncoder)
+    after = models.JSONField(null=True, blank=True, encoder=DjangoJSONEncoder)
     request_id = models.CharField(max_length=64, blank=True)
     ip = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=300, blank=True)

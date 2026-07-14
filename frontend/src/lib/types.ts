@@ -60,22 +60,100 @@ export type UserRecord = {
   created_at: string;
 };
 
+export type Generic = {
+  id: string;
+  name: string;
+  therapeutic_class: string;
+  description?: string;
+  is_active: boolean;
+};
+
+export type Manufacturer = {
+  id: string;
+  name: string;
+  country: string;
+  license_no: string;
+  is_active: boolean;
+};
+
+export type MedicineCategory = {
+  id: string;
+  name: string;
+  parent: string | null;
+  parent_name: string;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export type Unit = {
+  id: string;
+  name: string;
+  symbol: string;
+  unit_type: "COUNT" | "WEIGHT" | "VOLUME";
+  allows_fraction: boolean;
+  is_active: boolean;
+};
+
+export type MedicineUnitConversion = {
+  id: string;
+  medicine: string;
+  unit: string;
+  unit_name: string;
+  unit_symbol: string;
+  factor_to_base: string;
+  is_purchase_default: boolean;
+  is_sale_default: boolean;
+};
+
 export type Medicine = {
   id: string;
   code: string;
   name: string;
+  generic: string | null;
   generic_name: string;
-  manufacturer: string;
-  category: string;
+  manufacturer: string | null;
+  manufacturer_name: string;
+  category: string | null;
+  category_name: string;
+  base_unit: string | null;
+  base_unit_name: string;
   strength: string;
   dosage_form: string;
-  unit: string;
+  pack_size: string;
   purchase_price: string;
   selling_price: string;
   mrp: string;
   vat_rate: string;
   reorder_level: string;
+  shelf_life_months: number | null;
+  near_expiry_days: number | null;
+  no_batch: boolean;
+  rx_required: boolean;
+  cold_chain: boolean;
   is_active: boolean;
+  barcode: string;
+  conversions: MedicineUnitConversion[];
+};
+
+export type BatchStatus = "ACTIVE" | "DEPLETED" | "EXPIRED" | "QUARANTINE" | "DAMAGED" | "RECALLED";
+
+export type MedicineBatch = {
+  id: string;
+  branch: string;
+  branch_name: string;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  batch_number: string;
+  manufacturing_date: string | null;
+  expiry_date: string | null;
+  qty_received_total: string;
+  qty_on_hand: string;
+  unit_cost: string;
+  status: BatchStatus;
+  notes: string;
+  days_to_expiry: number | null;
+  created_at: string;
 };
 
 export type DashboardSummary = {
