@@ -173,3 +173,66 @@ export type DashboardSummary = {
     near_expiry_count: number | null;
   };
 };
+
+export type InventoryEntryType =
+  | "OPENING"
+  | "PURCHASE"
+  | "BONUS"
+  | "SALE"
+  | "SALES_RETURN"
+  | "PURCHASE_RETURN"
+  | "ADJUSTMENT"
+  | "BONUS_ISSUE"
+  | "DAMAGE"
+  | "EXPIRY"
+  | "TRANSFER"
+  | "REVERSAL";
+
+export type InventoryTransaction = {
+  id: string;
+  branch: string;
+  branch_name: string;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  batch: string;
+  batch_number: string;
+  entry_type: InventoryEntryType;
+  pool: "SALEABLE" | "PROMO" | "QUARANTINE";
+  qty_delta: string;
+  unit_cost: string;
+  value_delta: string;
+  source_type: string;
+  source_number: string;
+  transaction_group_id: string;
+  business_date: string;
+  actor_name: string;
+  created_at: string;
+};
+
+export type StockSummaryRow = {
+  branch: string;
+  branch_name: string;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  qty_on_hand: string;
+  qty_promo: string;
+  qty_quarantine: string;
+  reorder_level: string;
+  is_low_stock: boolean;
+  is_out_of_stock: boolean;
+};
+
+export type ExpiryReportRow = {
+  branch_name: string;
+  medicine_name: string;
+  medicine_code: string;
+  batch_number: string;
+  expiry_date: string;
+  days_to_expiry: number;
+  qty_on_hand: string;
+  qty_quarantine: string;
+  value_on_hand: string;
+  status: BatchStatus;
+};

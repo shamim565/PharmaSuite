@@ -102,3 +102,56 @@ Sprint 2 — Medicine catalog normalization and batch management (generics, manu
 ### Next
 Sprint 3 — Inventory management: append-only `InventoryTransaction` ledger, opening stock, computed balances, stock ledger view, low-stock/out-of-stock/near-expiry/expired reports, negative-stock prevention.
 
+---
+
+## Sprint — Inventory management & stock ledger
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Inventory ledger**: `InventoryTransaction` — append-only (model blocks update/delete), entry types (OPENING, PURCHASE, BONUS, SALE, SALES_RETURN, PURCHASE_RETURN, ADJUSTMENT, BONUS_ISSUE, DAMAGE, EXPIRY, TRANSFER, REVERSAL), pools (SALEABLE/PROMO/QUARANTINE), signed `qty_delta`, unit/value deltas, source traceability, transaction group, idempotency key, business date.
+- **Derived balances**: `StockBalance` per branch+medicine+batch with non-negative check constraints; updated only by the posting service.
+- **Posting service** (`apps.inventory.services.post_transactions`): atomic ledger+cache writes, deterministic row locking (`select_for_update`, sorted by medicine/batch), negative-stock rejection (`INSUFFICIENT_STOCK`), idempotent replay, batch cache/depletion sync, `ledger_quantities` reconciliation helper.
+- **Data migration**: existing batch on-hand quantities backfilled as OPENING transactions + balance cache rows.
+- **Batch creation refactor**: catalog batch create now posts through the inventory service (no direct quantity writes); quantity/cost edits on batches are blocked with guidance to use inventory transactions.
+- **APIs**: ledger list/detail (filters + date range + search), balances, stock summary, low-stock / near-expiry / expired reports, integrity (cache vs ledger).
+- **Reconciliation command**: `check_stock_integrity [--repair]` compares balances and batch caches with ledger sums.
+- **Dashboard KPIs**: `stock_value`, `low_stock_count`, `near_expiry_count` now computed from inventory (sales/collection/due remain for later sprints).
+- **Frontend**: new `/inventory` page with Stock (summary + low-stock filter), Ledger (type/search filters + pagination), Alerts (low stock, near expiry ≤90d, expired); nav updated (desktop + mobile).
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Inventory smoke script (15 checks) | ✅ 15/15 |
+| Negative stock rejected under service validation | ✅ `INSUFFICIENT_STOCK` |
+| Idempotent replay returns original posting, no duplicate ledger rows | ✅ |
+| Ledger ↔ balance equality after mixed movements | ✅ |
+| Batch auto-`DEPLETED` at zero | ✅ |
+| Near-expiry (28d) and expired reports | ✅ |
+| `check_stock_integrity` | ✅ balances and batch caches match ledger |
+| Live HTTP: summary, ledger, integrity, dashboard KPIs | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build` (11 routes) | ✅ |
+
+### Key endpoints
+- `GET /api/v1/inventory/transactions/` (filters: branch, medicine, batch, entry_type, pool, date_from/date_to)
+- `GET /api/v1/inventory/balances/`
+- `GET /api/v1/inventory/summary/`
+- `GET /api/v1/inventory/reports/low-stock|near-expiry|expired/`
+- `GET /api/v1/inventory/integrity/`
+
+### Key screens
+- `/inventory` (Stock / Ledger / Alerts), dashboard inventory KPIs
+
+### Migrations
+- `inventory.0001_initial`, `inventory.0002_backfill_opening_transactions`
+
+### Known limitations
+- Idempotency keys apply to single-line postings; multi-line callers use `transaction_group_id` (purchases/sales will follow this).
+- Adjustments API/UI (manual corrections, damage/expiry posting) land in Sprint 7; the ledger types and service support them already.
+- Transfer entry type is defined but inter-branch transfers remain Phase 2.
+- Automated tests deferred per project decision.
+
+### Next
+Sprint 4 — Supplier & purchase management: suppliers + ledger, purchases with batch receipt, bonus quantities, discounts, supplier payments/allocation, payable aging, effective cost, atomic purchase confirmation, purchase returns.
+
+

@@ -215,8 +215,26 @@ class MedicineBatchSerializer(serializers.ModelSerializer):
         qty_received = attrs.get("qty_received_total")
         qty_on_hand = attrs.get("qty_on_hand")
         if self.instance is None and qty_received is not None and qty_on_hand is not None:
-            if qty_on_hand > qty_received:
+            if qty_on_hand != qty_received:
                 raise serializers.ValidationError(
-                    {"qty_on_hand": "Opening quantity cannot exceed received quantity."}
+                    {
+                        "qty_on_hand": (
+                            "Opening quantity must equal received quantity; later corrections "
+                            "are posted as inventory adjustments."
+                        )
+                    }
                 )
+
+        if self.instance is not None:
+            immutable = ("qty_received_total", "qty_on_hand", "unit_cost")
+            for field in immutable:
+                if field in attrs and attrs[field] != getattr(self.instance, field):
+                    raise serializers.ValidationError(
+                        {
+                            field: (
+                                "Quantity and cost changes must be posted as inventory "
+                                "transactions, not edits."
+                            )
+                        }
+                    )
         return attrs

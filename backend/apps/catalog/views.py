@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -238,14 +240,42 @@ class MedicineBatchViewSet(
         return qs.filter(branch_id__in=user.branch_ids)
 
     def perform_create(self, serializer):
-        batch = serializer.save()
+        from apps.inventory.models import EntryType
+        from apps.inventory.services import MovementLine, post_transactions
+
+        quantity = Decimal(serializer.validated_data.get("qty_on_hand") or 0)
+        received = Decimal(serializer.validated_data.get("qty_received_total") or 0)
+        unit_cost = Decimal(serializer.validated_data.get("unit_cost") or 0)
+
+        batch = serializer.save(qty_on_hand=Decimal("0"), qty_received_total=Decimal("0"))
+
+        if quantity > 0:
+            post_transactions(
+                branch=batch.branch,
+                lines=[
+                    MovementLine(
+                        medicine=batch.medicine,
+                        batch=batch,
+                        qty_delta=quantity,
+                        unit_cost=unit_cost,
+                    )
+                ],
+                entry_type=EntryType.OPENING,
+                source_type="MEDICINE_BATCH",
+                source_id=batch.id,
+                source_number=batch.batch_number,
+                actor=self.request.user,
+            )
+
+        batch.qty_received_total = received
         if (
             batch.expiry_date
             and batch.expiry_date < timezone.localdate()
             and batch.status == BatchStatus.ACTIVE
         ):
             batch.status = BatchStatus.EXPIRED
-            batch.save(update_fields=["status", "updated_at"])
+        batch.save(update_fields=["qty_received_total", "status", "updated_at"])
+
         log_action(
             actor=self.request.user,
             action="batch_created",
