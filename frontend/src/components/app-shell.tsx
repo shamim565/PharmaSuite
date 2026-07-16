@@ -14,6 +14,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/items", label: "Items", permission: "MEDICINE_VIEW", icon: "℞" },
   { href: "/batches", label: "Batches", permission: "STOCK_VIEW", icon: "◫" },
   { href: "/inventory", label: "Inventory", permission: "STOCK_VIEW", icon: "▣" },
+  { href: "/purchases", label: "Purchases", permission: "PURCHASE_VIEW", icon: "⇄" },
+  { href: "/suppliers", label: "Suppliers", permission: "SUPPLIER_VIEW", icon: "⛟" },
   { href: "/catalog", label: "Catalog", permission: "MEDICINE_MANAGE", icon: "▤" },
   { href: "/users", label: "Users", permission: "USER_VIEW", icon: "👤" },
   { href: "/branches", label: "Branches", permission: "BRANCH_VIEW", icon: "⌂" },

@@ -154,4 +154,65 @@ Sprint 3 — Inventory management: append-only `InventoryTransaction` ledger, op
 ### Next
 Sprint 4 — Supplier & purchase management: suppliers + ledger, purchases with batch receipt, bonus quantities, discounts, supplier payments/allocation, payable aging, effective cost, atomic purchase confirmation, purchase returns.
 
+---
+
+## Sprint — Supplier & purchase management
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Document numbering** (`apps.common.numbering`): gapless per-branch, per-fiscal-year `DocumentSequence` with row locking (`PUR/PPV/DBN/INV/RCP/CRN/ADJ` prefixes, July–June FY).
+- **Accounting foundation**: `FinancialAccount` (CASH/BANK/MFS, branch-scoped, optional negative) and append-only `FinancialTransaction` ledger with balance cache, insufficient-funds guard; default cash account per branch created by `seed_rbac`.
+- **Suppliers**: CRUD, payable ledger (append-only, running balance, date filters), payable summary report, `balance_cache` reconciled from ledger.
+- **Purchases**: draft with line items (batch number, mfg/expiry, qty, bonus qty, unit cost, line discount, VAT), server-computed totals, effective unit cost with bonus allocation (e.g., 100+10 @ 1.20 → 1.0909), atomic confirmation:
+  batch create/merge → purchase + bonus stock postings → supplier payable → optional payment at entry → gapless number.
+- **Duplicate supplier invoice control**: blocked with `DUPLICATE_SUPPLIER_INVOICE`, explicit override + reason.
+- **Supplier payments**: record with FIFO or manual allocation, partial payments, unallocated advance, account posting, reversal with purchase-status recompute; idempotency keys.
+- **Purchase returns**: draft from purchase lines (returnable = qty + bonus − returned), debit note with proportional VAT reversal, stock decrease, payable decrease (excess becomes supplier advance), purchase return status recompute.
+- **Purchase cancellation**: only confirmed+unpaid+unreturned and only when stock is unconsumed; full reversal (stock, payable).
+- **Payable aging report**: current / 1–30 / 31–60 / 61–90 / 90+ per supplier.
+- **Frontend**: `/suppliers` (list, create, ledger panel) and `/purchases` (multi-line purchase form, confirm-with-payment panel, pay panel, return panel, register with status badges); nav updated.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Purchase smoke script (17 checks) | ✅ 17/17 |
+| Draft totals (bonus → effective cost 1.0909, VAT, round-off) | ✅ |
+| Atomic confirm + partial payment at entry | ✅ `PARTIALLY_PAID`, paid 50.00 |
+| Idempotent reconfirm returns same purchase | ✅ |
+| Stock: purchase + bonus = 110 on hand; bonus ledger entry | ✅ |
+| Supplier ledger balance 88.00 and payable aging 88.00 | ✅ |
+| Duplicate invoice blocked (409) then override confirmed | ✅ |
+| FIFO payment allocation across purchases | ✅ |
+| Purchase return: grand 7.00, stock 110 → 105, debit note `DBN-…` | ✅ |
+| Confirmed purchase cancel reverses stock to 0 | ✅ |
+| Account cache equals account ledger | ✅ |
+| `check_stock_integrity` after full flow | ✅ ledger consistent |
+| Live HTTP: suppliers, purchases, payable aging, accounts, frontend routes | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build` (13 routes) | ✅ |
+
+### Key endpoints
+- `GET/POST /api/v1/suppliers/`, `GET /api/v1/suppliers/{id}/ledger/`, `GET /api/v1/suppliers/reports/payables/`
+- `GET/POST /api/v1/purchases/`, `POST /api/v1/purchases/{id}/confirm/`, `POST /api/v1/purchases/{id}/cancel/`
+- `GET/POST /api/v1/supplier-payments/`, `POST /api/v1/supplier-payments/{id}/reverse/`
+- `GET/POST /api/v1/purchase-returns/`, `POST /api/v1/purchase-returns/{id}/confirm/`
+- `GET /api/v1/purchases/reports/payable-aging/`, `GET /api/v1/accounts/`
+
+### Key screens
+- `/suppliers` (register + ledger), `/purchases` (create, confirm/pay, return, register)
+
+### Migrations
+- `common.0001_initial`, `accounting.0001_initial`, `suppliers.0001_initial`, `purchases.0001_initial`, `purchases.0002_initial`
+
+### Known limitations
+- Cheque lifecycle (pending/cleared/bounced) is recorded as a method only; sub-states arrive with payments hardening.
+- Purchase returns reverse cost at the batch's current cost while supplier value uses the purchase's base unit cost — intentional, documented in the service.
+- Draft purchase editing replaces all lines (acceptable for MVP).
+- Cash accounts start at zero; deposits/withdrawals UI arrives with the finance sprint (service exists).
+- Automated tests deferred per project decision.
+
+### Next
+Sprint 5 — Customers & sales: customer CRUD + ledger, sales invoices with FEFO batch selection, stock deduction, credit control, due creation, invoice numbering, A4-printable invoice, overselling prevention.
+
+
 

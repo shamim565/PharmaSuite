@@ -236,3 +236,137 @@ export type ExpiryReportRow = {
   value_on_hand: string;
   status: BatchStatus;
 };
+
+export type Supplier = {
+  id: string;
+  code: string;
+  name: string;
+  supplier_type: "MANUFACTURER" | "IMPORTER" | "TRADER" | "DISTRIBUTOR";
+  contact_person: string;
+  phone: string;
+  email: string;
+  address: string;
+  credit_days: number;
+  preferred_payment_method: string;
+  balance_cache: string;
+  is_active: boolean;
+};
+
+export type SupplierLedgerEntry = {
+  id: string;
+  entry_type: string;
+  amount_delta: string;
+  due_date: string | null;
+  source_type: string;
+  source_number: string;
+  business_date: string;
+  running_balance: string;
+};
+
+export type SupplierLedgerResponse = {
+  balance: string;
+  count: number;
+  results: SupplierLedgerEntry[];
+};
+
+export type FinancialAccount = {
+  id: string;
+  code: string;
+  name: string;
+  account_type: "CASH" | "BANK" | "MFS";
+  branch: string | null;
+  branch_name: string;
+  balance_cache: string;
+  is_active: boolean;
+};
+
+export type PurchaseItem = {
+  id: string;
+  line_no: number;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  batch: string | null;
+  batch_number: string;
+  manufacturing_date: string | null;
+  expiry_date: string | null;
+  conversion_factor: string;
+  qty_entered: string;
+  qty_base: string;
+  bonus_qty_entered: string;
+  bonus_qty_base: string;
+  unit_cost: string;
+  line_discount: string;
+  vat_rate: string;
+  vat_amount: string;
+  line_net: string;
+  base_unit_cost: string;
+  effective_unit_cost: string;
+  returned_qty_base: string;
+};
+
+export type Purchase = {
+  id: string;
+  number: string | null;
+  branch: string;
+  branch_name: string;
+  supplier: string;
+  supplier_name: string;
+  supplier_invoice_number: string;
+  supplier_invoice_date: string;
+  business_date: string;
+  lifecycle: "DRAFT" | "CONFIRMED" | "CANCELLED";
+  payment_status: "UNPAID" | "PARTIALLY_PAID" | "PAID";
+  return_status: "NONE" | "PARTIALLY_RETURNED" | "FULLY_RETURNED";
+  subtotal: string;
+  discount_total: string;
+  vat_total: string;
+  freight_total: string;
+  round_off: string;
+  grand_total: string;
+  paid_total: string;
+  returned_total: string;
+  outstanding: string;
+  notes: string;
+  confirmed_at: string | null;
+  cancel_reason: string;
+  created_at: string;
+  items: PurchaseItem[];
+};
+
+export type SupplierPaymentAllocation = {
+  id: string;
+  purchase: string;
+  purchase_number: string | null;
+  amount: string;
+};
+
+export type SupplierPayment = {
+  id: string;
+  number: string;
+  branch: string;
+  branch_name: string;
+  supplier: string;
+  supplier_name: string;
+  business_date: string;
+  amount: string;
+  method: string;
+  account: string;
+  account_name: string;
+  reference: string;
+  status: "ACTIVE" | "REVERSED";
+  allocations: SupplierPaymentAllocation[];
+  created_at: string;
+};
+
+export type PayableAgingRow = {
+  supplier: string;
+  supplier_name: string;
+  supplier_code: string;
+  current: string;
+  days_1_30: string;
+  days_31_60: string;
+  days_61_90: string;
+  days_90_plus: string;
+  total: string;
+};

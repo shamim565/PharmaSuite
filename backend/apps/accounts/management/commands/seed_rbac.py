@@ -93,9 +93,26 @@ class Command(BaseCommand):
                 user=owner, branch=branch, defaults={"is_default": True}
             )
 
+            from apps.accounting.models import AccountType, FinancialAccount
+            from apps.branches.models import Branch as BranchModel
+
+            cash_accounts = 0
+            for branch_row in BranchModel.objects.all():
+                _, created = FinancialAccount.objects.get_or_create(
+                    code=f"{branch_row.code}-CASH",
+                    defaults={
+                        "name": f"{branch_row.name} Cash",
+                        "account_type": AccountType.CASH,
+                        "branch": branch_row,
+                        "allow_negative": False,
+                    },
+                )
+                cash_accounts += int(created)
+
         self.stdout.write(self.style.SUCCESS("RBAC seed complete"))
         self.stdout.write(f"  permissions created: {permissions_created}")
         self.stdout.write(f"  roles synced: {roles_synced}")
+        self.stdout.write(f"  default cash accounts created: {cash_accounts}")
         self.stdout.write(f"  branch: {branch.code} ({'created' if branch_created else 'existing'})")
         if owner_created:
             self.stdout.write(
