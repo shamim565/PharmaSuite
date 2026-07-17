@@ -214,5 +214,64 @@ Sprint 4 — Supplier & purchase management: suppliers + ledger, purchases with 
 ### Next
 Sprint 5 — Customers & sales: customer CRUD + ledger, sales invoices with FEFO batch selection, stock deduction, credit control, due creation, invoice numbering, A4-printable invoice, overselling prevention.
 
+---
+
+## Sprint — Customers & sales invoices
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Customers**: CRUD, types, price tiers (retail/wholesale/custom with per-tier medicine prices), default discount, credit limit/days, credit hold, append-only receivable ledger with running balance, `balance_cache` reconciled from ledger.
+- **Tier pricing**: `resolve_unit_price` per customer tier; medicine model extended with retail/wholesale/custom price fields (migration catalog.0005).
+- **Sales invoices**: multi-line drafts with auto price resolution, line discounts, VAT, free-goods lines, round-off; draft edit replaces lines.
+- **FEFO confirmation** (atomic): saleable batches selected earliest-expiry-first, expired/exhausted excluded, line split into one item per batch with proportional discount/VAT; stock posted via the inventory ledger; `INSUFFICIENT_STOCK` blocks overselling.
+- **Numbering**: gapless `INV-{BRANCH}-{FY}-{seq}` inside the transaction.
+- **Receivable posting**: customer ledger INVOICE entry with due date = business date + credit days.
+- **Credit control**: credit hold blocks sales (`CUSTOMER_ON_HOLD`); credit limit exceeded blocks with `CREDIT_LIMIT_EXCEEDED` unless `SALE_OVERRIDE_CREDIT` override with reason (audited on the invoice).
+- **Receipts** (minimum for payment-at-entry): `Payment` + allocations, account posting (`SALE_RECEIPT`), customer ledger `PAYMENT`, FIFO across open invoices, partial/advance, reversal with invoice status recompute. Sprint 6 extends with due-collection UX and aging workflows.
+- **Cancellation**: unpaid confirmed invoices can be cancelled with full stock restock and ledger reversal.
+- **Receivable aging report**: current / 1–30 / 31–60 / 61–90 / 90+ per customer.
+- **Dashboard**: sales_today, collections_today, customer_due, supplier_payable now computed from real data.
+- **Frontend**: `/customers` (register + ledger), `/sales` (invoice builder, confirm-with-receipt + credit override, receive payment, register), `/sales/[id]` printable A4 invoice (print CSS), nav reorganised around daily ops.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Sales smoke script (21 checks) | ✅ 21/21 |
+| FEFO: 8 units → 5 from earlier batch + 3 from next; zero-row batch handled | ✅ |
+| Invoice number `INV-MAIN-26-…` + due date +30d | ✅ |
+| Oversell blocked (409) and expired-only stock blocked | ✅ |
+| Payment at entry → `PARTIALLY_PAID`, cash +2.00 | ✅ |
+| Customer ledger balance = open invoices; FIFO receipt; reversal restores | ✅ |
+| Credit limit blocked → override confirmed (audited) | ✅ |
+| Cancel restores stock 6 → 10 | ✅ |
+| Receivable aging totals match ledger | ✅ |
+| `check_stock_integrity` after sales flows | ✅ consistent |
+| Live HTTP: dashboard KPIs (sales 46.0, collections 2.0, due 44.0), invoice detail, aging, frontend routes | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build` (15 routes) | ✅ |
+
+### Key endpoints
+- `GET/POST /api/v1/customers/`, `GET /api/v1/customers/{id}/ledger/`
+- `GET/POST /api/v1/sales/`, `POST /api/v1/sales/{id}/confirm/`, `POST /api/v1/sales/{id}/cancel/`, `GET /api/v1/sales/fefo/`
+- `GET/POST /api/v1/payments/`, `POST /api/v1/payments/{id}/reverse/`
+- `GET /api/v1/sales/reports/receivable-aging/`
+
+### Key screens
+- `/customers` (register + ledger), `/sales` (builder + confirm/receipt), `/sales/[id]` (printable invoice)
+
+### Migrations
+- `sales.0001_initial`, `payments.0001_initial`, `payments.0002_initial`, `catalog.0005_medicine_price_tiers`
+
+### Known limitations
+- Sales returns/credit notes (Sprint 7); due-list collection UX and past-due blocking (Sprint 6).
+- Manual FEFO batch override (permission `INV_OVERRIDE_FEFO`) not exposed in APIs yet.
+- Receipt printing is a screen document (A4 print CSS), no server-side PDF generator yet.
+- One final invoice line per batch by design; UI shows the split after confirmation.
+- Automated tests deferred per project decision.
+
+### Next
+Sprint 6 — Customer payments & due management: due list/aging workflows, collect old dues (FIFO/manual allocation UI), advance handling, collector attribution, daily collection summary, receipt print/share, past-due credit blocking.
+
+
 
 

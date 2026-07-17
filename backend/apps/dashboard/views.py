@@ -11,6 +11,9 @@ from apps.branches.models import Branch, BranchStatus
 from apps.catalog.models import Medicine
 from apps.common.permissions import HasPermission
 from apps.inventory.models import StockBalance
+from apps.payments.models import Payment, PaymentStatus
+from apps.sales.models import CustomerLedgerEntry, SalesInvoice, SalesInvoiceStatus
+from apps.suppliers.models import SupplierLedgerEntry
 
 
 class DashboardSummaryView(APIView):
@@ -61,6 +64,28 @@ class DashboardSummaryView(APIView):
             .count()
         )
 
+        invoices = SalesInvoice.objects.filter(lifecycle=SalesInvoiceStatus.CONFIRMED)
+        receipts = Payment.objects.filter(status=PaymentStatus.ACTIVE)
+        payables = SupplierLedgerEntry.objects.all()
+        if not all_branches:
+            invoices = invoices.filter(branch_id__in=user.branch_ids)
+            receipts = receipts.filter(branch_id__in=user.branch_ids)
+            payables = payables.filter(branch_id__in=user.branch_ids)
+
+        sales_today = (
+            invoices.filter(business_date=today).aggregate(total=Sum("grand_total"))["total"]
+            or Decimal("0")
+        )
+        collections_today = (
+            receipts.filter(business_date=today).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0")
+        )
+        supplier_payable = payables.aggregate(total=Sum("amount_delta"))["total"] or Decimal("0")
+        receivables = CustomerLedgerEntry.objects.all()
+        if not all_branches:
+            receivables = receivables.filter(branch_id__in=user.branch_ids)
+        customer_due = receivables.aggregate(total=Sum("amount_delta"))["total"] or Decimal("0")
+
         return Response(
             {
                 "generated_at": timezone.now(),
@@ -79,10 +104,10 @@ class DashboardSummaryView(APIView):
                     "active": medicines.filter(is_active=True).count(),
                 },
                 "operations": {
-                    "sales_today": None,
-                    "collections_today": None,
-                    "customer_due": None,
-                    "supplier_payable": None,
+                    "sales_today": sales_today,
+                    "collections_today": collections_today,
+                    "customer_due": customer_due,
+                    "supplier_payable": supplier_payable,
                     "stock_value": stock_value,
                     "low_stock_count": low_stock_count,
                     "near_expiry_count": near_expiry_count,

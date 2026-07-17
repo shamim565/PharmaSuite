@@ -370,3 +370,115 @@ export type PayableAgingRow = {
   days_90_plus: string;
   total: string;
 };
+
+export type Customer = {
+  id: string;
+  code: string;
+  name: string;
+  customer_type: "PHARMACY" | "RETAIL" | "HOSPITAL" | "CLINIC";
+  contact_person: string;
+  phone: string;
+  email: string;
+  address: string;
+  area: string;
+  price_tier: "RETAIL" | "WHOLESALE" | "CUSTOM";
+  default_discount_pct: string;
+  credit_limit: string;
+  credit_days: number;
+  credit_hold: boolean;
+  credit_hold_reason: string;
+  balance_cache: string;
+  is_active: boolean;
+};
+
+export type CustomerLedgerEntry = {
+  id: string;
+  entry_type: string;
+  amount_delta: string;
+  due_date: string | null;
+  source_type: string;
+  source_number: string;
+  business_date: string;
+  running_balance: string;
+};
+
+export type CustomerLedgerResponse = {
+  balance: string;
+  count: number;
+  results: CustomerLedgerEntry[];
+};
+
+export type SalesInvoiceItem = {
+  id: string;
+  line_no: number;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  batch: string | null;
+  batch_number: string;
+  qty: string;
+  unit_price: string;
+  line_discount: string;
+  vat_rate: string;
+  vat_amount: string;
+  line_net: string;
+  line_total: string;
+  unit_cost: string;
+  is_free_goods: boolean;
+};
+
+export type SalesInvoice = {
+  id: string;
+  number: string | null;
+  branch: string;
+  branch_name: string;
+  branch_address: string;
+  branch_phone: string;
+  customer: string;
+  customer_name: string;
+  customer_code: string;
+  customer_phone: string;
+  customer_address: string;
+  business_date: string;
+  lifecycle: "DRAFT" | "CONFIRMED" | "CANCELLED";
+  payment_status: "UNPAID" | "PARTIALLY_PAID" | "PAID";
+  return_status: "NONE" | "PARTIALLY_RETURNED" | "FULLY_RETURNED";
+  fulfillment_status: "PENDING" | "DELIVERED";
+  subtotal: string;
+  discount_total: string;
+  vat_total: string;
+  round_off: string;
+  grand_total: string;
+  paid_total: string;
+  outstanding: string;
+  due_date: string | null;
+  notes: string;
+  confirmed_at: string | null;
+  cancel_reason: string;
+  credit_override: boolean;
+  credit_override_reason: string;
+  created_at: string;
+  items: SalesInvoiceItem[];
+};
+
+export type FefoBatch = {
+  batch: string;
+  batch_number: string;
+  expiry_date: string | null;
+  qty_on_hand: string;
+  unit_cost: string;
+  days_to_expiry: number | null;
+};
+
+export type ReceivableAgingRow = {
+  customer: string;
+  customer_name: string;
+  customer_code: string;
+  phone: string;
+  current: string;
+  days_1_30: string;
+  days_31_60: string;
+  days_61_90: string;
+  days_90_plus: string;
+  total: string;
+};
