@@ -482,3 +482,70 @@ export type ReceivableAgingRow = {
   days_90_plus: string;
   total: string;
 };
+
+export type DueListRow = {
+  invoice: string;
+  number: string;
+  business_date: string;
+  due_date: string;
+  days_overdue: number;
+  bucket: "current" | "days_1_30" | "days_31_60" | "days_61_90" | "days_90_plus";
+  customer: string;
+  customer_name: string;
+  customer_code: string;
+  phone: string;
+  branch: string;
+  branch_name: string;
+  grand_total: string;
+  paid_total: string;
+  outstanding: string;
+  payment_status: "UNPAID" | "PARTIALLY_PAID" | "PAID";
+};
+
+export type DueListResponse = {
+  count: number;
+  totals: { outstanding: string; overdue: string };
+  results: DueListRow[];
+};
+
+export type AdvanceRow = {
+  customer: string;
+  customer_name: string;
+  customer_code: string;
+  phone: string;
+  advance: string;
+};
+
+export type CustomerPaymentAllocation = {
+  id: string;
+  invoice: string;
+  invoice_number: string;
+  amount: string;
+};
+
+export type CustomerPayment = {
+  id: string;
+  number: string;
+  branch: string;
+  branch_name: string;
+  customer: string;
+  customer_name: string;
+  business_date: string;
+  amount: string;
+  method: string;
+  account: string;
+  account_name: string;
+  reference: string;
+  collector_name: string;
+  status: "ACTIVE" | "REVERSED";
+  allocations: CustomerPaymentAllocation[];
+  created_at: string;
+};
+
+export type DailyCollectionReport = {
+  date: string;
+  payment_count: number;
+  total: string;
+  by_method: { method: string; total: string; count: number }[];
+  by_collector: { collector: string | null; collector_name: string; total: string; count: number }[];
+};

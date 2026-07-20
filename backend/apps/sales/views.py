@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.db.models import F
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -174,6 +175,117 @@ class SalesInvoiceViewSet(
             invoice=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
         )
         return Response(SalesInvoiceReadSerializer(invoice).data)
+
+
+class DueListView(APIView):
+    """Open invoices with aging for the collection desk."""
+
+    permission_classes = [HasPermission]
+    required_permissions = ["CUSTOMER_VIEW"]
+
+    def get(self, request):
+        queryset = (
+            SalesInvoice.objects.select_related("customer", "branch")
+            .filter(lifecycle="CONFIRMED", paid_total__lt=F("grand_total"))
+        )
+        queryset = scoped_sales(request.user, queryset)
+
+        customer_id = request.query_params.get("customer")
+        if customer_id:
+            queryset = queryset.filter(customer_id=customer_id)
+        if request.query_params.get("branch"):
+            queryset = queryset.filter(branch_id=request.query_params["branch"])
+        if request.query_params.get("search"):
+            search = request.query_params["search"]
+            queryset = queryset.filter(customer__name__icontains=search)
+
+        min_overdue = request.query_params.get("min_overdue_days")
+        overdue_days_filter = int(min_overdue) if min_overdue and min_overdue.isdigit() else None
+        overdue_only = request.query_params.get("overdue_only") == "true"
+
+        today = timezone.localdate()
+        results = []
+        total_outstanding = Decimal("0")
+        total_overdue = Decimal("0")
+        for invoice in queryset.order_by("due_date", "business_date"):
+            outstanding = invoice.grand_total - invoice.paid_total
+            if outstanding <= 0:
+                continue
+            due_date = invoice.due_date or invoice.business_date
+            days_overdue = (today - due_date).days
+            if overdue_only and days_overdue <= 0:
+                continue
+            if overdue_days_filter is not None and days_overdue < overdue_days_filter:
+                continue
+
+            if days_overdue <= 0:
+                bucket = "current"
+            elif days_overdue <= 30:
+                bucket = "days_1_30"
+            elif days_overdue <= 60:
+                bucket = "days_31_60"
+            elif days_overdue <= 90:
+                bucket = "days_61_90"
+            else:
+                bucket = "days_90_plus"
+
+            total_outstanding += outstanding
+            if days_overdue > 0:
+                total_overdue += outstanding
+
+            results.append(
+                {
+                    "invoice": invoice.id,
+                    "number": invoice.number,
+                    "business_date": invoice.business_date,
+                    "due_date": due_date,
+                    "days_overdue": days_overdue,
+                    "bucket": bucket,
+                    "customer": invoice.customer_id,
+                    "customer_name": invoice.customer.name,
+                    "customer_code": invoice.customer.code,
+                    "phone": invoice.customer.phone,
+                    "branch": invoice.branch_id,
+                    "branch_name": invoice.branch.name,
+                    "grand_total": str(invoice.grand_total),
+                    "paid_total": str(invoice.paid_total),
+                    "outstanding": str(outstanding),
+                    "payment_status": invoice.payment_status,
+                }
+            )
+
+        return Response(
+            {
+                "count": len(results),
+                "totals": {
+                    "outstanding": str(total_outstanding),
+                    "overdue": str(total_overdue),
+                },
+                "results": results,
+            }
+        )
+
+
+class CustomerAdvanceView(APIView):
+    """Customers holding an advance (negative ledger balance)."""
+
+    permission_classes = [HasPermission]
+    required_permissions = ["CUSTOMER_VIEW"]
+
+    def get(self, request):
+        customers = Customer.objects.filter(balance_cache__lt=0).order_by("name")
+        results = [
+            {
+                "customer": customer.id,
+                "customer_name": customer.name,
+                "customer_code": customer.code,
+                "phone": customer.phone,
+                "advance": str(-customer.balance_cache),
+            }
+            for customer in customers
+        ]
+        total = sum((Decimal(row["advance"]) for row in results), Decimal("0"))
+        return Response({"count": len(results), "total": str(total), "results": results})
 
 
 class ReceivableAgingView(APIView):

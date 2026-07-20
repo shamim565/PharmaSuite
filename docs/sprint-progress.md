@@ -272,6 +272,57 @@ Sprint 5 — Customers & sales: customer CRUD + ledger, sales invoices with FEFO
 ### Next
 Sprint 6 — Customer payments & due management: due list/aging workflows, collect old dues (FIFO/manual allocation UI), advance handling, collector attribution, daily collection summary, receipt print/share, past-due credit blocking.
 
+---
+
+## Sprint — Customer payments & due management
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Collector attribution**: `Payment.collector` (defaults to the acting user), exposed on receipts and grouped reports.
+- **Past-due credit blocking**: confirmation blocks customers with invoices overdue beyond `CUSTOMER_OVERDUE_BLOCK_DAYS` (default 30, configurable) with `CUSTOMER_PAST_DUE`; `SALE_OVERRIDE_CREDIT` override (audited on the invoice) lifts the block.
+- **Due list API** `GET /sales/due-list/`: open confirmed invoices with aging buckets (current/1–30/31–60/61–90/90+), days overdue, customer contact, filters (customer, branch, search, `overdue_only`, `min_overdue_days`), totals (outstanding, overdue).
+- **Advances**: unallocated receipts remain on account; `GET /customers/reports/advances/` lists customers holding advances with totals; customer `balance_cache` reflects the credit.
+- **Daily collection report** `GET /payments/reports/daily-collection/`: totals by method and by collector for a date, branch-scoped.
+- **Manual + FIFO allocation** exercised end-to-end: multi-invoice FIFO receipts, explicit allocation to a chosen invoice, partial/advance portions.
+- **Frontend**: `/dues` collection desk (summary KPIs, aging table/cards, per-customer collect panel with FIFO-prefilled editable allocations, advance portion indicator, advances card), `/payments` register (daily summary chips, filters, reversal panel, receipt links), `/payments/[id]` printable A4 money receipt, nav updated.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Payments smoke script (11 checks) | ✅ 11/11 |
+| Due list buckets + totals (35.00 across 2 invoices, current) | ✅ |
+| FIFO across invoices: oldest paid, next partial 5.00 | ✅ |
+| Overpayment → advance 5.00; customer balance −5.00; advances report | ✅ |
+| Manual allocation to a specific invoice | ✅ |
+| Past-due (>30d) blocks new sale (409), override confirms | ✅ |
+| Daily collection grouped by method + collector | ✅ |
+| Receipt reversal restores invoice to UNPAID | ✅ |
+| Live: due list (7 invoices, overdue 5.00), daily total 24.00, receipt detail with collector, frontend routes | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build` (17 routes), `check_stock_integrity` | ✅ |
+
+### Key endpoints
+- `GET /api/v1/sales/due-list/`
+- `GET /api/v1/customers/reports/advances/`
+- `GET /api/v1/payments/reports/daily-collection/`
+- `GET/POST /api/v1/payments/`, `POST /api/v1/payments/{id}/reverse/`
+
+### Key screens
+- `/dues` (collection desk + advances), `/payments` (register + daily summary), `/payments/[id]` (printable receipt)
+
+### Migrations
+- `payments.0003_payment_collector`
+
+### Known limitations
+- Cheque lifecycle sub-states still pending (recorded as method + reference).
+- Advance auto-application at sale confirmation is manual for now (advances are applied explicitly through allocation when collecting).
+- Receipt print is browser-based A4 (no server-side PDF generator yet).
+- Automated tests deferred per project decision.
+
+### Next
+Sprint 7 — Returns, expired stock, damage & adjustments: sales returns with restock/quarantine, credit notes and refund methods, purchase return UI, stock adjustments (damage/expiry/loss) with approvals, reason tracking, audit, financial impact.
+
+
 
 
 

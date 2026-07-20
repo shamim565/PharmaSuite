@@ -33,6 +33,9 @@ class Payment(BaseModel):
         "accounting.FinancialAccount", on_delete=models.PROTECT, related_name="customer_payments"
     )
     reference = models.CharField(max_length=80, blank=True)
+    collector = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="collected_payments"
+    )
     status = models.CharField(max_length=10, choices=PaymentStatus.choices, default=PaymentStatus.ACTIVE)
     reversal_of = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversed_by"

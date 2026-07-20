@@ -35,6 +35,7 @@ def record_customer_payment(
     reference: str = "",
     allocations: list[dict] | None = None,
     actor=None,
+    collector=None,
     idempotency_key: str | None = None,
 ) -> Payment:
     customer = Customer.objects.select_for_update().get(id=customer.id)
@@ -98,6 +99,7 @@ def record_customer_payment(
         method=method,
         account=account,
         reference=reference,
+        collector=collector or (actor if getattr(actor, "is_authenticated", False) else None),
         idempotency_key=idempotency_key,
     )
 

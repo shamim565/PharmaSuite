@@ -1,12 +1,13 @@
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.accounting.models import FinancialAccount
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
-from apps.payments.models import Payment
+from apps.payments.models import Payment, PaymentStatus
 from apps.payments.serializers import (
     CustomerPaymentCreateSerializer,
     CustomerPaymentReadSerializer,
@@ -79,6 +80,7 @@ class CustomerPaymentViewSet(
             reference=data.get("reference", ""),
             allocations=allocations,
             actor=request.user,
+            collector=request.user,
             idempotency_key=request.headers.get("Idempotency-Key"),
         )
         return Response(
@@ -91,3 +93,53 @@ class CustomerPaymentViewSet(
             payment=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
         )
         return Response(CustomerPaymentReadSerializer(payment).data)
+
+
+class DailyCollectionView(APIView):
+    permission_classes = [HasPermission]
+    required_permissions = ["PAYMENT_VIEW"]
+
+    def get(self, request):
+        from django.db.models import Count, Sum
+        from django.utils import timezone
+
+        date = request.query_params.get("date") or timezone.localdate().isoformat()
+        queryset = Payment.objects.filter(status=PaymentStatus.ACTIVE, business_date=date)
+        user = request.user
+        if not (user.is_superuser or user.has_all_branch_scope):
+            queryset = queryset.filter(branch_id__in=user.branch_ids)
+        if request.query_params.get("branch"):
+            queryset = queryset.filter(branch_id=request.query_params["branch"])
+
+        by_method = list(
+            queryset.values("method")
+            .annotate(total=Sum("amount"), count=Count("id"))
+            .order_by("method")
+        )
+        by_collector = list(
+            queryset.values("collector__full_name", "collector_id")
+            .annotate(total=Sum("amount"), count=Count("id"))
+            .order_by("collector__full_name")
+        )
+        grand_total = queryset.aggregate(total=Sum("amount"))["total"]
+
+        return Response(
+            {
+                "date": date,
+                "payment_count": queryset.count(),
+                "total": str(grand_total or 0),
+                "by_method": [
+                    {"method": row["method"], "total": str(row["total"]), "count": row["count"]}
+                    for row in by_method
+                ],
+                "by_collector": [
+                    {
+                        "collector": row["collector_id"],
+                        "collector_name": row["collector__full_name"] or "—",
+                        "total": str(row["total"]),
+                        "count": row["count"],
+                    }
+                    for row in by_collector
+                ],
+            }
+        )

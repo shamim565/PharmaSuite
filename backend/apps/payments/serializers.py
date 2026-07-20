@@ -31,6 +31,7 @@ class CustomerPaymentReadSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source="customer.name", read_only=True)
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     account_name = serializers.CharField(source="account.name", read_only=True)
+    collector_name = serializers.CharField(source="collector.full_name", read_only=True, default="")
     allocations = PaymentAllocationReadSerializer(many=True, read_only=True)
 
     class Meta:
@@ -48,6 +49,7 @@ class CustomerPaymentReadSerializer(serializers.ModelSerializer):
             "account",
             "account_name",
             "reference",
+            "collector_name",
             "status",
             "allocations",
             "created_at",

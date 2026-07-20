@@ -12,6 +12,8 @@ type NavItem = { href: string; label: string; permission: string; icon: string }
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", permission: "DASHBOARD_VIEW", icon: "▦" },
   { href: "/sales", label: "Sales", permission: "SALE_VIEW", icon: "🧾" },
+  { href: "/dues", label: "Dues", permission: "PAYMENT_VIEW", icon: "⏳" },
+  { href: "/payments", label: "Payments", permission: "PAYMENT_VIEW", icon: "💵" },
   { href: "/purchases", label: "Purchases", permission: "PURCHASE_VIEW", icon: "⇄" },
   { href: "/inventory", label: "Inventory", permission: "STOCK_VIEW", icon: "▣" },
   { href: "/items", label: "Items", permission: "MEDICINE_VIEW", icon: "℞" },

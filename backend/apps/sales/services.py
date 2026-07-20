@@ -8,8 +8,9 @@ from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
+from django.conf import settings
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
 from django.utils import timezone
 
 from apps.catalog.models import BatchStatus, MedicineBatch
@@ -207,6 +208,27 @@ def confirm_sale(
             "Customer is on credit hold; new sales are blocked.",
             status_code=409,
         )
+
+    block_days = getattr(settings, "CUSTOMER_OVERDUE_BLOCK_DAYS", 30)
+    overdue_cutoff = invoice.business_date - timedelta(days=block_days)
+    has_past_due = SalesInvoice.objects.filter(
+        customer=customer,
+        lifecycle=SalesInvoiceStatus.CONFIRMED,
+        due_date__lt=overdue_cutoff,
+        paid_total__lt=F("grand_total"),
+    ).exists()
+    if has_past_due:
+        if not allow_credit_override:
+            raise APIError(
+                "CUSTOMER_PAST_DUE",
+                (
+                    f"Customer has invoices overdue by more than {block_days} days. "
+                    "Collect dues or use a credit override."
+                ),
+                status_code=409,
+            )
+        invoice.credit_override = True
+        invoice.credit_override_reason = credit_override_reason or "past-due override"
     if customer.credit_limit > 0:
         projected = customer.balance_cache + invoice.grand_total
         if projected > customer.credit_limit:
