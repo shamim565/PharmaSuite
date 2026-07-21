@@ -11,14 +11,22 @@ from apps.accounting.models import FinancialAccount
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
-from apps.sales.models import Customer, SalesInvoice
+from apps.sales.models import Customer, SalesInvoice, SalesReturn
 from apps.sales.serializers import (
     CustomerLedgerEntrySerializer,
     CustomerSerializer,
     SalesInvoiceReadSerializer,
     SalesInvoiceWriteSerializer,
+    SalesReturnCreateSerializer,
+    SalesReturnReadSerializer,
 )
-from apps.sales.services import cancel_sale, confirm_sale, fefo_candidates
+from apps.sales.services import (
+    cancel_sale,
+    confirm_sale,
+    confirm_sales_return,
+    create_sales_return,
+    fefo_candidates,
+)
 
 
 def scoped_sales(user, queryset):
@@ -346,3 +354,71 @@ class ReceivableAgingView(APIView):
                 "results": [as_strings(row) for row in results],
             }
         )
+
+
+class SalesReturnViewSet(
+    PermissionMappedMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_map = {
+        "list": ["SRET_VIEW"],
+        "retrieve": ["SRET_VIEW"],
+        "create": ["SRET_CONFIRM"],
+        "destroy": ["SRET_CONFIRM"],
+        "confirm": ["SRET_CONFIRM"],
+    }
+    permission_classes = [HasPermission]
+    queryset = SalesReturn.objects.select_related("customer", "invoice", "branch").prefetch_related(
+        "items__invoice_item__medicine", "items__batch"
+    )
+    filterset_fields = ["customer", "branch", "status", "reason_code"]
+    search_fields = ["number", "invoice__number", "customer__name"]
+    ordering = ["-business_date", "-created_at"]
+    serializer_class = SalesReturnReadSerializer
+
+    def get_queryset(self):
+        return scoped_sales(self.request.user, super().get_queryset())
+
+    def create(self, request, *args, **kwargs):
+        serializer = SalesReturnCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        invoice = SalesInvoice.objects.filter(id=data["invoice"]).first()
+        if invoice is None:
+            raise APIError("INVALID_INVOICE", "Invoice not found.")
+        refund_account = None
+        if data.get("refund_account"):
+            refund_account = FinancialAccount.objects.filter(id=data["refund_account"]).first()
+            if refund_account is None:
+                raise APIError("INVALID_ACCOUNT", "Refund account not found.")
+
+        sales_return = create_sales_return(
+            invoice=invoice,
+            reason_code=data["reason_code"],
+            refund_method=data["refund_method"],
+            refund_account=refund_account,
+            business_date=data.get("business_date"),
+            notes=data.get("notes", ""),
+            items_data=data["items"],
+            actor=request.user,
+        )
+        return Response(
+            SalesReturnReadSerializer(sales_return).data, status=status.HTTP_201_CREATED
+        )
+
+    @action(detail=True, methods=["post"])
+    def confirm(self, request, pk=None):
+        sales_return = confirm_sales_return(sales_return=self.get_object(), actor=request.user)
+        return Response(SalesReturnReadSerializer(sales_return).data)
+
+    def destroy(self, request, *args, **kwargs):
+        sales_return = self.get_object()
+        if sales_return.status != "DRAFT":
+            raise APIError("INVALID_STATUS_TRANSITION", "Only draft returns can be deleted.")
+        sales_return.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

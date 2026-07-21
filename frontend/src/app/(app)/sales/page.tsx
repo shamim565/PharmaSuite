@@ -54,6 +54,13 @@ export default function SalesPage() {
   const [payReference, setPayReference] = useState("");
   const [creditOverride, setCreditOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
+  const [returnFor, setReturnFor] = useState<SalesInvoice | null>(null);
+  const [returnItemId, setReturnItemId] = useState("");
+  const [returnQty, setReturnQty] = useState("");
+  const [returnCondition, setReturnCondition] = useState("RESELLABLE");
+  const [returnReason, setReturnReason] = useState("CUSTOMER_RETURN");
+  const [returnRefundMethod, setReturnRefundMethod] = useState("CUSTOMER_CREDIT");
+  const [returnAccountId, setReturnAccountId] = useState("");
 
   const salesQuery = useQuery({
     queryKey: ["sales", search],
@@ -79,6 +86,7 @@ export default function SalesPage() {
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["sales"] });
+    queryClient.invalidateQueries({ queryKey: ["sales-returns"] });
     queryClient.invalidateQueries({ queryKey: ["inventory"] });
     queryClient.invalidateQueries({ queryKey: ["customers"] });
     queryClient.invalidateQueries({ queryKey: ["batches"] });
@@ -150,6 +158,39 @@ export default function SalesPage() {
       api.post(`/sales/${invoice.id}/cancel/`, { reason: "Cancelled from sales register" }),
     onSuccess: () => invalidateAll(),
   });
+
+  const returnMutation = useMutation({
+    mutationFn: async () => {
+      const draft = await api.post<{ id: string }>("/sales-returns/", {
+        invoice: returnFor?.id,
+        reason_code: returnReason,
+        refund_method: returnRefundMethod,
+        refund_account:
+          returnRefundMethod === "CASH" || returnRefundMethod === "BANK" ? returnAccountId : null,
+        items: [{ invoice_item: returnItemId, qty: returnQty, condition: returnCondition }],
+      });
+      return api.post(`/sales-returns/${draft.id}/confirm/`, {});
+    },
+    onSuccess: () => {
+      setReturnFor(null);
+      setReturnItemId("");
+      setReturnQty("");
+      invalidateAll();
+    },
+  });
+
+  const openReturn = (invoice: SalesInvoice) => {
+    const firstReturnable = invoice.items.find((item) => Number(item.qty) > 0);
+    setReturnFor(invoice);
+    setReturnItemId(firstReturnable?.id ?? "");
+    setReturnQty("");
+    setReturnCondition("RESELLABLE");
+    setReturnReason("CUSTOMER_RETURN");
+    setReturnRefundMethod("CUSTOMER_CREDIT");
+    setReturnAccountId(accountsQuery.data?.results[0]?.id ?? "");
+  };
+
+  const selectedReturnItem = returnFor?.items.find((item) => item.id === returnItemId);
 
   const openConfirm = (invoice: SalesInvoice) => {
     setConfirmFor(invoice);
@@ -423,6 +464,109 @@ export default function SalesPage() {
         </Card>
       ) : null}
 
+      {returnFor ? (
+        <Card>
+          <CardHeader
+            title={`Return against ${returnFor.number}`}
+            subtitle={`${returnFor.customer_name} · resellable goods are restocked; damaged/expired go to quarantine.`}
+            action={
+              <Button size="sm" variant="secondary" onClick={() => setReturnFor(null)}>
+                Cancel
+              </Button>
+            }
+          />
+          <div className="space-y-3 p-4">
+            <ErrorBanner error={returnMutation.error} />
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="col-span-2">
+                <Field label="Invoice line">
+                  <Select
+                    value={returnItemId}
+                    onChange={(e) => {
+                      setReturnItemId(e.target.value);
+                      setReturnQty("");
+                    }}
+                  >
+                    <option value="">Select…</option>
+                    {returnFor.items.map((item) => {
+                      const returnable = Number(item.qty) - Number(item.returned_qty ?? 0);
+                      return (
+                        <option key={item.id} value={item.id} disabled={returnable <= 0}>
+                          {item.medicine_name} · {item.batch_number} · returnable {returnable.toFixed(3)}
+                        </option>
+                      );
+                    })}
+                  </Select>
+                </Field>
+              </div>
+              <Field label="Quantity">
+                <Input
+                  type="number"
+                  step="0.001"
+                  min="0.001"
+                  value={returnQty}
+                  onChange={(e) => setReturnQty(e.target.value)}
+                />
+              </Field>
+              <Field label="Condition">
+                <Select value={returnCondition} onChange={(e) => setReturnCondition(e.target.value)}>
+                  <option value="RESELLABLE">Resellable (restock)</option>
+                  <option value="DAMAGED">Damaged (quarantine)</option>
+                  <option value="EXPIRED">Expired (quarantine)</option>
+                </Select>
+              </Field>
+              <Field label="Reason">
+                <Select value={returnReason} onChange={(e) => setReturnReason(e.target.value)}>
+                  <option value="CUSTOMER_RETURN">Customer return</option>
+                  <option value="DAMAGED">Damaged</option>
+                  <option value="EXPIRED_AT_CUSTOMER">Expired at customer</option>
+                  <option value="WRONG_ITEM">Wrong item</option>
+                  <option value="EXCESS_SUPPLY">Excess supply</option>
+                </Select>
+              </Field>
+              <Field label="Refund method">
+                <Select value={returnRefundMethod} onChange={(e) => setReturnRefundMethod(e.target.value)}>
+                  <option value="CUSTOMER_CREDIT">Customer credit</option>
+                  <option value="ADJUST_DUES">Adjust dues</option>
+                  <option value="CASH">Cash refund</option>
+                  <option value="BANK">Bank refund</option>
+                </Select>
+              </Field>
+              {returnRefundMethod === "CASH" || returnRefundMethod === "BANK" ? (
+                <Field label="Refund account">
+                  <Select value={returnAccountId} onChange={(e) => setReturnAccountId(e.target.value)}>
+                    <option value="">Select…</option>
+                    {accountsQuery.data?.results.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name} ({account.balance_cache})
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              ) : null}
+            </div>
+            {selectedReturnItem ? (
+              <p className="text-xs text-slate-500">
+                Returnable now:{" "}
+                {(Number(selectedReturnItem.qty) - Number(selectedReturnItem.returned_qty ?? 0)).toFixed(3)} · unit
+                price {selectedReturnItem.unit_price}
+              </p>
+            ) : null}
+            <Button
+              onClick={() => returnMutation.mutate()}
+              disabled={
+                returnMutation.isPending ||
+                !returnItemId ||
+                !returnQty ||
+                ((returnRefundMethod === "CASH" || returnRefundMethod === "BANK") && !returnAccountId)
+              }
+            >
+              {returnMutation.isPending ? "Processing…" : "Create & confirm return"}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader
           title="Sales register"
@@ -490,6 +634,11 @@ export default function SalesPage() {
                         disabled={cancelMutation.isPending}
                       >
                         Cancel
+                      </Button>
+                    ) : null}
+                    {invoice.lifecycle === "CONFIRMED" && invoice.return_status !== "FULLY_RETURNED" ? (
+                      <Button size="sm" variant="secondary" onClick={() => openReturn(invoice)}>
+                        Return
                       </Button>
                     ) : null}
                     <Link href={`/sales/${invoice.id}`}>

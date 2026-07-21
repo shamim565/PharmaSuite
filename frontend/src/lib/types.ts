@@ -425,6 +425,7 @@ export type SalesInvoiceItem = {
   line_total: string;
   unit_cost: string;
   is_free_goods: boolean;
+  returned_qty: string;
 };
 
 export type SalesInvoice = {
@@ -548,4 +549,79 @@ export type DailyCollectionReport = {
   total: string;
   by_method: { method: string; total: string; count: number }[];
   by_collector: { collector: string | null; collector_name: string; total: string; count: number }[];
+};
+
+export type SalesReturnItem = {
+  id: string;
+  invoice_item: string;
+  line_no: number;
+  medicine_name: string;
+  medicine_code: string;
+  batch: string;
+  batch_number: string;
+  qty: string;
+  condition: "RESELLABLE" | "DAMAGED" | "EXPIRED";
+  unit_price: string;
+  discount_reversal: string;
+  vat_reversal: string;
+  unit_cost: string;
+  restocked: boolean;
+};
+
+export type SalesReturn = {
+  id: string;
+  number: string | null;
+  invoice: string;
+  invoice_number: string;
+  customer: string;
+  customer_name: string;
+  branch: string;
+  business_date: string;
+  reason_code: string;
+  status: "DRAFT" | "CONFIRMED" | "REVERSED";
+  refund_method: string;
+  refund_account: string | null;
+  subtotal: string;
+  discount_reversal: string;
+  vat_reversal: string;
+  round_off: string;
+  grand_total: string;
+  notes: string;
+  confirmed_at: string | null;
+  created_at: string;
+  items: SalesReturnItem[];
+};
+
+export type StockAdjustmentItem = {
+  id: string;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  batch: string;
+  batch_number: string;
+  qty: string;
+  pool: "SALEABLE" | "PROMO" | "QUARANTINE";
+  target_pool: "SALEABLE" | "PROMO" | "QUARANTINE" | null;
+  unit_cost: string;
+};
+
+export type StockAdjustment = {
+  id: string;
+  number: string | null;
+  branch: string;
+  branch_name: string;
+  business_date: string;
+  adjustment_type: "INCREASE" | "DECREASE";
+  reason_code: string;
+  status: "PENDING_APPROVAL" | "POSTED" | "REJECTED" | "REVERSED";
+  total_value: string;
+  requested_by_name: string;
+  approved_by_name: string;
+  approved_at: string | null;
+  posted_at: string | null;
+  rejection_reason: string;
+  reversal_of: string | null;
+  notes: string;
+  created_at: string;
+  items: StockAdjustmentItem[];
 };

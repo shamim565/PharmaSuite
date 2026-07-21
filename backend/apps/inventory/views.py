@@ -3,18 +3,28 @@ from decimal import Decimal
 
 from django.db.models import Q, Sum
 from django.utils import timezone
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.catalog.models import BatchStatus
+from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
-from apps.inventory.models import InventoryTransaction, StockBalance
+from apps.inventory.models import InventoryTransaction, StockAdjustment, StockBalance
 from apps.inventory.serializers import (
     InventoryTransactionSerializer,
+    StockAdjustmentCreateSerializer,
+    StockAdjustmentReadSerializer,
     StockBalanceSerializer,
 )
-from apps.inventory.services import ledger_quantities
+from apps.inventory.services import (
+    approve_stock_adjustment,
+    create_stock_adjustment,
+    ledger_quantities,
+    reject_stock_adjustment,
+    reverse_stock_adjustment,
+)
 
 DEFAULT_NEAR_EXPIRY_DAYS = 90
 MAX_NEAR_EXPIRY_SCAN_DAYS = 366
@@ -260,3 +270,92 @@ class LedgerIntegrityView(APIView):
                 "mismatches": mismatches,
             }
         )
+
+
+class StockAdjustmentViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [HasPermission]
+    serializer_class = StockAdjustmentReadSerializer
+    queryset = StockAdjustment.objects.select_related("branch", "requested_by", "approved_by").prefetch_related(
+        "items__medicine", "items__batch"
+    )
+    filterset_fields = ["branch", "status", "adjustment_type", "reason_code"]
+    search_fields = ["number", "notes", "items__medicine__name"]
+    ordering = ["-business_date", "-created_at"]
+
+    def get_permissions(self):
+        return [HasPermission()]
+
+    @property
+    def required_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return ["STOCK_VIEW"]
+        return ["STOCK_ADJUST"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        branches = scoped_branch_ids(self.request.user)
+        if branches is not None:
+            qs = qs.filter(branch_id__in=branches)
+        return qs
+
+    def create(self, request):
+        serializer = StockAdjustmentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        from apps.branches.models import Branch
+        from apps.catalog.models import MedicineBatch
+
+        branch = Branch.objects.filter(id=data["branch"]).first()
+        if branch is None:
+            raise APIError("INVALID_BRANCH", "Branch not found.")
+
+        items_data = []
+        for row in data["items"]:
+            batch = (
+                MedicineBatch.objects.select_related("medicine")
+                .filter(id=row["batch"])
+                .first()
+            )
+            if batch is None:
+                raise APIError("INVALID_BATCH", "Batch not found.")
+            if str(batch.medicine_id) != str(row["medicine"]):
+                raise APIError("INVALID_BATCH", "Batch does not belong to the selected medicine.")
+            items_data.append({**row, "batch": batch, "medicine": batch.medicine})
+
+        adjustment = create_stock_adjustment(
+            branch=branch,
+            adjustment_type=data["adjustment_type"],
+            reason_code=data["reason_code"],
+            business_date=data.get("business_date"),
+            notes=data.get("notes", ""),
+            items_data=items_data,
+            actor=request.user,
+        )
+        return Response(
+            StockAdjustmentReadSerializer(adjustment).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        adjustment = approve_stock_adjustment(adjustment=self.get_object(), actor=request.user)
+        return Response(StockAdjustmentReadSerializer(adjustment).data)
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        adjustment = reject_stock_adjustment(
+            adjustment=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
+        )
+        return Response(StockAdjustmentReadSerializer(adjustment).data)
+
+    @action(detail=True, methods=["post"])
+    def reverse(self, request, pk=None):
+        adjustment = reverse_stock_adjustment(
+            adjustment=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
+        )
+        return Response(StockAdjustmentReadSerializer(adjustment).data)

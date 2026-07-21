@@ -11,12 +11,23 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.catalog.models import BatchStatus
+from apps.catalog.models import BatchStatus, MedicineBatch
 from apps.common.exceptions import APIError
-from apps.inventory.models import EntryType, InventoryTransaction, StockBalance, StockPool
+from apps.common.models import DocumentType
+from apps.common.numbering import allocate_number
+from apps.inventory.models import (
+    AdjustmentStatus,
+    EntryType,
+    InventoryTransaction,
+    StockAdjustment,
+    StockAdjustmentItem,
+    StockBalance,
+    StockPool,
+)
 
 POOL_FIELD = {
     StockPool.SALEABLE: "qty_on_hand",
@@ -148,6 +159,8 @@ def post_transactions(
             batch.qty_on_hand = balance.qty_on_hand
             if balance.qty_on_hand <= 0 and batch.status == BatchStatus.ACTIVE:
                 batch.status = BatchStatus.DEPLETED
+            elif balance.qty_on_hand > 0 and batch.status == BatchStatus.DEPLETED:
+                batch.status = BatchStatus.ACTIVE
             batch.save(update_fields=["qty_on_hand", "status", "updated_at"])
 
     return postings
@@ -175,3 +188,195 @@ def ledger_quantities(branch, medicine, batch) -> dict[str, Decimal]:
     for row in rows:
         totals[row["pool"]] = row["total"] or Decimal("0")
     return totals
+
+
+# --------------------------------------------------------------------------- stock adjustments
+
+REASON_ENTRY_TYPE = {
+    "DAMAGE": EntryType.DAMAGE,
+    "EXPIRY_WRITE_OFF": EntryType.EXPIRY,
+    "RECALL_DISPOSAL": EntryType.EXPIRY,
+}
+
+
+def _movement_lines_for(adjustment: StockAdjustment) -> list[MovementLine]:
+    lines: list[MovementLine] = []
+    sign = Decimal("1") if adjustment.adjustment_type == "INCREASE" else Decimal("-1")
+    for item in adjustment.items.select_related("medicine", "batch"):
+        lines.append(
+            MovementLine(
+                medicine=item.medicine,
+                batch=item.batch,
+                qty_delta=sign * item.qty,
+                unit_cost=item.unit_cost,
+                pool=item.pool,
+            )
+        )
+        if adjustment.adjustment_type == "DECREASE" and item.target_pool:
+            lines.append(
+                MovementLine(
+                    medicine=item.medicine,
+                    batch=item.batch,
+                    qty_delta=item.qty,
+                    unit_cost=item.unit_cost,
+                    pool=item.target_pool,
+                )
+            )
+    return lines
+
+
+def _post_stock_adjustment(adjustment: StockAdjustment, actor) -> None:
+    post_transactions(
+        branch=adjustment.branch,
+        lines=_movement_lines_for(adjustment),
+        entry_type=REASON_ENTRY_TYPE.get(adjustment.reason_code, EntryType.ADJUSTMENT),
+        source_type="STOCK_ADJUSTMENT",
+        source_id=adjustment.id,
+        source_number=adjustment.number or "",
+        business_date=adjustment.business_date,
+        actor=actor,
+    )
+    adjustment.number = adjustment.number or allocate_number(
+        branch=adjustment.branch,
+        doc_type=DocumentType.ADJUSTMENT,
+        business_date=adjustment.business_date,
+    )
+    adjustment.status = AdjustmentStatus.POSTED
+    adjustment.posted_at = timezone.now()
+    adjustment.save(update_fields=["number", "status", "posted_at", "updated_at"])
+
+
+@transaction.atomic
+def create_stock_adjustment(
+    *,
+    branch,
+    adjustment_type: str,
+    reason_code: str,
+    business_date=None,
+    notes: str = "",
+    items_data: list[dict],
+    actor=None,
+) -> StockAdjustment:
+    if not items_data:
+        raise APIError("EMPTY_ADJUSTMENT", "A stock adjustment must have at least one line.")
+
+    adjustment = StockAdjustment.objects.create(
+        branch=branch,
+        business_date=business_date or timezone.localdate(),
+        adjustment_type=adjustment_type,
+        reason_code=reason_code,
+        notes=notes,
+        requested_by=actor if getattr(actor, "is_authenticated", False) else None,
+    )
+
+    total_value = Decimal("0")
+    for row in items_data:
+        batch: MedicineBatch = row["batch"]
+        unit_cost = Decimal(row.get("unit_cost") or batch.unit_cost or 0)
+        StockAdjustmentItem.objects.create(
+            adjustment=adjustment,
+            medicine=row["medicine"],
+            batch=batch,
+            qty=Decimal(row["qty"]),
+            pool=row.get("pool") or StockPool.SALEABLE,
+            target_pool=row.get("target_pool"),
+            unit_cost=unit_cost,
+        )
+        total_value += Decimal(row["qty"]) * unit_cost
+
+    adjustment.total_value = total_value.quantize(Decimal("0.01"))
+    threshold = Decimal(str(getattr(settings, "STOCK_ADJUSTMENT_APPROVAL_THRESHOLD", "5000")))
+
+    if total_value > threshold:
+        adjustment.status = AdjustmentStatus.PENDING_APPROVAL
+        adjustment.save(update_fields=["total_value", "status", "updated_at"])
+    else:
+        adjustment.save(update_fields=["total_value", "updated_at"])
+        _post_stock_adjustment(adjustment, actor)
+    return adjustment
+
+
+@transaction.atomic
+def approve_stock_adjustment(*, adjustment: StockAdjustment, actor) -> StockAdjustment:
+    adjustment = StockAdjustment.objects.select_for_update().get(id=adjustment.id)
+    if adjustment.status != AdjustmentStatus.PENDING_APPROVAL:
+        raise APIError("INVALID_STATUS_TRANSITION", "Only pending adjustments can be approved.")
+    if actor.id == adjustment.requested_by_id:
+        raise APIError(
+            "SELF_APPROVAL_NOT_ALLOWED",
+            "The requester cannot approve their own adjustment (dual control).",
+            status_code=403,
+        )
+    adjustment.approved_by = actor
+    adjustment.approved_at = timezone.now()
+    adjustment.save(update_fields=["approved_by", "approved_at", "updated_at"])
+    _post_stock_adjustment(adjustment, actor)
+    return adjustment
+
+
+@transaction.atomic
+def reject_stock_adjustment(
+    *, adjustment: StockAdjustment, actor, reason: str = ""
+) -> StockAdjustment:
+    adjustment = StockAdjustment.objects.select_for_update().get(id=adjustment.id)
+    if adjustment.status != AdjustmentStatus.PENDING_APPROVAL:
+        raise APIError("INVALID_STATUS_TRANSITION", "Only pending adjustments can be rejected.")
+    if actor.id == adjustment.requested_by_id:
+        raise APIError(
+            "SELF_APPROVAL_NOT_ALLOWED",
+            "The requester cannot reject their own adjustment (dual control).",
+            status_code=403,
+        )
+    adjustment.status = AdjustmentStatus.REJECTED
+    adjustment.rejection_reason = reason
+    adjustment.approved_by = actor
+    adjustment.approved_at = timezone.now()
+    adjustment.save(update_fields=["status", "rejection_reason", "approved_by", "approved_at", "updated_at"])
+    return adjustment
+
+
+@transaction.atomic
+def reverse_stock_adjustment(
+    *, adjustment: StockAdjustment, actor, reason: str = ""
+) -> StockAdjustment:
+    adjustment = StockAdjustment.objects.select_for_update().get(id=adjustment.id)
+    if adjustment.status != AdjustmentStatus.POSTED:
+        raise APIError("INVALID_STATUS_TRANSITION", "Only posted adjustments can be reversed.")
+
+    reversal_lines: list[MovementLine] = []
+    for item in adjustment.items.select_related("medicine", "batch"):
+        sign = Decimal("-1") if adjustment.adjustment_type == "INCREASE" else Decimal("1")
+        reversal_lines.append(
+            MovementLine(
+                medicine=item.medicine,
+                batch=item.batch,
+                qty_delta=sign * item.qty,
+                unit_cost=item.unit_cost,
+                pool=item.pool,
+            )
+        )
+        if adjustment.adjustment_type == "DECREASE" and item.target_pool:
+            reversal_lines.append(
+                MovementLine(
+                    medicine=item.medicine,
+                    batch=item.batch,
+                    qty_delta=-item.qty,
+                    unit_cost=item.unit_cost,
+                    pool=item.target_pool,
+                )
+            )
+
+    post_transactions(
+        branch=adjustment.branch,
+        lines=reversal_lines,
+        entry_type=EntryType.REVERSAL,
+        source_type="STOCK_ADJUSTMENT_REVERSAL",
+        source_id=adjustment.id,
+        source_number=adjustment.number or "",
+        business_date=timezone.localdate(),
+        actor=actor,
+    )
+    adjustment.status = AdjustmentStatus.REVERSED
+    adjustment.notes = (adjustment.notes + f"\nReversed: {reason}").strip()
+    adjustment.save(update_fields=["status", "notes", "updated_at"])
+    return adjustment

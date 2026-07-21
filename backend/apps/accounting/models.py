@@ -21,6 +21,7 @@ class FinancialEntryType(models.TextChoices):
     WITHDRAWAL = "WITHDRAWAL", "Withdrawal"
     TRANSFER_IN = "TRANSFER_IN", "Transfer in"
     TRANSFER_OUT = "TRANSFER_OUT", "Transfer out"
+    REFUND = "REFUND", "Customer refund"
 
 
 class FinancialAccount(BaseModel):

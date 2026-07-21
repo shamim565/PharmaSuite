@@ -13,19 +13,27 @@ from django.db import transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 
+from apps.accounting.models import FinancialEntryType
+from apps.accounting.services import post_account_transaction
 from apps.catalog.models import BatchStatus, MedicineBatch
 from apps.common.exceptions import APIError
 from apps.common.models import DocumentType
 from apps.common.numbering import allocate_number
-from apps.inventory.models import EntryType
+from apps.inventory.models import EntryType, StockPool
 from apps.inventory.services import MovementLine, post_transactions
 from apps.sales.models import (
     Customer,
     CustomerLedgerEntry,
     CustomerLedgerEntryType,
+    RefundMethod,
+    ReturnCondition,
     SalesInvoice,
     SalesInvoiceItem,
     SalesInvoiceStatus,
+    SalesReturn,
+    SalesReturnDocStatus,
+    SalesReturnItem,
+    SalesReturnStatus,
 )
 
 TWO = Decimal("0.01")
@@ -431,3 +439,213 @@ def cancel_sale(*, invoice: SalesInvoice, actor, reason: str = "") -> SalesInvoi
     invoice.cancel_reason = reason
     invoice.save(update_fields=["lifecycle", "cancel_reason", "updated_at"])
     return invoice
+
+
+# --------------------------------------------------------------------------- sales returns
+
+
+@transaction.atomic
+def create_sales_return(
+    *,
+    invoice: SalesInvoice,
+    reason_code: str,
+    refund_method: str,
+    refund_account=None,
+    business_date=None,
+    notes: str = "",
+    items_data: list[dict],
+    actor=None,
+) -> SalesReturn:
+    invoice = (
+        SalesInvoice.objects.select_for_update()
+        .select_related("customer", "branch")
+        .get(id=invoice.id)
+    )
+    if invoice.lifecycle != SalesInvoiceStatus.CONFIRMED:
+        raise APIError("INVALID_STATUS_TRANSITION", "Only confirmed invoices can be returned.")
+    if refund_method in (RefundMethod.CASH, RefundMethod.BANK) and refund_account is None:
+        raise APIError(
+            "REFUND_ACCOUNT_REQUIRED", "A refund account is required for cash/bank refunds."
+        )
+
+    sales_return = SalesReturn.objects.create(
+        invoice=invoice,
+        customer=invoice.customer,
+        branch=invoice.branch,
+        business_date=business_date or timezone.localdate(),
+        reason_code=reason_code,
+        refund_method=refund_method,
+        refund_account=refund_account,
+        notes=notes,
+    )
+
+    seen: set = set()
+    for row in items_data:
+        item = SalesInvoiceItem.objects.select_for_update().get(id=row["invoice_item"])
+        if item.invoice_id != invoice.id:
+            raise APIError("INVALID_RETURN_LINE", "Return line does not belong to the invoice.")
+        if item.id in seen:
+            raise APIError("DUPLICATE_RETURN_LINE", "Duplicate return lines are not allowed.")
+        seen.add(item.id)
+        if item.batch_id is None:
+            raise APIError("INVALID_RETURN_LINE", "Invoice line has no batch.")
+        qty = Decimal(row["qty"])
+        if qty > item.returnable_qty:
+            raise APIError(
+                "RETURN_EXCEEDS_SALE",
+                f"Line {item.line_no}: max returnable is {item.returnable_qty}.",
+                status_code=409,
+            )
+        SalesReturnItem.objects.create(
+            sales_return=sales_return,
+            invoice_item=item,
+            batch=item.batch,
+            qty=qty,
+            condition=row["condition"],
+        )
+    return sales_return
+
+
+@transaction.atomic
+def confirm_sales_return(*, sales_return: SalesReturn, actor) -> SalesReturn:
+    sales_return = (
+        SalesReturn.objects.select_for_update()
+        .select_related("invoice", "customer", "branch")
+        .get(id=sales_return.id)
+    )
+    if sales_return.status == SalesReturnDocStatus.CONFIRMED:
+        return sales_return
+    if sales_return.status != SalesReturnDocStatus.DRAFT:
+        raise APIError("INVALID_STATUS_TRANSITION", "Only draft returns can be confirmed.")
+
+    items = list(sales_return.items.select_related("invoice_item", "batch__medicine"))
+    if not items:
+        raise APIError("EMPTY_RETURN", "A sales return must have at least one line.")
+
+    today = timezone.localdate()
+    movement_lines: list[MovementLine] = []
+    subtotal = Decimal("0")
+    discount_total = Decimal("0")
+    vat_total = Decimal("0")
+
+    for ret_item in items:
+        invoice_item = SalesInvoiceItem.objects.select_for_update().get(id=ret_item.invoice_item_id)
+        if ret_item.qty > invoice_item.returnable_qty:
+            raise APIError(
+                "RETURN_EXCEEDS_SALE",
+                f"Line {invoice_item.line_no}: max returnable is {invoice_item.returnable_qty}.",
+                status_code=409,
+            )
+
+        share = ret_item.qty / invoice_item.qty if invoice_item.qty else Decimal("0")
+        discount_share = money(invoice_item.line_discount * share)
+        vat_share = money(invoice_item.vat_amount * share)
+        restock = (
+            ret_item.condition == ReturnCondition.RESELLABLE
+            and (ret_item.batch.expiry_date is None or ret_item.batch.expiry_date >= today)
+            and ret_item.batch.status != BatchStatus.RECALLED
+        )
+
+        ret_item.unit_price = invoice_item.unit_price
+        ret_item.discount_reversal = discount_share
+        ret_item.vat_reversal = vat_share
+        ret_item.unit_cost = invoice_item.unit_cost
+        ret_item.restocked = restock
+        ret_item.save(
+            update_fields=[
+                "unit_price",
+                "discount_reversal",
+                "vat_reversal",
+                "unit_cost",
+                "restocked",
+                "updated_at",
+            ]
+        )
+
+        subtotal += money(ret_item.qty * invoice_item.unit_price)
+        discount_total += discount_share
+        vat_total += vat_share
+        movement_lines.append(
+            MovementLine(
+                medicine=ret_item.batch.medicine,
+                batch=ret_item.batch,
+                qty_delta=ret_item.qty,
+                unit_cost=invoice_item.unit_cost,
+                pool=StockPool.SALEABLE if restock else StockPool.QUARANTINE,
+            )
+        )
+
+        invoice_item.returned_qty = invoice_item.returned_qty + ret_item.qty
+        invoice_item.save(update_fields=["returned_qty", "updated_at"])
+
+    net_total = money(subtotal - discount_total + vat_total)
+    grand_total = net_total.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    sales_return.subtotal = money(subtotal)
+    sales_return.discount_reversal = money(discount_total)
+    sales_return.vat_reversal = money(vat_total)
+    sales_return.round_off = money(grand_total - net_total)
+    sales_return.grand_total = money(grand_total)
+    sales_return.number = allocate_number(
+        branch=sales_return.branch,
+        doc_type=DocumentType.CREDIT_NOTE,
+        business_date=sales_return.business_date,
+    )
+    sales_return.status = SalesReturnDocStatus.CONFIRMED
+    sales_return.confirmed_at = timezone.now()
+    sales_return.confirmed_by = actor if getattr(actor, "is_authenticated", False) else None
+    sales_return.save()
+
+    post_transactions(
+        branch=sales_return.branch,
+        lines=movement_lines,
+        entry_type=EntryType.SALES_RETURN,
+        source_type="SALES_RETURN",
+        source_id=sales_return.id,
+        source_number=sales_return.number,
+        business_date=sales_return.business_date,
+        actor=actor,
+    )
+    post_customer_ledger_entry(
+        customer=sales_return.customer,
+        branch=sales_return.branch,
+        entry_type=CustomerLedgerEntryType.SALES_RETURN,
+        amount_delta=-sales_return.grand_total,
+        source_type="SALES_RETURN",
+        source_id=sales_return.id,
+        source_number=sales_return.number,
+        business_date=sales_return.business_date,
+        actor=actor,
+    )
+
+    if sales_return.refund_method in (RefundMethod.CASH, RefundMethod.BANK):
+        # The return credit is settled by the refund payment.
+        post_customer_ledger_entry(
+            customer=sales_return.customer,
+            branch=sales_return.branch,
+            entry_type=CustomerLedgerEntryType.ADVANCE_REFUND,
+            amount_delta=sales_return.grand_total,
+            source_type="SALES_RETURN",
+            source_id=sales_return.id,
+            source_number=sales_return.number,
+            business_date=sales_return.business_date,
+            actor=actor,
+        )
+        post_account_transaction(
+            account=sales_return.refund_account,
+            entry_type=FinancialEntryType.REFUND,
+            amount_delta=-sales_return.grand_total,
+            source_type="SALES_RETURN",
+            source_id=sales_return.id,
+            source_number=sales_return.number,
+            business_date=sales_return.business_date,
+            actor=actor,
+        )
+
+    invoice = SalesInvoice.objects.select_for_update().get(id=sales_return.invoice_id)
+    invoice.returned_total = money(invoice.returned_total + sales_return.grand_total)
+    any_returnable = any(item.returnable_qty > 0 for item in invoice.items.all())
+    invoice.return_status = (
+        SalesReturnStatus.FULLY_RETURNED if not any_returnable else SalesReturnStatus.PARTIALLY_RETURNED
+    )
+    invoice.save(update_fields=["returned_total", "return_status", "updated_at"])
+    return sales_return

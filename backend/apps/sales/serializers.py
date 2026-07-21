@@ -9,6 +9,8 @@ from apps.sales.models import (
     SalesInvoice,
     SalesInvoiceItem,
     SalesInvoiceStatus,
+    SalesReturn,
+    SalesReturnItem,
 )
 from apps.sales.services import money, resolve_unit_price
 
@@ -92,6 +94,7 @@ class SalesInvoiceItemReadSerializer(serializers.ModelSerializer):
             "line_total",
             "unit_cost",
             "is_free_goods",
+            "returned_qty",
         ]
 
 
@@ -284,3 +287,88 @@ class SalesInvoiceWriteSerializer(serializers.Serializer):
         instance.items.all().delete()
         self._persist_items(instance, rows)
         return instance
+
+
+class SalesReturnItemReadSerializer(serializers.ModelSerializer):
+    medicine_name = serializers.CharField(source="invoice_item.medicine.name", read_only=True)
+    medicine_code = serializers.CharField(source="invoice_item.medicine.code", read_only=True)
+    line_no = serializers.IntegerField(source="invoice_item.line_no", read_only=True)
+    batch_number = serializers.CharField(source="batch.batch_number", read_only=True)
+
+    class Meta:
+        model = SalesReturnItem
+        fields = [
+            "id",
+            "invoice_item",
+            "line_no",
+            "medicine_name",
+            "medicine_code",
+            "batch",
+            "batch_number",
+            "qty",
+            "condition",
+            "unit_price",
+            "discount_reversal",
+            "vat_reversal",
+            "unit_cost",
+            "restocked",
+        ]
+
+
+class SalesReturnReadSerializer(serializers.ModelSerializer):
+    customer_name = serializers.CharField(source="customer.name", read_only=True)
+    invoice_number = serializers.CharField(source="invoice.number", read_only=True)
+    items = SalesReturnItemReadSerializer(many=True, read_only=True)
+    grand_total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = SalesReturn
+        fields = [
+            "id",
+            "number",
+            "invoice",
+            "invoice_number",
+            "customer",
+            "customer_name",
+            "branch",
+            "business_date",
+            "reason_code",
+            "status",
+            "refund_method",
+            "refund_account",
+            "subtotal",
+            "discount_reversal",
+            "vat_reversal",
+            "round_off",
+            "grand_total",
+            "notes",
+            "confirmed_at",
+            "created_at",
+            "items",
+        ]
+
+
+class SalesReturnItemInputSerializer(serializers.Serializer):
+    invoice_item = serializers.UUIDField()
+    qty = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=Decimal("0.001"))
+    condition = serializers.ChoiceField(choices=["RESELLABLE", "DAMAGED", "EXPIRED"])
+
+
+class SalesReturnCreateSerializer(serializers.Serializer):
+    invoice = serializers.UUIDField()
+    reason_code = serializers.ChoiceField(
+        choices=[
+            "CUSTOMER_RETURN",
+            "DAMAGED",
+            "EXPIRED_AT_CUSTOMER",
+            "WRONG_ITEM",
+            "EXCESS_SUPPLY",
+        ]
+    )
+    refund_method = serializers.ChoiceField(
+        choices=["CUSTOMER_CREDIT", "CASH", "BANK", "ADJUST_DUES"], default="CUSTOMER_CREDIT"
+    )
+    refund_account = serializers.UUIDField(required=False, allow_null=True)
+    business_date = serializers.DateField(required=False)
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
+    items = SalesReturnItemInputSerializer(many=True, allow_empty=False)

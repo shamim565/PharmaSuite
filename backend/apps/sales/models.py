@@ -55,6 +55,7 @@ class CustomerLedgerEntryType(models.TextChoices):
     SALES_RETURN = "SALES_RETURN", "Sales return"
     RETURN_REVERSAL = "RETURN_REVERSAL", "Return reversal"
     ADVANCE_APPLIED = "ADVANCE_APPLIED", "Advance applied"
+    ADVANCE_REFUND = "ADVANCE_REFUND", "Advance refunded"
     WRITE_OFF = "WRITE_OFF", "Write-off"
     ADJUSTMENT = "ADJUSTMENT", "Adjustment"
 
@@ -215,6 +216,7 @@ class SalesInvoiceItem(BaseModel):
     line_net = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     unit_cost = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal("0"))
     is_free_goods = models.BooleanField(default=False)
+    returned_qty = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal("0"))
 
     class Meta:
         ordering = ["invoice", "line_no"]
@@ -226,3 +228,112 @@ class SalesInvoiceItem(BaseModel):
     @property
     def line_total(self) -> Decimal:
         return self.line_net + self.vat_amount
+
+    @property
+    def returnable_qty(self) -> Decimal:
+        return self.qty - self.returned_qty
+
+
+class SalesReturnReason(models.TextChoices):
+    CUSTOMER_RETURN = "CUSTOMER_RETURN", "Customer return"
+    DAMAGED = "DAMAGED", "Damaged"
+    EXPIRED_AT_CUSTOMER = "EXPIRED_AT_CUSTOMER", "Expired at customer"
+    WRONG_ITEM = "WRONG_ITEM", "Wrong item"
+    EXCESS_SUPPLY = "EXCESS_SUPPLY", "Excess supply"
+
+
+class ReturnCondition(models.TextChoices):
+    RESELLABLE = "RESELLABLE", "Resellable"
+    DAMAGED = "DAMAGED", "Damaged"
+    EXPIRED = "EXPIRED", "Expired"
+
+
+class RefundMethod(models.TextChoices):
+    CUSTOMER_CREDIT = "CUSTOMER_CREDIT", "Customer credit"
+    CASH = "CASH", "Cash refund"
+    BANK = "BANK", "Bank refund"
+    ADJUST_DUES = "ADJUST_DUES", "Adjust dues"
+
+
+class SalesReturnDocStatus(models.TextChoices):
+    DRAFT = "DRAFT", "Draft"
+    CONFIRMED = "CONFIRMED", "Confirmed"
+    REVERSED = "REVERSED", "Reversed"
+
+
+class SalesReturn(BaseModel):
+    number = models.CharField(max_length=40, null=True, blank=True, unique=True)
+    invoice = models.ForeignKey(
+        SalesInvoice, on_delete=models.PROTECT, related_name="returns"
+    )
+    customer = models.ForeignKey(
+        Customer, on_delete=models.PROTECT, related_name="sales_returns"
+    )
+    branch = models.ForeignKey(
+        "branches.Branch", on_delete=models.PROTECT, related_name="sales_returns"
+    )
+    business_date = models.DateField(db_index=True)
+    reason_code = models.CharField(max_length=25, choices=SalesReturnReason.choices)
+    status = models.CharField(
+        max_length=10, choices=SalesReturnDocStatus.choices, default=SalesReturnDocStatus.DRAFT
+    )
+    refund_method = models.CharField(
+        max_length=20, choices=RefundMethod.choices, default=RefundMethod.CUSTOMER_CREDIT
+    )
+    refund_account = models.ForeignKey(
+        "accounting.FinancialAccount",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="sales_returns",
+    )
+    subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    discount_reversal = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    vat_reversal = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    round_off = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    grand_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    notes = models.TextField(blank=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirmed_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    reversal_of = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversed_by"
+    )
+    idempotency_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
+
+    class Meta:
+        ordering = ["-business_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["customer", "business_date"]),
+            models.Index(fields=["invoice"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.number or f"sales return draft {self.id}"
+
+
+class SalesReturnItem(BaseModel):
+    sales_return = models.ForeignKey(SalesReturn, on_delete=models.CASCADE, related_name="items")
+    invoice_item = models.ForeignKey(
+        SalesInvoiceItem, on_delete=models.PROTECT, related_name="return_items"
+    )
+    batch = models.ForeignKey(
+        "catalog.MedicineBatch", on_delete=models.PROTECT, related_name="sales_return_items"
+    )
+    qty = models.DecimalField(max_digits=14, decimal_places=3)
+    condition = models.CharField(max_length=10, choices=ReturnCondition.choices)
+    unit_price = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal("0"))
+    discount_reversal = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    vat_reversal = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    unit_cost = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal("0"))
+    restocked = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=models.Q(qty__gt=0), name="ck_sales_return_qty_positive"),
+        ]
+
+    @property
+    def line_total(self) -> Decimal:
+        return self.unit_price * self.qty - self.discount_reversal + self.vat_reversal

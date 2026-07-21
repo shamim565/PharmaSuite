@@ -322,6 +322,59 @@ Sprint 6 — Customer payments & due management: due list/aging workflows, colle
 ### Next
 Sprint 7 — Returns, expired stock, damage & adjustments: sales returns with restock/quarantine, credit notes and refund methods, purchase return UI, stock adjustments (damage/expiry/loss) with approvals, reason tracking, audit, financial impact.
 
+---
+
+## Sprint — Returns, expired stock, damage & adjustments
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Sales returns**: draft from a confirmed invoice (qty ≤ sold − returned), per-line condition (`RESELLABLE / DAMAGED / EXPIRED`), gapless credit note `CRN-…`; proportional discount/VAT reversal at the original line values.
+  - Resellable + non-expired → restocked to the original batch (saleable pool, `SALES_RETURN` movement); damaged/expired → **quarantine pool** (never saleable).
+  - Customer ledger `SALES_RETURN` credit; refund methods: customer credit / adjust dues (ledger credit), cash/bank (ledger credit settled via `ADVANCE_REFUND` + `REFUND` account transaction, `RETURN_REFUND` permission).
+  - Invoice `return_status` recomputes to `PARTIALLY_RETURNED / FULLY_RETURNED`.
+- **Purchase returns UI**: returns now listed in the unified Returns page (create/confirm already existed from Sprint 4).
+- **Stock adjustments**: `StockAdjustment` + items with direction (increase/decrease), pools (`SALEABLE/PROMO/QUARANTINE`), optional pool **move** (e.g., saleable → quarantine), reason codes (damage, expiry write-off, count variance, found stock, promo replenish, recall disposal), value computed at batch cost.
+  - Below the configurable threshold (`STOCK_ADJUSTMENT_APPROVAL_THRESHOLD`, default 5,000) → posted immediately with `ADJ-…` number; above → `PENDING_APPROVAL` requiring a **different user** to approve (dual control, `SELF_APPROVAL_NOT_ALLOWED`), with reject flow.
+  - Reversal via compensating movements; statuses `POSTED/REJECTED/REVERSED` with actor audit fields.
+  - DEPLETED batches revive automatically when restocked (inventory service).
+- **Critical RBAC fix**: module wildcards (`inventory:*`, `sale:*`, …) never resolved because permission codes carry no module prefix — roles effectively had missing permissions, masked until now by Owner-superuser tests. Resolver now maps modules to their catalog codes; re-seeded roles (Warehouse 17, Sales Operator 12, Accountant 29 permissions).
+- **Frontend**: `/returns` (sales + purchase return registers), `/adjustments` (create form with batch picker, approve/reject/reverse, approval queue), sales register **Return** panel (item/condition/reason/refund method), nav updated.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Returns & adjustments smoke script (15 checks) | ✅ 15/15 |
+| Resellable return: credit note 7.00, stock 40→43, invoice PARTIALLY_RETURNED | ✅ |
+| Damaged return → quarantine 2, saleable unchanged | ✅ |
+| Over-return blocked (409); final return → FULLY_RETURNED | ✅ |
+| Cash refund: account −9.00, ledger credit settled | ✅ |
+| Damage adjustment auto-posted below threshold; reversal restores stock | ✅ |
+| Quarantine move shifts pools (−2 saleable, +2 quarantine) | ✅ |
+| High-value adjustment → PENDING; self-approval 403; different user approves → POSTED | ✅ |
+| Live: returns CRN 9.00 with restock flag, ADJ posted by approver, purchase returns, frontend routes | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build` (19 routes), `check_stock_integrity` | ✅ |
+
+### Key endpoints
+- `GET/POST /api/v1/sales-returns/`, `POST /api/v1/sales-returns/{id}/confirm/`
+- `GET/POST /api/v1/inventory/adjustments/`, `POST …/{id}/approve|reject|reverse/`
+
+### Key screens
+- `/returns` (sales + purchase returns), `/adjustments` (register + approval queue), sales `Return` panel
+
+### Migrations
+- `sales.0002` (returns + returned_qty), `sales.0003` (ledger entry type), `inventory.0003` (adjustments), `accounting.0002` (REFUND entry type)
+
+### Known limitations
+- Write-off financial impact is recorded in the inventory ledger value (`value_delta`); expense/P&L posting arrives with the finance sprint.
+- Confirmed sales returns are not yet reversible (draft can be deleted; compensation via counter-return not yet exposed).
+- Adjustment evidence attachments deferred.
+- Automated tests deferred per project decision.
+
+### Next
+Sprint 8 — Expenses, income & financial accounts: expense/income categories and postings, cash/bank/MFS account management, deposits/withdrawals, transfers, account ledger and balances, reversal flows, dashboard financial KPIs.
+
+
 
 
 

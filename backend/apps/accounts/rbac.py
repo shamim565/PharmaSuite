@@ -83,6 +83,10 @@ PERMISSION_CATALOG: list[tuple[str, str, str, str, bool]] = [
 
 ALL_CODES = {row[0] for row in PERMISSION_CATALOG}
 
+MODULE_CODES: dict[str, set[str]] = {}
+for _code, _module, *_rest in PERMISSION_CATALOG:
+    MODULE_CODES.setdefault(_module, set()).add(_code)
+
 # Role definition: scope + module wildcard patterns ("*" = all)
 ROLE_DEFINITIONS: dict[str, dict] = {
     "OWNER": {
@@ -244,8 +248,8 @@ def resolve_permissions(patterns: list[str]) -> set[str]:
     resolved: set[str] = set()
     for pattern in patterns:
         if pattern.endswith(":*"):
-            module = pattern[:-1]
-            resolved |= {code for code in ALL_CODES if code.startswith(module)}
+            module = pattern[:-2]
+            resolved |= MODULE_CODES.get(module, set())
         elif ":" in pattern:
             resolved.add(pattern.split(":", 1)[1])
         else:

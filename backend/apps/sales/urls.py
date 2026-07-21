@@ -7,11 +7,13 @@ from apps.sales.views import (
     DueListView,
     ReceivableAgingView,
     SalesInvoiceViewSet,
+    SalesReturnViewSet,
 )
 
 router = DefaultRouter()
 router.register("customers", CustomerViewSet, basename="customer")
 router.register("sales", SalesInvoiceViewSet, basename="sales-invoice")
+router.register("sales-returns", SalesReturnViewSet, basename="sales-return")
 
 urlpatterns = [
     path("sales/due-list/", DueListView.as_view(), name="sales-due-list"),

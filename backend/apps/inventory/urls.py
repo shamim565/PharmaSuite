@@ -7,6 +7,7 @@ from apps.inventory.views import (
     LedgerIntegrityView,
     LowStockReportView,
     NearExpiryReportView,
+    StockAdjustmentViewSet,
     StockBalanceViewSet,
     StockSummaryView,
 )
@@ -14,6 +15,7 @@ from apps.inventory.views import (
 router = DefaultRouter()
 router.register("transactions", InventoryTransactionViewSet, basename="inventory-transaction")
 router.register("balances", StockBalanceViewSet, basename="stock-balance")
+router.register("adjustments", StockAdjustmentViewSet, basename="stock-adjustment")
 
 urlpatterns = [
     path("", include(router.urls)),
