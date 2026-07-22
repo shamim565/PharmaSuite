@@ -17,6 +17,8 @@ PREFIXES = {
     DocumentType.RECEIPT: "RCP",
     DocumentType.CREDIT_NOTE: "CRN",
     DocumentType.ADJUSTMENT: "ADJ",
+    DocumentType.EXPENSE: "EXP",
+    DocumentType.INCOME: "INC",
 }
 
 

@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounting.models import FinancialAccount
 from apps.accounts.models import Role, User, UserStatus
 from apps.branches.models import Branch, BranchStatus
 from apps.catalog.models import Medicine
@@ -86,6 +87,17 @@ class DashboardSummaryView(APIView):
             receivables = receivables.filter(branch_id__in=user.branch_ids)
         customer_due = receivables.aggregate(total=Sum("amount_delta"))["total"] or Decimal("0")
 
+        account_qs = FinancialAccount.objects.filter(is_active=True)
+        if not all_branches:
+            from django.db.models import Q
+
+            account_qs = account_qs.filter(
+                Q(branch_id__in=user.branch_ids) | Q(branch__isnull=True)
+            )
+        cash_position = (
+            account_qs.aggregate(total=Sum("balance_cache"))["total"] or Decimal("0")
+        )
+
         return Response(
             {
                 "generated_at": timezone.now(),
@@ -108,6 +120,7 @@ class DashboardSummaryView(APIView):
                     "collections_today": collections_today,
                     "customer_due": customer_due,
                     "supplier_payable": supplier_payable,
+                    "cash_position": cash_position,
                     "stock_value": stock_value,
                     "low_stock_count": low_stock_count,
                     "near_expiry_count": near_expiry_count,

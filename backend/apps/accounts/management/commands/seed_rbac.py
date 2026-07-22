@@ -93,7 +93,12 @@ class Command(BaseCommand):
                 user=owner, branch=branch, defaults={"is_default": True}
             )
 
-            from apps.accounting.models import AccountType, FinancialAccount
+            from apps.accounting.models import (
+                AccountType,
+                ExpenseCategory,
+                FinancialAccount,
+                IncomeCategory,
+            )
             from apps.branches.models import Branch as BranchModel
 
             cash_accounts = 0
@@ -108,6 +113,22 @@ class Command(BaseCommand):
                     },
                 )
                 cash_accounts += int(created)
+
+            for name in (
+                "Rent",
+                "Utilities",
+                "Transport",
+                "Packaging",
+                "Marketing",
+                "Doctor Samples",
+                "Repairs",
+                "Salaries",
+                "Miscellaneous",
+            ):
+                ExpenseCategory.objects.get_or_create(name=name, defaults={"is_system": True})
+
+            for name in ("Commission", "Service Income", "Scrap Sales", "Rent Income", "Miscellaneous Income"):
+                IncomeCategory.objects.get_or_create(name=name, defaults={"is_system": True})
 
         self.stdout.write(self.style.SUCCESS("RBAC seed complete"))
         self.stdout.write(f"  permissions created: {permissions_created}")

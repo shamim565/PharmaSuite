@@ -70,6 +70,7 @@ export default function DashboardPage() {
                 ["Collections today", data.operations.collections_today],
                 ["Customer due", data.operations.customer_due],
                 ["Supplier payable", data.operations.supplier_payable],
+                ["Cash position", data.operations.cash_position],
                 ["Stock value", data.operations.stock_value],
                 ["Low stock", data.operations.low_stock_count],
                 ["Near expiry", data.operations.near_expiry_count],

@@ -11,6 +11,8 @@ class DocumentType(models.TextChoices):
     RECEIPT = "RECEIPT", "Customer receipt"
     CREDIT_NOTE = "CREDIT_NOTE", "Credit note (sales return)"
     ADJUSTMENT = "ADJUSTMENT", "Stock adjustment"
+    EXPENSE = "EXPENSE", "Expense voucher"
+    INCOME = "INCOME", "Income voucher"
 
 
 class UUIDModel(models.Model):

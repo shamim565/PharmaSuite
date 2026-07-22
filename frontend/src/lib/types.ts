@@ -168,6 +168,7 @@ export type DashboardSummary = {
     collections_today: number | null;
     customer_due: number | null;
     supplier_payable: number | null;
+    cash_position: number | null;
     stock_value: number | null;
     low_stock_count: number | null;
     near_expiry_count: number | null;
@@ -276,6 +277,8 @@ export type FinancialAccount = {
   account_type: "CASH" | "BANK" | "MFS";
   branch: string | null;
   branch_name: string;
+  provider: string;
+  account_number: string;
   balance_cache: string;
   is_active: boolean;
 };
@@ -624,4 +627,78 @@ export type StockAdjustment = {
   notes: string;
   created_at: string;
   items: StockAdjustmentItem[];
+};
+
+export type ExpenseCategory = {
+  id: string;
+  name: string;
+  is_system: boolean;
+  is_active: boolean;
+};
+
+export type Expense = {
+  id: string;
+  number: string | null;
+  branch: string;
+  branch_name: string;
+  business_date: string;
+  category: string;
+  category_name: string;
+  amount: string;
+  account: string;
+  account_name: string;
+  payee: string;
+  reference: string;
+  note: string;
+  status: "PENDING_APPROVAL" | "POSTED" | "REJECTED" | "REVERSED";
+  requested_by_name: string;
+  approved_by_name: string;
+  approved_at: string | null;
+  posted_at: string | null;
+  rejection_reason: string;
+  created_at: string;
+};
+
+export type IncomeCategory = {
+  id: string;
+  name: string;
+  is_system: boolean;
+  is_active: boolean;
+};
+
+export type Income = {
+  id: string;
+  number: string | null;
+  branch: string;
+  branch_name: string;
+  business_date: string;
+  category: string;
+  category_name: string;
+  amount: string;
+  account: string;
+  account_name: string;
+  source: string;
+  reference: string;
+  note: string;
+  status: "POSTED" | "REVERSED";
+  posted_by_name: string;
+  posted_at: string | null;
+  created_at: string;
+};
+
+export type AccountLedgerEntry = {
+  id: string;
+  entry_type: string;
+  amount_delta: string;
+  reference: string;
+  source_type: string;
+  source_number: string;
+  business_date: string;
+  running_balance: string;
+};
+
+export type AccountLedgerResponse = {
+  balance: string;
+  count: number;
+  results: AccountLedgerEntry[];
 };

@@ -374,6 +374,56 @@ Sprint 7 — Returns, expired stock, damage & adjustments: sales returns with re
 ### Next
 Sprint 8 — Expenses, income & financial accounts: expense/income categories and postings, cash/bank/MFS account management, deposits/withdrawals, transfers, account ledger and balances, reversal flows, dashboard financial KPIs.
 
+---
+
+## Sprint — Expenses, income & financial accounts
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Expense categories & income categories**: seeded defaults (9 expense / 5 income), CRUD-capable APIs.
+- **Expenses**: create (branch, category, amount, paying account, payee, reference, note), automatic posting below `EXPENSE_APPROVAL_THRESHOLD` (default 5,000), `PENDING_APPROVAL` above with **dual-control** approval (`SELF_APPROVAL_NOT_ALLOWED`), reject flow, reversal via compensating `EXPENSE_REVERSAL` account entry, gapless `EXP-…` numbering, idempotency keys, insufficient-funds guard inherited from account posting.
+- **Other income**: immediate posting to the receiving account with `INC-…` numbering, reversal via `INCOME_REVERSAL`.
+- **Account management**: create cash/bank/MFS accounts (branch or company-level), deposit, withdrawal (negative balance blocked unless `allow_negative`), **inter-account transfers as a paired `TRANSFER_OUT/TRANSFER_IN` group** posted atomically, account ledger with running balance, balance cache reconciled from the ledger.
+- **Reports**: expense summary by category (posted only), income summary by category; dashboard now includes **cash position** across accounts.
+- **Frontend**: `/accounts` (registry, balances, create, ledger + deposit/withdraw/transfer panel), `/expenses` (summary chips, create, approval queue, reject, reverse), `/income` (summary, create, reverse), nav + dashboard KPI updated.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Finance smoke script (19 checks) | ✅ 19/19 |
+| Deposit 10,000 → balance; transfer 2,000 pairs (bank −2,000 / cash +2,000); withdraw 500 | ✅ |
+| Insufficient funds blocked (409 `INSUFFICIENT_FUNDS`) | ✅ |
+| Below-threshold expense auto-posted; above-threshold pending | ✅ |
+| Self-approval blocked (403); accountant approves → POSTED; bank 1,200.00 | ✅ |
+| Expense reversal restores account; income posts + reversal | ✅ |
+| Account ledger running balance = cache; every account cache = ledger sum | ✅ |
+| Expense summary excludes reversed; income summary after reversal | ✅ |
+| Live: dashboard cash 110,875.0, accounts, summaries, frontend routes | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build` (21 routes) | ✅ |
+
+### Key endpoints
+- `GET/POST /api/v1/expense-categories|income-categories/`
+- `GET/POST /api/v1/expenses/` (+`/{id}/approve|reject|reverse/`, `reports/summary/`)
+- `GET/POST /api/v1/incomes/` (+`/{id}/reverse/`, `reports/summary/`)
+- `GET/POST /api/v1/accounts/` (+`/{id}/ledger|deposit|withdraw/`, `POST /accounts/transfer/`)
+
+### Key screens
+- `/accounts` (ledger & operations), `/expenses` (approval queue), `/income`
+
+### Migrations
+- `accounting.0003` (categories, expenses, incomes, entry types), `common.0002` (doc types)
+
+### Known limitations
+- Stock write-off/expiry loss P&L linkage still computed from inventory ledger values (profit sprint consolidates this).
+- Cheque lifecycle sub-states remain pending.
+- Account statement export (PDF/Excel) pending; browser view only.
+- Automated tests deferred per project decision.
+
+### Next
+Sprint 9 — Profit & financial overview: revenue/COGS/gross profit/net profit, inventory valuation, receivables/payables summary, damage & expiry losses, cash/bank summary, period comparisons — reconciling with ledgers.
+
+
 
 
 
