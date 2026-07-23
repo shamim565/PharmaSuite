@@ -702,3 +702,64 @@ export type AccountLedgerResponse = {
   count: number;
   results: AccountLedgerEntry[];
 };
+
+export type ProfitLossPeriod = {
+  period: { date_from: string; date_to: string };
+  revenue: { sales_net: string; returns_net: string; net_revenue: string };
+  cogs: string;
+  gross_profit: string;
+  gross_margin_pct: string | null;
+  losses: {
+    damage: string;
+    expiry: string;
+    adjustments_net: string;
+    adjustment_reversals: string;
+    total: string;
+  };
+  expenses: string;
+  other_income: string;
+  net_profit: string;
+  reconciliation: {
+    customer_ledger_delta: string;
+    receipts: string;
+    note: string;
+  };
+};
+
+export type ProfitLossReport = {
+  current: ProfitLossPeriod;
+  previous: ProfitLossPeriod;
+  comparison: {
+    revenue_delta: string;
+    revenue_delta_pct: string | null;
+    net_profit_delta: string;
+    net_profit_delta_pct: string | null;
+  };
+};
+
+export type ValuationRow = {
+  branch: string;
+  branch_name: string;
+  saleable_qty: string;
+  saleable_value: string;
+  quarantine_qty: string;
+  quarantine_value: string;
+  promo_qty: string;
+  promo_value: string;
+};
+
+export type InventoryValuationReport = {
+  count: number;
+  total_value: string;
+  results: ValuationRow[];
+};
+
+export type FinancialPositionReport = {
+  receivables: string;
+  payables: string;
+  cash_position: string;
+  accounts: { account: string; code: string; name: string; account_type: string; balance: string }[];
+  stock_value_saleable: string;
+  stock_value_quarantine: string;
+  net_working_position: string;
+};

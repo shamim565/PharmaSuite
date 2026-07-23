@@ -25,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/accounts", label: "Accounts", permission: "ACCOUNT_VIEW", icon: "🏦" },
   { href: "/expenses", label: "Expenses", permission: "EXPENSE_VIEW", icon: "🧮" },
   { href: "/income", label: "Income", permission: "INCOME_VIEW", icon: "➕" },
+  { href: "/reports", label: "Reports", permission: "REPORT_VIEW", icon: "📊" },
   { href: "/catalog", label: "Catalog", permission: "MEDICINE_MANAGE", icon: "▤" },
   { href: "/users", label: "Users", permission: "USER_VIEW", icon: "👤" },
   { href: "/branches", label: "Branches", permission: "BRANCH_VIEW", icon: "⌂" },

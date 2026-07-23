@@ -423,6 +423,60 @@ Sprint 8 — Expenses, income & financial accounts: expense/income categories an
 ### Next
 Sprint 9 — Profit & financial overview: revenue/COGS/gross profit/net profit, inventory valuation, receivables/payables summary, damage & expiry losses, cash/bank summary, period comparisons — reconciling with ledgers.
 
+---
+
+## Sprint — Profit & financial overview
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Reports app** (`apps.reports`) with three ledger-reconciling endpoints:
+  - `GET /api/v1/reports/profit-loss/` — period `date_from/date_to`:
+    - Net revenue = confirmed invoice net (subtotal − discount) − confirmed return net (subtotal − discount reversal)
+    - COGS from the **inventory ledger**: SALE + SALES_RETURN + sales-cancel REVERSAL movements (batch actual cost)
+    - Gross profit + margin %; loss breakdown: damage, expiry, adjustment net, adjustment reversals
+    - Posted expenses and other income; net profit
+    - **Previous equal-length period** + delta and delta %
+    - Reconciliation block (customer ledger movement vs receipts)
+  - `GET /api/v1/reports/inventory-valuation/` — per-branch saleable/quarantine/promo quantities and values at batch cost, grand total
+  - `GET /api/v1/reports/financial-position/` — receivables, payables, cash & bank (per-account list), saleable/quarantine stock value, net working position
+- **Permission gating**: P&L and valuation require `REPORT_VIEW_COST`; position requires `REPORT_VIEW` — verified that a Sales Operator gets 403 on profit and 200 on position.
+- **Frontend**: `/reports` with three tabs (Profit & Loss with date range + comparison cards + reconciliation; Inventory valuation by branch; Position with KPI cards and account list), nav updated.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Reports smoke script (13 checks) | ✅ 13/13 |
+| Net revenue delta 40.00 (50 sale − 10 return) and COGS delta 16.00 (10×2 − 2×2) | ✅ |
+| Gross profit delta 24.00; damage loss delta 6.00; expense 200 / income 150 | ✅ |
+| Net profit delta −32.00; comparison block present | ✅ |
+| Valuation API total equals independent ORM sum (1,728.54) | ✅ |
+| Position equals ledger sums (receivables/payables/cash) | ✅ |
+| Sales Operator denied P&L (403), allowed position (200) | ✅ |
+| Live: P&L month (revenue 122.00, COGS 57.00, gross 65.00, margin 53.28%), valuation, position, frontend | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build`, `check_stock_integrity` | ✅ |
+
+### Key endpoints
+- `GET /api/v1/reports/profit-loss/`
+- `GET /api/v1/reports/inventory-valuation/`
+- `GET /api/v1/reports/financial-position/`
+
+### Key screens
+- `/reports` (P&L + valuation + position tabs)
+
+### Migrations
+- none (read-only reporting layer; no schema changes)
+
+### Known limitations
+- P&L is period/movement based: a sales cancellation reversing into a later period affects that later period's COGS (documented, acceptable for MVP).
+- No export (PDF/Excel) yet for reports (browser view).
+- Cancelled invoice revenue/COGS offset only when the reversal movement falls in the selected period.
+- Automated tests deferred per project decision.
+
+### Next
+Sprint 10 — Doctors & representatives: doctor CRUD, doctor–medicine mapping, territories, representatives, assignments, doctor visits with samples from promotional stock, visit coverage and activity reports, doctor-wise and rep-wise sales attribution.
+
+
 
 
 
