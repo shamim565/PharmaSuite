@@ -5,9 +5,14 @@ import { useState } from "react";
 
 import { Badge, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { FinancialPositionReport, InventoryValuationReport, ProfitLossReport } from "@/lib/types";
+import type {
+  AttributionReport,
+  FinancialPositionReport,
+  InventoryValuationReport,
+  ProfitLossReport,
+} from "@/lib/types";
 
-const TABS = ["Profit & Loss", "Inventory valuation", "Position"] as const;
+const TABS = ["Profit & Loss", "Inventory valuation", "Position", "Sales by doctor", "Sales by rep"] as const;
 type Tab = (typeof TABS)[number];
 
 function money(value: string | number | null | undefined): string {
@@ -254,6 +259,64 @@ function PositionTab() {
   );
 }
 
+function AttributionTab({ endpoint, label }: { endpoint: string; label: string }) {
+  const [dateFrom, setDateFrom] = useState(monthStartIso());
+  const [dateTo, setDateTo] = useState(todayIso());
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["attribution", endpoint, dateFrom, dateTo],
+    queryFn: () => api.get<AttributionReport>(`${endpoint}?date_from=${dateFrom}&date_to=${dateTo}`),
+  });
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Field label="From">
+            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          </Field>
+          <Field label="To">
+            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          </Field>
+        </div>
+      </Card>
+      <Card>
+        <CardHeader
+          title={label}
+          subtitle={data ? `Total net revenue ${money(data.total_net_revenue)} across ${data.count} group(s)` : undefined}
+        />
+        <ErrorBanner error={error} />
+        {isLoading ? (
+          <Spinner />
+        ) : !data || data.results.length === 0 ? (
+          <EmptyState message="No attributed sales in this period." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Name</th>
+                  <th className="px-4 py-2 text-right">Invoices</th>
+                  <th className="px-4 py-2 text-right">Net revenue</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.results.map((row) => (
+                  <tr key={`${row.id}-${row.name}`}>
+                    <td className="px-4 py-2 font-medium">{row.name}</td>
+                    <td className="px-4 py-2 text-right">{row.invoice_count}</td>
+                    <td className="px-4 py-2 text-right">{money(row.net_revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const [tab, setTab] = useState<Tab>("Profit & Loss");
 
@@ -277,6 +340,8 @@ export default function ReportsPage() {
       {tab === "Profit & Loss" ? <ProfitLossTab /> : null}
       {tab === "Inventory valuation" ? <ValuationTab /> : null}
       {tab === "Position" ? <PositionTab /> : null}
+      {tab === "Sales by doctor" ? <AttributionTab endpoint="/reports/sales-by-doctor/" label="Sales by doctor" /> : null}
+      {tab === "Sales by rep" ? <AttributionTab endpoint="/reports/sales-by-rep/" label="Sales by representative" /> : null}
     </div>
   );
 }

@@ -139,6 +139,16 @@ class SalesInvoice(BaseModel):
     customer = models.ForeignKey(
         Customer, on_delete=models.PROTECT, related_name="sales_invoices"
     )
+    doctor = models.ForeignKey(
+        "doctors.Doctor", null=True, blank=True, on_delete=models.PROTECT, related_name="sales_invoices"
+    )
+    sales_rep = models.ForeignKey(
+        "representatives.Representative",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="sales_invoices",
+    )
     business_date = models.DateField(db_index=True)
     lifecycle = models.CharField(
         max_length=12, choices=SalesInvoiceStatus.choices, default=SalesInvoiceStatus.DRAFT

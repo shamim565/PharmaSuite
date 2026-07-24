@@ -763,3 +763,134 @@ export type FinancialPositionReport = {
   stock_value_quarantine: string;
   net_working_position: string;
 };
+
+export type Territory = {
+  id: string;
+  name: string;
+  parent: string | null;
+  parent_name: string;
+  territory_type: "REGION" | "AREA" | "TERRITORY";
+  is_active: boolean;
+};
+
+export type Representative = {
+  id: string;
+  code: string;
+  name: string;
+  rep_type: "SALES" | "MEDICAL";
+  phone: string;
+  email: string;
+  branch: string | null;
+  branch_name: string;
+  user: string | null;
+  user_name: string;
+  reports_to: string | null;
+  reports_to_name: string;
+  joined_at: string | null;
+  is_active: boolean;
+  notes: string;
+};
+
+export type RepresentativeAssignment = {
+  id: string;
+  representative: string;
+  representative_name: string;
+  entity_type: "CUSTOMER" | "DOCTOR" | "TERRITORY";
+  entity_id: string;
+  entity_label: string;
+  effective_from: string;
+  effective_to: string | null;
+  is_primary: boolean;
+};
+
+export type Doctor = {
+  id: string;
+  code: string;
+  name: string;
+  gender: string;
+  phones: string[];
+  email: string;
+  specialty: string;
+  degrees: string;
+  doctor_type: "CONSULTANT" | "GP" | "OTHER";
+  registration_no: string | null;
+  category: "A" | "B" | "C";
+  potential_rating: string;
+  territory: string | null;
+  territory_name: string;
+  visit_frequency_target: number | null;
+  consent_note: string;
+  notes: string;
+  is_active: boolean;
+  open_mapping_count: number;
+  created_at: string;
+};
+
+export type DoctorMedicine = {
+  id: string;
+  doctor: string;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  priority: string;
+  strength_note: string;
+  effective_from: string;
+  effective_to: string | null;
+};
+
+export type DoctorVisitSample = {
+  id: string;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  batch: string;
+  batch_number: string;
+  qty: string;
+  unit_cost: string;
+};
+
+export type DoctorVisit = {
+  id: string;
+  doctor: string;
+  doctor_name: string;
+  doctor_code: string;
+  representative: string;
+  representative_name: string;
+  branch: string;
+  branch_name: string;
+  status: "PLANNED" | "COMPLETED" | "MISSED" | "CANCELLED";
+  planned_date: string | null;
+  visited_at: string | null;
+  purpose: string;
+  products_discussed: string[];
+  outcome: string;
+  next_visit_date: string | null;
+  notes: string;
+  missed_reason: string;
+  created_at: string;
+  samples: DoctorVisitSample[];
+};
+
+export type VisitCoverageRow = {
+  representative: string;
+  representative_name: string;
+  planned: number;
+  completed: number;
+  missed: number;
+  cancelled: number;
+  coverage_pct: number | null;
+};
+
+export type AttributionRow = {
+  id: string | null;
+  name: string;
+  net_revenue: string;
+  invoice_count: number;
+};
+
+export type AttributionReport = {
+  period: { date_from: string; date_to: string };
+  count: number;
+  total_net_revenue: string;
+  results: AttributionRow[];
+};

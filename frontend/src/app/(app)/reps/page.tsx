@@ -1,0 +1,400 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FormEvent, useState } from "react";
+
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { ApiError, api } from "@/lib/api";
+import type {
+  Branch,
+  Customer,
+  Doctor,
+  Paginated,
+  Representative,
+  RepresentativeAssignment,
+  Territory,
+} from "@/lib/types";
+
+const TABS = ["Representatives", "Territories"] as const;
+type Tab = (typeof TABS)[number];
+
+const emptyRep = {
+  code: "",
+  name: "",
+  rep_type: "SALES",
+  phone: "",
+  branch: "",
+};
+
+const emptyTerritory = {
+  name: "",
+  territory_type: "AREA",
+  parent: "",
+};
+
+function RepPanel({ rep, onClose }: { rep: Representative; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [entityType, setEntityType] = useState<"CUSTOMER" | "DOCTOR" | "TERRITORY">("CUSTOMER");
+  const [entityId, setEntityId] = useState("");
+
+  const assignmentsQuery = useQuery({
+    queryKey: ["rep-assignments", rep.id],
+    queryFn: () => api.get<RepresentativeAssignment[]>(`/representatives/${rep.id}/assignments/`),
+  });
+  const customersQuery = useQuery({
+    queryKey: ["customers", "select"],
+    queryFn: () => api.get<Paginated<Customer>>("/customers/?page_size=200&is_active=true"),
+    enabled: entityType === "CUSTOMER",
+  });
+  const doctorsQuery = useQuery({
+    queryKey: ["doctors", "select"],
+    queryFn: () => api.get<Paginated<Doctor>>("/doctors/?page_size=200&is_active=true"),
+    enabled: entityType === "DOCTOR",
+  });
+  const territoriesQuery = useQuery({
+    queryKey: ["territories", "select"],
+    queryFn: () => api.get<Paginated<Territory>>("/territories/?page_size=100&is_active=true"),
+    enabled: entityType === "TERRITORY",
+  });
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["rep-assignments", rep.id] });
+    queryClient.invalidateQueries({ queryKey: ["representatives"] });
+  };
+
+  const assignMutation = useMutation({
+    mutationFn: () => api.post(`/representatives/${rep.id}/assign/`, { entity_type: entityType, entity_id: entityId }),
+    onSuccess: () => {
+      setEntityId("");
+      invalidate();
+    },
+  });
+  const unassignMutation = useMutation({
+    mutationFn: (assignment: RepresentativeAssignment) =>
+      api.post(`/representatives/${rep.id}/unassign/`, {
+        entity_type: assignment.entity_type,
+        entity_id: assignment.entity_id,
+      }),
+    onSuccess: () => invalidate(),
+  });
+
+  const options = (() => {
+    if (entityType === "CUSTOMER") return (customersQuery.data?.results ?? []).map((c) => ({ id: c.id, label: c.name }));
+    if (entityType === "DOCTOR") return (doctorsQuery.data?.results ?? []).map((d) => ({ id: d.id, label: d.name }));
+    return (territoriesQuery.data?.results ?? []).map((t) => ({ id: t.id, label: t.name }));
+  })();
+
+  return (
+    <Card>
+      <CardHeader
+        title={`${rep.name} (${rep.code})`}
+        subtitle={`${rep.rep_type === "MEDICAL" ? "Medical representative" : "Sales representative"}${rep.branch_name ? ` · ${rep.branch_name}` : ""}`}
+        action={
+          <Button size="sm" variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+        }
+      />
+      <div className="space-y-3 p-4">
+        <p className="text-xs font-semibold uppercase text-slate-500">Current assignments</p>
+        <ErrorBanner error={assignMutation.error} />
+        {assignmentsQuery.isLoading ? (
+          <Spinner />
+        ) : !assignmentsQuery.data || assignmentsQuery.data.length === 0 ? (
+          <EmptyState message="No assignments yet." />
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+            {assignmentsQuery.data.map((assignment) => (
+              <li key={assignment.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                <div>
+                  <p className="font-medium">{assignment.entity_label}</p>
+                  <p className="text-xs text-slate-500">
+                    {assignment.entity_type} · since {assignment.effective_from}
+                  </p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => unassignMutation.mutate(assignment)}>
+                  Unassign
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-40">
+            <Field label="Type">
+              <Select
+                value={entityType}
+                onChange={(e) => {
+                  setEntityType(e.target.value as typeof entityType);
+                  setEntityId("");
+                }}
+              >
+                <option value="CUSTOMER">Customer</option>
+                <option value="DOCTOR">Doctor</option>
+                <option value="TERRITORY">Territory</option>
+              </Select>
+            </Field>
+          </div>
+          <div className="w-64">
+            <Field label="Target">
+              <Select value={entityId} onChange={(e) => setEntityId(e.target.value)}>
+                <option value="">Select…</option>
+                {options.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <Button size="sm" onClick={() => assignMutation.mutate()} disabled={!entityId || assignMutation.isPending}>
+            Assign
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export default function RepsPage() {
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<Tab>("Representatives");
+  const [search, setSearch] = useState("");
+  const [showRepForm, setShowRepForm] = useState(false);
+  const [showTerritoryForm, setShowTerritoryForm] = useState(false);
+  const [repForm, setRepForm] = useState(emptyRep);
+  const [territoryForm, setTerritoryForm] = useState(emptyTerritory);
+  const [selected, setSelected] = useState<Representative | null>(null);
+
+  const repsQuery = useQuery({
+    queryKey: ["representatives", search],
+    queryFn: () => api.get<Paginated<Representative>>(`/representatives/?page_size=50&search=${encodeURIComponent(search)}`),
+  });
+  const territoriesQuery = useQuery({
+    queryKey: ["territories", "list"],
+    queryFn: () => api.get<Paginated<Territory>>("/territories/?page_size=100"),
+  });
+  const branchesQuery = useQuery({
+    queryKey: ["branches", "select"],
+    queryFn: () => api.get<Paginated<Branch>>("/branches/?page_size=50&status=ACTIVE"),
+  });
+
+  const repMutation = useMutation({
+    mutationFn: (payload: typeof emptyRep) =>
+      api.post<Representative>("/representatives/", { ...payload, branch: payload.branch || null }),
+    onSuccess: () => {
+      setRepForm(emptyRep);
+      setShowRepForm(false);
+      queryClient.invalidateQueries({ queryKey: ["representatives"] });
+    },
+  });
+  const territoryMutation = useMutation({
+    mutationFn: (payload: typeof emptyTerritory) =>
+      api.post<Territory>("/territories/", { ...payload, parent: payload.parent || null }),
+    onSuccess: () => {
+      setTerritoryForm(emptyTerritory);
+      setShowTerritoryForm(false);
+      queryClient.invalidateQueries({ queryKey: ["territories"] });
+    },
+  });
+
+  const fieldError = (error: unknown, name: string): string | null => {
+    if (error instanceof ApiError && error.fieldErrors?.[name]) return error.fieldErrors[name][0];
+    return null;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-lg font-semibold text-slate-800">Field team</h1>
+        <div className="flex flex-wrap gap-2">
+          <Input placeholder="Search name, phone…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-48" />
+          {tab === "Representatives" ? (
+            <Button size="sm" onClick={() => setShowRepForm((v) => !v)}>
+              {showRepForm ? "Close" : "Add representative"}
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => setShowTerritoryForm((v) => !v)}>
+              {showTerritoryForm ? "Close" : "Add territory"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {TABS.map((item) => (
+          <button
+            key={item}
+            onClick={() => setTab(item)}
+            className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+              tab === item ? "bg-emerald-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+
+      {tab === "Representatives" ? (
+        <>
+          {selected ? <RepPanel rep={selected} onClose={() => setSelected(null)} /> : null}
+          {showRepForm ? (
+            <Card>
+              <CardHeader title="New representative" />
+              <form
+                onSubmit={(event: FormEvent) => {
+                  event.preventDefault();
+                  repMutation.mutate(repForm);
+                }}
+                className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4"
+              >
+                <div className="col-span-2 lg:col-span-4">
+                  <ErrorBanner error={repMutation.error} />
+                </div>
+                <Field label="Code" error={fieldError(repMutation.error, "code")}>
+                  <Input value={repForm.code} onChange={(e) => setRepForm({ ...repForm, code: e.target.value })} required />
+                </Field>
+                <Field label="Name" error={fieldError(repMutation.error, "name")}>
+                  <Input value={repForm.name} onChange={(e) => setRepForm({ ...repForm, name: e.target.value })} required />
+                </Field>
+                <Field label="Type" error={fieldError(repMutation.error, "rep_type")}>
+                  <Select value={repForm.rep_type} onChange={(e) => setRepForm({ ...repForm, rep_type: e.target.value })}>
+                    <option value="SALES">Sales representative</option>
+                    <option value="MEDICAL">Medical representative</option>
+                  </Select>
+                </Field>
+                <Field label="Phone" error={fieldError(repMutation.error, "phone")}>
+                  <Input value={repForm.phone} onChange={(e) => setRepForm({ ...repForm, phone: e.target.value })} />
+                </Field>
+                <Field label="Branch" error={fieldError(repMutation.error, "branch")}>
+                  <Select value={repForm.branch} onChange={(e) => setRepForm({ ...repForm, branch: e.target.value })}>
+                    <option value="">—</option>
+                    {branchesQuery.data?.results.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <div className="col-span-2 lg:col-span-4">
+                  <Button type="submit" disabled={repMutation.isPending}>
+                    {repMutation.isPending ? "Saving…" : "Create representative"}
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          ) : null}
+          <Card>
+            <CardHeader title="Representatives" subtitle={repsQuery.data ? `${repsQuery.data.count} rep(s)` : undefined} />
+            <ErrorBanner error={repsQuery.error} />
+            {repsQuery.isLoading ? (
+              <Spinner />
+            ) : !repsQuery.data || repsQuery.data.results.length === 0 ? (
+              <EmptyState message="No representatives yet." />
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {repsQuery.data.results.map((rep) => (
+                  <li key={rep.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+                    <div>
+                      <p className="font-medium">
+                        {rep.name} <span className="font-mono text-xs text-slate-400">{rep.code}</span>
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {rep.rep_type} · {rep.phone || "no phone"}
+                        {rep.branch_name ? ` · ${rep.branch_name}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {rep.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
+                      <Button size="sm" variant="secondary" onClick={() => setSelected(rep)}>
+                        Assignments
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </>
+      ) : (
+        <>
+          {showTerritoryForm ? (
+            <Card>
+              <CardHeader title="New territory" subtitle="Region → area → territory hierarchy." />
+              <form
+                onSubmit={(event: FormEvent) => {
+                  event.preventDefault();
+                  territoryMutation.mutate(territoryForm);
+                }}
+                className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4"
+              >
+                <div className="col-span-2 lg:col-span-4">
+                  <ErrorBanner error={territoryMutation.error} />
+                </div>
+                <Field label="Name" error={fieldError(territoryMutation.error, "name")}>
+                  <Input
+                    value={territoryForm.name}
+                    onChange={(e) => setTerritoryForm({ ...territoryForm, name: e.target.value })}
+                    required
+                  />
+                </Field>
+                <Field label="Type" error={fieldError(territoryMutation.error, "territory_type")}>
+                  <Select
+                    value={territoryForm.territory_type}
+                    onChange={(e) => setTerritoryForm({ ...territoryForm, territory_type: e.target.value })}
+                  >
+                    <option value="REGION">Region</option>
+                    <option value="AREA">Area</option>
+                    <option value="TERRITORY">Territory</option>
+                  </Select>
+                </Field>
+                <Field label="Parent" error={fieldError(territoryMutation.error, "parent")}>
+                  <Select
+                    value={territoryForm.parent}
+                    onChange={(e) => setTerritoryForm({ ...territoryForm, parent: e.target.value })}
+                  >
+                    <option value="">—</option>
+                    {territoriesQuery.data?.results.map((territory) => (
+                      <option key={territory.id} value={territory.id}>
+                        {territory.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <div className="col-span-2 lg:col-span-4">
+                  <Button type="submit" disabled={territoryMutation.isPending}>
+                    {territoryMutation.isPending ? "Saving…" : "Create territory"}
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          ) : null}
+          <Card>
+            <CardHeader title="Territories" subtitle={territoriesQuery.data ? `${territoriesQuery.data.count} territory(ies)` : undefined} />
+            <ErrorBanner error={territoriesQuery.error} />
+            {territoriesQuery.isLoading ? (
+              <Spinner />
+            ) : !territoriesQuery.data || territoriesQuery.data.results.length === 0 ? (
+              <EmptyState message="No territories yet." />
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {territoriesQuery.data.results.map((territory) => (
+                  <li key={territory.id} className="flex items-center justify-between p-4 text-sm">
+                    <div>
+                      <p className="font-medium">{territory.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {territory.territory_type}
+                        {territory.parent_name ? ` · parent: ${territory.parent_name}` : ""}
+                      </p>
+                    </div>
+                    {territory.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}

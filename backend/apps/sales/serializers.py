@@ -103,6 +103,8 @@ class SalesInvoiceReadSerializer(serializers.ModelSerializer):
     customer_code = serializers.CharField(source="customer.code", read_only=True)
     customer_phone = serializers.CharField(source="customer.phone", read_only=True)
     customer_address = serializers.CharField(source="customer.address", read_only=True)
+    doctor_name = serializers.CharField(source="doctor.name", read_only=True, default="")
+    sales_rep_name = serializers.CharField(source="sales_rep.name", read_only=True, default="")
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     branch_address = serializers.CharField(source="branch.address", read_only=True)
     branch_phone = serializers.CharField(source="branch.phone", read_only=True)
@@ -123,6 +125,10 @@ class SalesInvoiceReadSerializer(serializers.ModelSerializer):
             "customer_code",
             "customer_phone",
             "customer_address",
+            "doctor",
+            "doctor_name",
+            "sales_rep",
+            "sales_rep_name",
             "business_date",
             "lifecycle",
             "payment_status",
@@ -174,6 +180,8 @@ class SalesInvoiceWriteSerializer(serializers.Serializer):
     customer = serializers.UUIDField()
     branch = serializers.UUIDField()
     business_date = serializers.DateField(required=False)
+    doctor = serializers.UUIDField(required=False, allow_null=True)
+    sales_rep = serializers.UUIDField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
     items = SalesInvoiceItemInputSerializer(many=True, allow_empty=False)
 
@@ -261,6 +269,8 @@ class SalesInvoiceWriteSerializer(serializers.Serializer):
             customer=self._customer,
             branch=self._branch,
             business_date=validated_data.get("business_date") or timezone.localdate(),
+            doctor_id=validated_data.get("doctor"),
+            sales_rep_id=validated_data.get("sales_rep"),
             notes=validated_data.get("notes", ""),
             **totals,
         )
@@ -278,6 +288,10 @@ class SalesInvoiceWriteSerializer(serializers.Serializer):
         instance.branch = getattr(self, "_branch", instance.branch)
         if validated_data.get("business_date"):
             instance.business_date = validated_data["business_date"]
+        if "doctor" in validated_data:
+            instance.doctor_id = validated_data["doctor"]
+        if "sales_rep" in validated_data:
+            instance.sales_rep_id = validated_data["sales_rep"]
         if "notes" in validated_data:
             instance.notes = validated_data["notes"]
         for field, value in totals.items():

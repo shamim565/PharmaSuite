@@ -128,6 +128,8 @@ ROLE_DEFINITIONS: dict[str, dict] = {
             "crm:DOCTOR_MANAGE",
             "crm:VISIT_VIEW",
             "crm:REP_VIEW",
+            "crm:REP_MANAGE",
+            "crm:TERRITORY_MANAGE",
             "finance:ACCOUNT_VIEW",
             "finance:EXPENSE_VIEW",
             "finance:EXPENSE_POST",

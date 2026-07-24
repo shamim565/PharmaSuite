@@ -311,3 +311,64 @@ class FinancialPositionView(APIView):
                 ),
             }
         )
+
+
+class SalesAttributionView(APIView):
+    permission_classes = [HasPermission]
+    required_permissions = ["REPORT_VIEW"]
+    group_field = ""
+
+    def get(self, request):
+        from django.db.models import Count
+
+        money_field = DecimalField(max_digits=18, decimal_places=2)
+        date_from, date_to = resolve_period(request)
+
+        invoices = branch_scoped(
+            request.user,
+            SalesInvoice.objects.filter(
+                lifecycle=SalesInvoiceStatus.CONFIRMED, business_date__range=(date_from, date_to)
+            ),
+        )
+        filter_value = request.query_params.get(self.group_field)
+        if filter_value:
+            invoices = invoices.filter(**{f"{self.group_field}_id": filter_value})
+
+        rows = (
+            invoices.values(f"{self.group_field}_id", f"{self.group_field}__name")
+            .annotate(
+                net=Sum(
+                    ExpressionWrapper(
+                        F("subtotal") - F("discount_total"), output_field=money_field
+                    )
+                ),
+                count=Count("id"),
+            )
+            .order_by(f"{self.group_field}__name")
+        )
+        results = [
+            {
+                "id": row[f"{self.group_field}_id"],
+                "name": row[f"{self.group_field}__name"] or "Unassigned",
+                "net_revenue": str(money(row["net"])),
+                "invoice_count": row["count"],
+            }
+            for row in rows
+        ]
+        total = sum((Decimal(row["net_revenue"]) for row in results), Decimal("0"))
+        return Response(
+            {
+                "period": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
+                "count": len(results),
+                "total_net_revenue": str(money(total)),
+                "results": results,
+            }
+        )
+
+
+class SalesByDoctorView(SalesAttributionView):
+    group_field = "doctor"
+
+
+class SalesByRepView(SalesAttributionView):
+    group_field = "sales_rep"

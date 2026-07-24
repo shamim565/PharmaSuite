@@ -476,6 +476,60 @@ Sprint 9 — Profit & financial overview: revenue/COGS/gross profit/net profit, 
 ### Next
 Sprint 10 — Doctors & representatives: doctor CRUD, doctor–medicine mapping, territories, representatives, assignments, doctor visits with samples from promotional stock, visit coverage and activity reports, doctor-wise and rep-wise sales attribution.
 
+---
+
+## Sprint — Doctors & representatives
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Representatives app** (`apps.representatives`):
+  - Territories (region → area → territory hierarchy, unique per parent)
+  - Representatives (sales/medical, branch, optional user link, reports-to)
+  - Effective-dated assignments (customer/doctor/territory) with a single open row per pair (partial unique constraint); `assign` closes the previous open row in the same transaction; deactivation guard blocks reps with open assignments
+- **Doctors app** (`apps.doctors`):
+  - Doctor master (specialty, degrees, BMDC registration unique, category A/B/C, doctor type, territory, consent note)
+  - Doctor chambers (model), **effective-dated doctor–medicine mappings** (one open mapping per pair), mapping priority/notes
+  - **Doctor visits**: planned / completed / missed lifecycle, products discussed, outcome, next visit date, notes; **samples issued from the promotional stock pool** via the inventory posting service (`BONUS_ISSUE`), linked to the resulting ledger transaction; insufficient promo stock blocks completion
+  - Visit coverage report (per rep: planned/completed/missed/cancelled + coverage %, ad-hoc completed count)
+- **Sales attribution**: `SalesInvoice.doctor` and `SalesInvoice.sales_rep` fields; sales-by-doctor and sales-by-rep report endpoints with an "Unassigned" bucket; attribution names returned on invoice read/write.
+- **RBAC**: Branch Manager granted `REP_MANAGE` and `TERRITORY_MANAGE`; roles re-seeded.
+- **Frontend**: `/doctors` (directory, mappings, visit logging with promo samples, visit history), `/reps` (representatives + assignments + territories), Reports tabs "Sales by doctor" / "Sales by rep", nav updated.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| CRM smoke script (12 checks) | ✅ 12/12 |
+| Territory/rep/doctor setup, mapping, doctor→MR and customer→SR assignments | ✅ |
+| Visit completed with promo sample: promo balance 20 → 18, sample linked | ✅ |
+| Insufficient promo stock blocked (409 `INSUFFICIENT_STOCK`) | ✅ |
+| Missed visit + coverage (2 planned, 1 completed, 1 missed, 50%) | ✅ |
+| Attributed invoice (doctor + sales rep names); sales-by-doctor 20.00, sales-by-rep 20.00; Unassigned bucket | ✅ |
+| Live: doctors, reps, coverage, attribution, frontend routes | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build` (23 routes), `check_stock_integrity` | ✅ |
+
+### Key endpoints
+- `GET/POST /api/v1/doctors/` (+`/{id}/medicines/`), `POST /api/v1/doctor-medicines/{id}/end/`
+- `GET/POST /api/v1/doctor-visits/` (+`/{id}/complete/`, `/{id}/miss/`), `GET /api/v1/doctors/reports/visit-coverage/`
+- `GET/POST /api/v1/representatives/` (+`/{id}/assign|unassign/`, `/{id}/assignments/`), `GET/POST /api/v1/territories/`
+- `GET /api/v1/reports/sales-by-doctor|sales-by-rep/`
+
+### Key screens
+- `/doctors` (mappings + visits + samples), `/reps` (assignments + territories), `/reports` (attribution tabs)
+
+### Migrations
+- `representatives.0001`, `doctors.0001/0002`, `sales.0004` (attribution fields)
+
+### Known limitations
+- Doctor chambers and rep targets/commissions are modeled/planned but not exposed in this sprint's UI (targets remain Phase 2 per open questions).
+- Visit edit window (24h) not yet enforced; edits are audited by default model timestamps only.
+- GPS/photo visit evidence deferred to Phase 2.
+- Automated tests deferred per project decision.
+
+### Next
+Sprint 11 — Dashboard & reports completion: expand dashboard KPIs (sales trend, top items, low stock, near expiry alerts), add report exports, complete the report catalog (sales/purchase/stock/expiry/receivable/payable/expense/profit/doctor/rep activity) with date filtering, search, pagination and permission gating.
+
+
 
 
 
