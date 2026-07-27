@@ -111,6 +111,31 @@ export const api = {
   delete: <T>(path: string) => apiFetch<T>(path, { method: "DELETE" }),
 };
 
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  let response = await fetch(`${API_URL}${path}`, {
+    credentials: "include",
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+  if (response.status === 401 && (await tryRefresh())) {
+    response = await fetch(`${API_URL}${path}`, {
+      credentials: "include",
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    });
+  }
+  if (!response.ok) {
+    throw new ApiError("Download failed", String(response.status), response.status);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function login(identifier: string, password: string) {
   const data = await apiFetch<{ access: string; user: import("./types").CurrentUser }>("/auth/login/", {
     method: "POST",

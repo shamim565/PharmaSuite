@@ -894,3 +894,64 @@ export type AttributionReport = {
   total_net_revenue: string;
   results: AttributionRow[];
 };
+
+export type DashboardWidgets = {
+  period: { date_from: string; date_to: string; days: number };
+  sales_trend: { date: string; revenue: string; invoices: number }[];
+  top_items: { medicine: string; name: string; code: string; qty: string; revenue: string }[];
+  top_customers: { customer: string; name: string; revenue: string; invoices: number }[];
+  low_stock: { medicine: string; name: string; code: string; on_hand: string; reorder_level: string }[];
+  near_expiry: {
+    medicine: string;
+    batch_number: string;
+    expiry_date: string;
+    days_to_expiry: number;
+    qty_on_hand: string;
+  }[];
+  medicine_count: number;
+};
+
+export type SalesSummaryReport = {
+  period: { date_from: string; date_to: string };
+  count: number;
+  totals: { invoices: number; net_revenue: string; vat: string; grand_total: string };
+  results: { date: string; invoices: number; net_revenue: string; vat: string; grand_total: string }[];
+};
+
+export type PurchasesSummaryReport = {
+  period: { date_from: string; date_to: string };
+  count: number;
+  totals: { purchases: number; net_cost: string; grand_total: string };
+  results: { date: string; purchases: number; net_cost: string; vat: string; grand_total: string }[];
+};
+
+export type SalesByItemReport = {
+  period: { date_from: string; date_to: string };
+  count: number;
+  has_cost_access: boolean;
+  results: {
+    medicine: string;
+    name: string;
+    code: string;
+    qty: string;
+    gross: string;
+    discount: string;
+    net_revenue: string;
+    cost?: string;
+    gross_profit?: string;
+  }[];
+};
+
+export type SalesByCustomerReport = {
+  period: { date_from: string; date_to: string };
+  count: number;
+  results: {
+    customer: string;
+    name: string;
+    code: string;
+    invoices: number;
+    net_revenue: string;
+    paid: string;
+    outstanding: string;
+  }[];
+};

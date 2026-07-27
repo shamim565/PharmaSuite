@@ -529,6 +529,56 @@ Sprint 10 — Doctors & representatives: doctor CRUD, doctor–medicine mapping,
 ### Next
 Sprint 11 — Dashboard & reports completion: expand dashboard KPIs (sales trend, top items, low stock, near expiry alerts), add report exports, complete the report catalog (sales/purchase/stock/expiry/receivable/payable/expense/profit/doctor/rep activity) with date filtering, search, pagination and permission gating.
 
+---
+
+## Sprint — Dashboard widgets & report catalog completion
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Dashboard widgets** (`GET /dashboard/widgets/`): last-N-days sales trend (per-day revenue + invoice counts), top 5 items by revenue, top 5 customers, low-stock preview (worst 5 below reorder level), near-expiry preview (next 5 batches ≤ 90 days) — all branch-scoped.
+- **Report catalog additions** (all with `date_from/date_to`, search, CSV export):
+  - `GET /reports/sales-summary/` — daily invoice count, net revenue, VAT, grand totals + period totals
+  - `GET /reports/purchases-summary/` — daily confirmed purchase counts, net cost, VAT, grand totals
+  - `GET /reports/sales-by-item/` — quantity, gross, discount, net per medicine; **cost and gross profit only with `REPORT_VIEW_COST`** (masked otherwise, including CSV columns)
+  - `GET /reports/sales-by-customer/` — invoices, net revenue, paid, outstanding per customer
+- **CSV export** (`?export=csv`) with `text/csv` content type and attachment filename for all four new endpoints; report styling honors permission masking.
+- **Dashboard UI**: sales-trend bar chart, top items/customers lists, low-stock and near-expiry alert cards with links to inventory; operations KPI values formatted as money.
+- **Reports UI**: new tabs Sales summary (sales + purchases cards with CSV buttons), Sales by item (cost columns conditional on permission), Sales by customer, Purchases; CSV downloads through an authenticated `apiDownload` helper.
+- **Fix discovered**: Django 6.1.1 mis-resolves multiple aggregate expressions in one `annotate()` (mixing plain `Sum('field')` with expression sums raises `FieldError`). New report endpoints aggregate in Python over `values()` rows — deterministic and independently verified against ORM sums.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Reports/widgets smoke script (11 checks) | ✅ 11/11 |
+| Widgets: trend, top items, low stock, near expiry structure | ✅ |
+| Sales summary totals equal all-time ORM (184.00) | ✅ |
+| Purchases summary totals equal ORM (131.00) | ✅ |
+| Sales-by-item qty equals ORM (10.000 for SALEPL1) | ✅ |
+| CSV export: header + row count match | ✅ |
+| Owner sees cost/profit; Sales Operator sees values without cost, CSV omits cost column | ✅ |
+| Live: CSV `text/csv` + attachment header; dashboard/reports routes 200 | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build` (23 routes), `check_stock_integrity` | ✅ |
+
+### Key endpoints
+- `GET /api/v1/dashboard/widgets/`
+- `GET /api/v1/reports/sales-summary|purchases-summary|sales-by-item|sales-by-customer/` (all `?export=csv`)
+
+### Key screens
+- Dashboard widgets section; `/reports` tabs (Sales summary, Sales by item, Sales by customer, Purchases + existing tabs)
+
+### Migrations
+- none
+
+### Known limitations
+- Reports aggregate in Python for correctness; at very large volumes (>100k rows/period) async generation will be introduced with exports.
+- Expiry/receivable/payable/expense/income reports remain on their module pages (inventory alerts, dues, payables, expense/income summaries) rather than duplicated in the catalog.
+- Automated tests deferred per project decision.
+
+### Next
+Sprint 12 — Security, audit, migration & go-live: audit log review UI, security hardening (rate limits, headers, production settings), health/monitoring, backup & restore procedures, opening-data import tooling (medicines, stock, dues, payables, balances, users), reconciliation, UAT checklist and go-live readiness.
+
+
 
 
 

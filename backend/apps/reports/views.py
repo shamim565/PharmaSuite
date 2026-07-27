@@ -372,3 +372,285 @@ class SalesByDoctorView(SalesAttributionView):
 
 class SalesByRepView(SalesAttributionView):
     group_field = "sales_rep"
+
+
+def csv_response(filename: str, headers: list[str], rows: list[list]):
+    import csv
+    import io
+
+    from django.http import HttpResponse
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(headers)
+    writer.writerows(rows)
+    response = HttpResponse(buffer.getvalue(), content_type="text/csv")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+def user_has_cost_access(user) -> bool:
+    return bool(user.is_superuser or "REPORT_VIEW_COST" in user.effective_permission_codes)
+
+
+class SalesSummaryView(APIView):
+    permission_classes = [HasPermission]
+    required_permissions = ["REPORT_VIEW"]
+
+    def get(self, request):
+        date_from, date_to = resolve_period(request)
+        invoices = branch_scoped(
+            request.user,
+            SalesInvoice.objects.filter(
+                lifecycle=SalesInvoiceStatus.CONFIRMED, business_date__range=(date_from, date_to)
+            ),
+        )
+        rows_map: dict[str, dict] = {}
+        for row in invoices.values("business_date", "subtotal", "discount_total", "vat_total", "grand_total"):
+            entry = rows_map.setdefault(
+                row["business_date"].isoformat(),
+                {"invoices": 0, "net": Decimal("0"), "vat": Decimal("0"), "grand": Decimal("0")},
+            )
+            entry["invoices"] += 1
+            entry["net"] += row["subtotal"] - row["discount_total"]
+            entry["vat"] += row["vat_total"]
+            entry["grand"] += row["grand_total"]
+
+        results = [
+            {
+                "date": date_key,
+                "invoices": row["invoices"],
+                "net_revenue": str(money(row["net"])),
+                "vat": str(money(row["vat"])),
+                "grand_total": str(money(row["grand"])),
+            }
+            for date_key, row in sorted(rows_map.items())
+        ]
+        totals = {
+            "invoices": sum((row["invoices"] for row in results), 0),
+            "net_revenue": str(money(sum((Decimal(row["net_revenue"]) for row in results), Decimal("0")))),
+            "vat": str(money(sum((Decimal(row["vat"]) for row in results), Decimal("0")))),
+            "grand_total": str(money(sum((Decimal(row["grand_total"]) for row in results), Decimal("0")))),
+        }
+        if request.query_params.get("export") == "csv":
+            return csv_response(
+                "sales-summary.csv",
+                ["date", "invoices", "net_revenue", "vat", "grand_total"],
+                [[row["date"], row["invoices"], row["net_revenue"], row["vat"], row["grand_total"]] for row in results],
+            )
+        return Response(
+            {
+                "period": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
+                "count": len(results),
+                "totals": totals,
+                "results": results,
+            }
+        )
+
+
+class PurchasesSummaryView(APIView):
+    permission_classes = [HasPermission]
+    required_permissions = ["REPORT_VIEW"]
+
+    def get(self, request):
+        from apps.purchases.models import Purchase, PurchaseStatus
+
+        date_from, date_to = resolve_period(request)
+        purchases = branch_scoped(
+            request.user,
+            Purchase.objects.filter(
+                lifecycle=PurchaseStatus.CONFIRMED, business_date__range=(date_from, date_to)
+            ),
+        )
+        rows_map: dict[str, dict] = {}
+        for row in purchases.values("business_date", "subtotal", "discount_total", "vat_total", "grand_total"):
+            entry = rows_map.setdefault(
+                row["business_date"].isoformat(),
+                {"purchases": 0, "net": Decimal("0"), "vat": Decimal("0"), "grand": Decimal("0")},
+            )
+            entry["purchases"] += 1
+            entry["net"] += row["subtotal"] - row["discount_total"]
+            entry["vat"] += row["vat_total"]
+            entry["grand"] += row["grand_total"]
+
+        results = [
+            {
+                "date": date_key,
+                "purchases": row["purchases"],
+                "net_cost": str(money(row["net"])),
+                "vat": str(money(row["vat"])),
+                "grand_total": str(money(row["grand"])),
+            }
+            for date_key, row in sorted(rows_map.items())
+        ]
+        totals = {
+            "purchases": sum((row["purchases"] for row in results), 0),
+            "net_cost": str(money(sum((Decimal(row["net_cost"]) for row in results), Decimal("0")))),
+            "grand_total": str(money(sum((Decimal(row["grand_total"]) for row in results), Decimal("0")))),
+        }
+        if request.query_params.get("export") == "csv":
+            return csv_response(
+                "purchases-summary.csv",
+                ["date", "purchases", "net_cost", "vat", "grand_total"],
+                [[row["date"], row["purchases"], row["net_cost"], row["vat"], row["grand_total"]] for row in results],
+            )
+        return Response(
+            {
+                "period": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
+                "count": len(results),
+                "totals": totals,
+                "results": results,
+            }
+        )
+
+
+class SalesByItemView(APIView):
+    permission_classes = [HasPermission]
+    required_permissions = ["REPORT_VIEW"]
+
+    def get(self, request):
+        from apps.sales.models import SalesInvoiceItem
+
+        date_from, date_to = resolve_period(request)
+        has_cost = user_has_cost_access(request.user)
+
+        items = SalesInvoiceItem.objects.filter(
+            invoice__lifecycle=SalesInvoiceStatus.CONFIRMED,
+            invoice__business_date__range=(date_from, date_to),
+        )
+        if not (request.user.is_superuser or request.user.has_all_branch_scope):
+            items = items.filter(invoice__branch_id__in=request.user.branch_ids)
+        search = request.query_params.get("search")
+        if search:
+            items = items.filter(medicine__name__icontains=search)
+
+        item_map: dict[str, dict] = {}
+        fields = ["medicine_id", "medicine__name", "medicine__code", "qty", "unit_price", "line_discount"]
+        cached = items.values(*fields)
+        for row in cached:
+            entry = item_map.setdefault(
+                str(row["medicine_id"]),
+                {
+                    "medicine": row["medicine_id"],
+                    "name": row["medicine__name"],
+                    "code": row["medicine__code"],
+                    "qty": Decimal("0"),
+                    "gross": Decimal("0"),
+                    "discount": Decimal("0"),
+                    "net": Decimal("0"),
+                },
+            )
+            entry["qty"] += row["qty"]
+            entry["gross"] += row["qty"] * row["unit_price"]
+            entry["discount"] += row["line_discount"]
+            entry["net"] += row["qty"] * row["unit_price"] - row["line_discount"]
+
+        results = []
+        for entry in sorted(item_map.values(), key=lambda row: row["net"], reverse=True):
+            result = {
+                "medicine": entry["medicine"],
+                "name": entry["name"],
+                "code": entry["code"],
+                "qty": str(entry["qty"]),
+                "gross": str(money(entry["gross"])),
+                "discount": str(money(entry["discount"])),
+                "net_revenue": str(money(entry["net"])),
+            }
+            results.append(result)
+
+        if has_cost:
+            cost_map: dict[str, Decimal] = {}
+            for row in items.values("medicine_id", "qty", "unit_cost"):
+                key = str(row["medicine_id"])
+                cost_map[key] = cost_map.get(key, Decimal("0")) + row["qty"] * row["unit_cost"]
+            for result in results:
+                cost = money(cost_map.get(str(result["medicine"]), Decimal("0")))
+                result["cost"] = str(cost)
+                result["gross_profit"] = str(money(Decimal(result["net_revenue"]) - cost))
+
+        if request.query_params.get("export") == "csv":
+            headers = ["medicine", "code", "qty", "gross", "discount", "net_revenue"]
+            if has_cost:
+                headers += ["cost", "gross_profit"]
+            return csv_response(
+                "sales-by-item.csv",
+                headers,
+                [[row.get(header, "") for header in headers] for row in results],
+            )
+        return Response(
+            {
+                "period": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
+                "count": len(results),
+                "has_cost_access": has_cost,
+                "results": results,
+            }
+        )
+
+
+class SalesByCustomerView(APIView):
+    permission_classes = [HasPermission]
+    required_permissions = ["REPORT_VIEW"]
+
+    def get(self, request):
+        date_from, date_to = resolve_period(request)
+        invoices = branch_scoped(
+            request.user,
+            SalesInvoice.objects.filter(
+                lifecycle=SalesInvoiceStatus.CONFIRMED, business_date__range=(date_from, date_to)
+            ),
+        )
+        search = request.query_params.get("search")
+        if search:
+            invoices = invoices.filter(customer__name__icontains=search)
+
+        customer_map: dict[str, dict] = {}
+        for row in invoices.values(
+            "customer_id", "customer__name", "customer__code", "subtotal", "discount_total", "grand_total", "paid_total"
+        ):
+            entry = customer_map.setdefault(
+                str(row["customer_id"]),
+                {
+                    "customer": row["customer_id"],
+                    "name": row["customer__name"],
+                    "code": row["customer__code"],
+                    "invoices": 0,
+                    "net": Decimal("0"),
+                    "paid": Decimal("0"),
+                    "outstanding": Decimal("0"),
+                },
+            )
+            entry["invoices"] += 1
+            entry["net"] += row["subtotal"] - row["discount_total"]
+            entry["paid"] += row["paid_total"]
+            entry["outstanding"] += row["grand_total"] - row["paid_total"]
+
+        results = []
+        for entry in sorted(customer_map.values(), key=lambda row: row["net"], reverse=True):
+            results.append(
+                {
+                    "customer": entry["customer"],
+                    "name": entry["name"],
+                    "code": entry["code"],
+                    "invoices": entry["invoices"],
+                    "net_revenue": str(money(entry["net"])),
+                    "paid": str(money(entry["paid"])),
+                    "outstanding": str(money(entry["outstanding"])),
+                }
+            )
+
+        if request.query_params.get("export") == "csv":
+            return csv_response(
+                "sales-by-customer.csv",
+                ["customer", "code", "invoices", "net_revenue", "paid", "outstanding"],
+                [
+                    [row["name"], row["code"], row["invoices"], row["net_revenue"], row["paid"], row["outstanding"]]
+                    for row in results
+                ],
+            )
+        return Response(
+            {
+                "period": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
+                "count": len(results),
+                "results": results,
+            }
+        )

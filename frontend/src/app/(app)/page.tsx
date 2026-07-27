@@ -1,10 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 
-import { Card, CardHeader, ErrorBanner, Spinner } from "@/components/ui";
+import { Badge, Card, CardHeader, ErrorBanner, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { DashboardSummary } from "@/lib/types";
+import type { DashboardSummary, DashboardWidgets } from "@/lib/types";
 
 function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -13,6 +14,164 @@ function KpiCard({ label, value, hint }: { label: string; value: string; hint?: 
       <p className="mt-1 text-2xl font-bold text-slate-800">{value}</p>
       {hint ? <p className="text-xs text-slate-400">{hint}</p> : null}
     </Card>
+  );
+}
+
+function money(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function SalesTrend({ widgets }: { widgets: DashboardWidgets }) {
+  const maxRevenue = Math.max(...widgets.sales_trend.map((row) => Number(row.revenue)), 1);
+  return (
+    <Card>
+      <CardHeader
+        title="Sales trend"
+        subtitle={`Last ${widgets.period.days} days · ${widgets.sales_trend.reduce((sum, row) => sum + row.invoices, 0)} invoice(s)`}
+      />
+      {widgets.sales_trend.length === 0 ? (
+        <p className="p-4 text-sm text-slate-500">No confirmed sales in this period.</p>
+      ) : (
+        <div className="flex h-32 items-end gap-1 px-4 pb-2 pt-4">
+          {widgets.sales_trend.map((row) => (
+            <div
+              key={row.date}
+              title={`${row.date}: ${money(row.revenue)} (${row.invoices})`}
+              className="flex-1 rounded-t bg-emerald-500/80 hover:bg-emerald-600"
+              style={{ height: `${Math.max((Number(row.revenue) / maxRevenue) * 100, 4)}%` }}
+            />
+          ))}
+        </div>
+      )}
+      <div className="flex justify-between px-4 pb-3 text-[10px] text-slate-400">
+        <span>{widgets.sales_trend[0]?.date ?? ""}</span>
+        <span>{widgets.sales_trend[widgets.sales_trend.length - 1]?.date ?? ""}</span>
+      </div>
+    </Card>
+  );
+}
+
+function WidgetsSection() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["dashboard-widgets"],
+    queryFn: () => api.get<DashboardWidgets>("/dashboard/widgets/"),
+  });
+
+  if (isLoading) return <Spinner label="Loading widgets…" />;
+  if (!data) return <ErrorBanner error={error} />;
+
+  return (
+    <div className="space-y-4">
+      <ErrorBanner error={error} />
+      <SalesTrend widgets={data} />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Top items (period)" />
+          {data.top_items.length === 0 ? (
+            <p className="p-4 text-sm text-slate-500">No sales yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {data.top_items.map((row) => (
+                <li key={row.medicine} className="flex items-center justify-between px-4 py-2 text-sm">
+                  <div>
+                    <p className="font-medium">{row.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {row.code} · qty {row.qty}
+                    </p>
+                  </div>
+                  <span className="font-mono font-semibold">{money(row.revenue)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader title="Top customers (period)" />
+          {data.top_customers.length === 0 ? (
+            <p className="p-4 text-sm text-slate-500">No sales yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {data.top_customers.map((row) => (
+                <li key={row.customer} className="flex items-center justify-between px-4 py-2 text-sm">
+                  <div>
+                    <p className="font-medium">{row.name}</p>
+                    <p className="text-xs text-slate-500">{row.invoices} invoice(s)</p>
+                  </div>
+                  <span className="font-mono font-semibold">{money(row.revenue)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader
+            title="Low stock"
+            subtitle="At or below reorder level"
+            action={
+              <Link href="/inventory" className="text-xs font-medium text-emerald-700 hover:underline">
+                Open inventory →
+              </Link>
+            }
+          />
+          {data.low_stock.length === 0 ? (
+            <p className="p-4 text-sm text-slate-500">No medicines at reorder level.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {data.low_stock.map((row) => (
+                <li key={`${row.medicine}-${row.code}`} className="flex items-center justify-between px-4 py-2 text-sm">
+                  <div>
+                    <p className="font-medium">{row.name}</p>
+                    <p className="text-xs text-slate-500">{row.code}</p>
+                  </div>
+                  <Badge tone="amber">
+                    {row.on_hand} / reorder {row.reorder_level}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Near expiry (≤ 90 days)"
+            action={
+              <Link href="/inventory" className="text-xs font-medium text-emerald-700 hover:underline">
+                Open inventory →
+              </Link>
+            }
+          />
+          {data.near_expiry.length === 0 ? (
+            <p className="p-4 text-sm text-slate-500">No batches approaching expiry.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {data.near_expiry.map((row) => (
+                <li
+                  key={`${row.medicine}-${row.batch_number}`}
+                  className="flex items-center justify-between px-4 py-2 text-sm"
+                >
+                  <div>
+                    <p className="font-medium">{row.medicine}</p>
+                    <p className="text-xs text-slate-500">
+                      batch {row.batch_number} · qty {row.qty_on_hand}
+                    </p>
+                  </div>
+                  <Badge tone={row.days_to_expiry <= 30 ? "rose" : "amber"}>
+                    {row.expiry_date} ({row.days_to_expiry}d)
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </div>
   );
 }
 
@@ -60,10 +219,7 @@ export default function DashboardPage() {
           </div>
 
           <Card>
-            <CardHeader
-              title="Operations"
-              subtitle="Business KPIs unlock as the sales, inventory and finance sprints land."
-            />
+            <CardHeader title="Operations" subtitle="Live figures from the ledgers." />
             <div className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
               {[
                 ["Sales today", data.operations.sales_today],
@@ -77,13 +233,15 @@ export default function DashboardPage() {
               ].map(([label, value]) => (
                 <div key={String(label)} className="rounded-lg bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">{label}</p>
-                  <p className="text-lg font-semibold text-slate-400">
-                    {value === null ? "—" : String(value)}
+                  <p className="text-lg font-semibold text-slate-700">
+                    {value === null ? "—" : typeof value === "number" ? money(value) : String(value)}
                   </p>
                 </div>
               ))}
             </div>
           </Card>
+
+          <WidgetsSection />
         </>
       ) : null}
     </div>
