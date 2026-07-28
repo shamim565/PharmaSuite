@@ -1,0 +1,2 @@
+code,name,generic,manufacturer,base_unit,dosage_form,strength,purchase_price,selling_price,mrp,vat_rate,reorder_level
+PARA500,Paracetamol 500mg,Paracetamol,Square,tab,tablet,500mg,1.20,1.80,2.00,15,100

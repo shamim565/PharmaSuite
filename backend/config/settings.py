@@ -104,6 +104,15 @@ REST_FRAMEWORK = {
     ),
     "EXCEPTION_HANDLER": "apps.common.exceptions.api_exception_handler",
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_CLASSES": (
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.AnonRateThrottle",
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        "user": env("THROTTLE_USER_RATE", default="3000/hour"),
+        "anon": env("THROTTLE_ANON_RATE", default="120/hour"),
+        "login": env("THROTTLE_LOGIN_RATE", default="20/min"),
+    },
 }
 
 SIMPLE_JWT = {
@@ -128,10 +137,27 @@ CORS_ALLOWED_ORIGINS = env.list(
 CORS_ALLOW_CREDENTIALS = True
 
 REFRESH_COOKIE_NAME = env("REFRESH_COOKIE_NAME", default="erp_refresh")
-REFRESH_COOKIE_SECURE = env.bool("REFRESH_COOKIE_SECURE", default=False)
+REFRESH_COOKIE_SECURE = env.bool("REFRESH_COOKIE_SECURE", default=not DEBUG)
 REFRESH_COOKIE_PATH = "/api/v1/auth/"
 
-REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+if not DEBUG:
+    SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=31536000)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
+
+REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/5")
+CACHE_URL = env("CACHE_URL", default="redis://localhost:6379/6")
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": CACHE_URL,
+    }
+}
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=REDIS_URL)
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default=REDIS_URL)
 CELERY_TASK_SERIALIZER = "json"

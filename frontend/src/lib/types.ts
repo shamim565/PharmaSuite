@@ -955,3 +955,20 @@ export type SalesByCustomerReport = {
     outstanding: string;
   }[];
 };
+
+export type AuditLogEntry = {
+  id: string;
+  actor: string | null;
+  actor_name: string;
+  actor_type: "USER" | "SYSTEM";
+  branch: string | null;
+  branch_name: string;
+  entity_type: string;
+  entity_id: string | null;
+  action: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  request_id: string;
+  ip: string | null;
+  created_at: string;
+};

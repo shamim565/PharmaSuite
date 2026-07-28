@@ -31,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/catalog", label: "Catalog", permission: "MEDICINE_MANAGE", icon: "▤" },
   { href: "/users", label: "Users", permission: "USER_VIEW", icon: "👤" },
   { href: "/branches", label: "Branches", permission: "BRANCH_VIEW", icon: "⌂" },
+  { href: "/audit", label: "Audit", permission: "AUDIT_VIEW", icon: "📜" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

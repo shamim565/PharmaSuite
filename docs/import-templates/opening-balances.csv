@@ -1,0 +1,3 @@
+entity_type,code,branch_code,amount,note
+CUSTOMER,CUST-001,MAIN,15000.00,Opening receivable
+SUPPLIER,SUP-001,MAIN,42000.50,Opening payable

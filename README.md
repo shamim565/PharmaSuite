@@ -14,6 +14,10 @@ Multi-branch medicine distribution ERP.
 docker compose -f infra/docker-compose.yml up -d
 createdb erp_dev            # if not using compose
 
+# NOTE: local dev database runs on port 5433 in this environment
+# (Homebrew PostgreSQL 17, `pg_ctl -D /opt/homebrew/var/postgresql@17 -o "-p 5433" start`).
+# Postgres.app on 5432 works too — just update DATABASE_URL in backend/.env.
+
 # backend
 cd backend
 uv sync

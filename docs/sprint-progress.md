@@ -578,6 +578,60 @@ Sprint 11 — Dashboard & reports completion: expand dashboard KPIs (sales trend
 ### Next
 Sprint 12 — Security, audit, migration & go-live: audit log review UI, security hardening (rate limits, headers, production settings), health/monitoring, backup & restore procedures, opening-data import tooling (medicines, stock, dues, payables, balances, users), reconciliation, UAT checklist and go-live readiness.
 
+---
+
+## Sprint — Security, audit, migration & go-live
+
+**Status:** ✅ Complete (verified end-to-end) — **12/12 sprints delivered**
+
+### Implemented
+- **Audit API + UI**: `GET /api/v1/audit-logs/` with filters (entity type/id, action, actor, request id, date range, branch), branch-scoped, `AUDIT_VIEW` gated; `/audit` page with filters, pagination and before/after JSON diff viewer.
+- **Security hardening**:
+  - Redis cache backend (db 6) and DRF throttling: user 3000/h, anon 120/h, login scope 20/min (verified 429 after rapid attempts); auth view uses `ScopedRateThrottle`.
+  - Security headers (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options: DENY`), CSRF trusted origins env-driven, HSTS + SSL redirect automatically enforced when `DEBUG=False`, refresh cookie `Secure` by default in production.
+- **Backup & restore commands**: `backup_db` (pg_dump custom format, real dump verified), `restore_db --confirm` (pg_restore clean restore), plus `check_ledger_integrity` (customer/supplier/account cache reconciliation with `--repair`).
+- **Opening-data import tooling** (CSV, `--dry-run`, validation report, idempotent, `OPENING` ledger entries only):
+  - `import_medicines`, `import_users`, `import_opening_stock`, `import_opening_balances`, `import_opening_accounts`
+  - Templates in `docs/import-templates/`
+  - Fixed a real bug: `--dry-run` was creating batches before validation.
+- **Operations & go-live documentation**: `docs/operations.md` (health, backup/restore, imports, user provisioning, incidents, deploy/rollback, patching) and `docs/go-live-checklist.md` (freeze, data prep, staging dry run, cutover order, hypercare, rollback triggers).
+- **Environment recovery**: Postgres.app's trust-auth permission helper crashed repeatedly (`Postgres.app failed to verify "trust" authentication`). Restarted and then moved dev to the existing Homebrew PostgreSQL 17 cluster on port 5433 (`pg_ctl -D /opt/homebrew/var/postgresql@17 -o "-p 5433" start`), migrated + re-seeded; `.env`/`.env.example`/README updated.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Sprint 12 smoke script (13 checks) | ✅ 13/13 |
+| Audit API lists login events; entity filter; 401 without token | ✅ |
+| `check_ledger_integrity` clean; `check_stock_integrity` clean | ✅ |
+| Login throttle returns 429; login works after window reset | ✅ |
+| `backup_db` produces a non-empty custom-format dump | ✅ |
+| Import commands: dry-run validates, real import idempotent (re-run skips) | ✅ |
+| Live: audit API (11 events), starter demo data, deep health (db/redis ok, worker idle), frontend `/audit` + dashboard 200 | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build` (24 routes) | ✅ |
+
+### Key endpoints
+- `GET /api/v1/audit-logs/` (filters + pagination)
+- Commands: `backup_db`, `restore_db`, `check_ledger_integrity`, `check_stock_integrity`, `import_medicines|users|opening_stock|opening_balances|opening_accounts`
+
+### Key screens
+- `/audit` (event log with before/after diffs)
+
+### Migrations
+- none
+
+### Known limitations
+- Celery worker must be running for deep-health `celery: ok` and background jobs; run `celery -A config worker --pool=threads` on macOS dev.
+- Gunicorn/Nginx production compose is provided, but TLS/CDN/S3 credentials are deployment-specific and documented, not preconfigured.
+- UAT execution is a business activity; the checklist and all verification scripts are prepared.
+- Automated tests remain deferred per the project decision made at the start.
+
+---
+
+## Program Summary
+
+All 12 sprints are complete: foundation/auth/RBAC, catalog & batches, inventory ledger, purchasing, sales & FEFO, collections & dues, returns & adjustments, finance, profit reporting, doctors & representatives, dashboard & report catalog, and security/audit/migration/go-live. The system currently runs end-to-end (Django + DRF + PostgreSQL + Redis + Celery worker/beat, Next.js + TanStack Query) with 24 frontend routes, append-only ledgers for stock/customer/supplier/accounts, batch-actual costing, dual-control approvals, per-branch isolation, audit logging, and CSV export.
+
+
 
 
 
