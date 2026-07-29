@@ -162,6 +162,10 @@ class SalesInvoice(BaseModel):
     fulfillment_status = models.CharField(
         max_length=10, choices=FulfillmentStatus.choices, default=FulfillmentStatus.PENDING
     )
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    delivered_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     discount_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     vat_total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
@@ -178,6 +182,8 @@ class SalesInvoice(BaseModel):
     cancel_reason = models.TextField(blank=True)
     credit_override = models.BooleanField(default=False)
     credit_override_reason = models.TextField(blank=True)
+    fefo_override = models.BooleanField(default=False)
+    fefo_override_reason = models.TextField(blank=True)
     idempotency_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
 
     class Meta:

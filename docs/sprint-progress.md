@@ -631,6 +631,48 @@ Sprint 12 — Security, audit, migration & go-live: audit log review UI, securit
 
 All 12 sprints are complete: foundation/auth/RBAC, catalog & batches, inventory ledger, purchasing, sales & FEFO, collections & dues, returns & adjustments, finance, profit reporting, doctors & representatives, dashboard & report catalog, and security/audit/migration/go-live. The system currently runs end-to-end (Django + DRF + PostgreSQL + Redis + Celery worker/beat, Next.js + TanStack Query) with 24 frontend routes, append-only ledgers for stock/customer/supplier/accounts, batch-actual costing, dual-control approvals, per-branch isolation, audit logging, and CSV export.
 
+---
+
+## Sprint 13 — Completeness pass: wiring & fixes
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Port standardised on 8000** for the dev API (frontend env, README, backend `runserver 8000`).
+- **Sales attribution UI**: doctor and sales-rep selectors on the invoice form — hand-entered sales now feed the doctor/rep reports instead of "Unassigned".
+- **FEFO override**: per-line batch picker on the invoice form (permission `INV_OVERRIDE_FEFO`, audited `fefo_override` + reason on the invoice); backend validates batch branch/medicine/active/not-expired and blocks users without the permission.
+- **Default customer discount**: `default_discount_pct` is now applied when a line discount is omitted (was a dead field).
+- **Delivery tracking**: `POST /sales/{id}/mark-delivered/` (idempotent) + "Mark delivered" button + Delivered badge; `delivered_at/delivered_by` recorded.
+- **Purchase cancel UI**: Cancel button + reason panel for confirmed, unpaid, unreturned purchases (backend rules enforced).
+- **Edit + deactivate UI** for customers (incl. credit hold toggle + reason, default discount), suppliers, and branches; customer/supplier/branch status toggles.
+- **Audit CSV export**: `GET /audit-logs/export/` (requires `AUDIT_EXPORT`) + Export button on the audit page with current filters.
+- **Frontend idempotency keys**: confirm, receipt, sales-return, cancel and payment POSTs now send `Idempotency-Key` (generated per panel open) — double-tap/retry safe.
+- **Advance auto-apply**: `AUTO_APPLY_ADVANCE` setting; when enabled, customer credit is applied to new invoices at confirmation (`ADVANCE_APPLIED` ledger entry, paid status recomputed) using the pre-invoice balance (fixed ordering bug found in smoke).
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Sprint 13 smoke script (11 checks) | ✅ 11/11 |
+| Default discount (10%) applied: discount 2.00, grand 21.00 | ✅ |
+| FEFO auto picks earliest batch; override to later batch with reason recorded | ✅ |
+| Operator without `INV_OVERRIDE_FEFO` blocked (403) | ✅ |
+| Mark-delivered idempotent; advance auto-apply posts 5.00 paid on a 12.00 invoice | ✅ |
+| Audit CSV export (200 + header) and 403 without `AUDIT_EXPORT` | ✅ |
+| Live on port 8000: login, audit export, all pages 200 (after clean rebuild) | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build`, stock & ledger integrity | ✅ |
+
+### Key endpoints
+- `POST /api/v1/sales/{id}/mark-delivered/`
+- `GET /api/v1/audit-logs/export/`
+
+### Migrations
+- `sales.0005` (fefo_override, fefo_override_reason, delivered_at, delivered_by)
+
+### Known limitations
+- Frontend idempotency keys cover confirm/receipt/return/cancel; purchase payments still use plain POST (keyed service-side only).
+- The user's dev server needed a `npm run dev` restart after the env port change; a stale `.next` caused transient 500s, resolved by a clean `next build`.
+- Remaining Tier 2/3 gaps (settings module, fiscal period locking, notifications, attachments, PWA, global search, branch switcher, pack units, cheque lifecycle, statement exports) are scheduled next.
+
 
 
 

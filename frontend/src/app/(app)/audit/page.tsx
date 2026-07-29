@@ -3,8 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { Badge, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Spinner } from "@/components/ui";
-import { api } from "@/lib/api";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Spinner } from "@/components/ui";
+import { api, apiDownload } from "@/lib/api";
 import type { AuditLogEntry, Paginated } from "@/lib/types";
 
 export default function AuditPage() {
@@ -29,7 +29,16 @@ export default function AuditPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-semibold text-slate-800">Audit log</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-lg font-semibold text-slate-800">Audit log</h1>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => apiDownload(`/audit-logs/export/?${params.toString()}`, "audit-log.csv")}
+        >
+          Export CSV
+        </Button>
+      </div>
 
       <Card className="p-4">
         <div className="grid grid-cols-2 items-end gap-3 lg:grid-cols-5">

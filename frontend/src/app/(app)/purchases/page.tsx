@@ -67,6 +67,8 @@ export default function PurchasesPage() {
   const [confirmFor, setConfirmFor] = useState<Purchase | null>(null);
   const [payFor, setPayFor] = useState<Purchase | null>(null);
   const [returnFor, setReturnFor] = useState<Purchase | null>(null);
+  const [cancelFor, setCancelFor] = useState<Purchase | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("CASH");
   const [payAccount, setPayAccount] = useState("");
@@ -177,6 +179,18 @@ export default function PurchasesPage() {
       setReturnFor(null);
       setReturnItem("");
       setReturnQty("");
+      invalidateAll();
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/purchases/${cancelFor?.id}/cancel/`, {
+        reason: cancelReason || "Cancelled from purchase register",
+      }),
+    onSuccess: () => {
+      setCancelFor(null);
+      setCancelReason("");
       invalidateAll();
     },
   });
@@ -527,6 +541,33 @@ export default function PurchasesPage() {
         </Card>
       ) : null}
 
+      {cancelFor ? (
+        <Card>
+          <CardHeader
+            title={`Cancel purchase ${cancelFor.number ?? ""}`}
+            subtitle="Allowed only when unpaid, unreturned and stock is unconsumed."
+            action={
+              <Button size="sm" variant="secondary" onClick={() => setCancelFor(null)}>
+                Close
+              </Button>
+            }
+          />
+          <div className="space-y-3 p-4">
+            <ErrorBanner error={cancelMutation.error} />
+            <Field label="Reason">
+              <Input value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+            </Field>
+            <Button
+              variant="danger"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending || !cancelReason}
+            >
+              {cancelMutation.isPending ? "Cancelling…" : "Cancel purchase"}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader
           title="Purchase register"
@@ -590,6 +631,20 @@ export default function PurchasesPage() {
                     {purchase.lifecycle === "CONFIRMED" && purchase.return_status !== "FULLY_RETURNED" ? (
                       <Button size="sm" variant="secondary" onClick={() => openReturn(purchase)}>
                         Return
+                      </Button>
+                    ) : null}
+                    {purchase.lifecycle === "CONFIRMED" &&
+                    Number(purchase.paid_total) === 0 &&
+                    purchase.return_status === "NONE" ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setCancelFor(purchase);
+                          setCancelReason("");
+                        }}
+                      >
+                        Cancel
                       </Button>
                     ) : null}
                   </div>

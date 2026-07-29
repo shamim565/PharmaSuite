@@ -74,6 +74,7 @@ export default function SuppliersPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [ledgerFor, setLedgerFor] = useState<Supplier | null>(null);
+  const [editing, setEditing] = useState<Supplier | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["suppliers", search],
@@ -91,13 +92,47 @@ export default function SuppliersPage() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (payload: typeof emptyForm) =>
+      api.patch<Supplier>(`/suppliers/${editing?.id}/`, { ...payload, credit_days: Number(payload.credit_days) }),
+    onSuccess: () => {
+      setForm(emptyForm);
+      setEditing(null);
+      setShowForm(false);
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+    },
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ supplier, active }: { supplier: Supplier; active: boolean }) =>
+      api.patch(`/suppliers/${supplier.id}/`, { is_active: active }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["suppliers"] }),
+  });
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    createMutation.mutate(form);
+    if (editing) {
+      updateMutation.mutate(form);
+    } else {
+      createMutation.mutate(form);
+    }
+  };
+
+  const openEdit = (supplier: Supplier) => {
+    setEditing(supplier);
+    setForm({
+      code: supplier.code,
+      name: supplier.name,
+      supplier_type: supplier.supplier_type,
+      contact_person: supplier.contact_person,
+      phone: supplier.phone,
+      credit_days: String(supplier.credit_days),
+    });
+    setShowForm(true);
   };
 
   const fieldError = (name: string): string | null => {
-    const err = createMutation.error;
+    const err = updateMutation.error ?? createMutation.error;
     if (err instanceof ApiError && err.fieldErrors?.[name]) return err.fieldErrors[name][0];
     return null;
   };
@@ -106,7 +141,20 @@ export default function SuppliersPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold text-slate-800">Suppliers</h1>
-        <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+        <Button
+          size="sm"
+          onClick={() => {
+            if (showForm) {
+              setShowForm(false);
+              setEditing(null);
+              setForm(emptyForm);
+            } else {
+              setEditing(null);
+              setForm(emptyForm);
+              setShowForm(true);
+            }
+          }}
+        >
           {showForm ? "Close" : "Add supplier"}
         </Button>
       </div>
@@ -115,7 +163,7 @@ export default function SuppliersPage() {
 
       {showForm ? (
         <Card>
-          <CardHeader title="New supplier" />
+          <CardHeader title={editing ? `Edit ${editing.name}` : "New supplier"} />
           <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
             <div className="col-span-2 lg:col-span-4">
               <ErrorBanner error={createMutation.error} />
@@ -155,8 +203,12 @@ export default function SuppliersPage() {
               <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </Field>
             <div className="col-span-2 lg:col-span-4">
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Saving…" : "Create supplier"}
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                {createMutation.isPending || updateMutation.isPending
+                  ? "Saving…"
+                  : editing
+                    ? "Save changes"
+                    : "Create supplier"}
               </Button>
             </div>
           </form>
@@ -202,6 +254,17 @@ export default function SuppliersPage() {
                     </span>
                   </span>
                   {supplier.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(supplier)}>
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => statusMutation.mutate({ supplier, active: !supplier.is_active })}
+                    disabled={statusMutation.isPending}
+                  >
+                    {supplier.is_active ? "Deactivate" : "Activate"}
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={() => setLedgerFor(supplier)}>
                     Ledger
                   </Button>

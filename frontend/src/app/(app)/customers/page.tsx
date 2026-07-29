@@ -16,6 +16,9 @@ const emptyForm = {
   price_tier: "RETAIL",
   credit_limit: "0",
   credit_days: "0",
+  default_discount_pct: "0",
+  credit_hold: false,
+  credit_hold_reason: "",
 };
 
 function LedgerPanel({ customer, onClose }: { customer: Customer; onClose: () => void }) {
@@ -76,6 +79,7 @@ export default function CustomersPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [ledgerFor, setLedgerFor] = useState<Customer | null>(null);
+  const [editing, setEditing] = useState<Customer | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["customers", search],
@@ -83,13 +87,22 @@ export default function CustomersPage() {
       api.get<Paginated<Customer>>(`/customers/?page_size=50&search=${encodeURIComponent(search)}`),
   });
 
+  const payloadFor = (payload: typeof emptyForm) => ({
+    code: payload.code,
+    name: payload.name,
+    customer_type: payload.customer_type,
+    phone: payload.phone,
+    area: payload.area,
+    price_tier: payload.price_tier,
+    credit_limit: payload.credit_limit,
+    credit_days: Number(payload.credit_days),
+    default_discount_pct: payload.default_discount_pct || "0",
+    credit_hold: payload.credit_hold,
+    credit_hold_reason: payload.credit_hold_reason,
+  });
+
   const createMutation = useMutation({
-    mutationFn: (payload: typeof emptyForm) =>
-      api.post<Customer>("/customers/", {
-        ...payload,
-        credit_limit: payload.credit_limit,
-        credit_days: Number(payload.credit_days),
-      }),
+    mutationFn: (payload: typeof emptyForm) => api.post<Customer>("/customers/", payloadFor(payload)),
     onSuccess: () => {
       setForm(emptyForm);
       setShowForm(false);
@@ -97,13 +110,52 @@ export default function CustomersPage() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (payload: typeof emptyForm) =>
+      api.patch<Customer>(`/customers/${editing?.id}/`, payloadFor(payload)),
+    onSuccess: () => {
+      setForm(emptyForm);
+      setEditing(null);
+      setShowForm(false);
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    },
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ customer, active }: { customer: Customer; active: boolean }) =>
+      api.patch(`/customers/${customer.id}/`, { is_active: active }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["customers"] }),
+  });
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    createMutation.mutate(form);
+    if (editing) {
+      updateMutation.mutate(form);
+    } else {
+      createMutation.mutate(form);
+    }
+  };
+
+  const openEdit = (customer: Customer) => {
+    setEditing(customer);
+    setForm({
+      code: customer.code,
+      name: customer.name,
+      customer_type: customer.customer_type,
+      phone: customer.phone,
+      area: customer.area,
+      price_tier: customer.price_tier,
+      credit_limit: customer.credit_limit,
+      credit_days: String(customer.credit_days),
+      default_discount_pct: customer.default_discount_pct ?? "0",
+      credit_hold: customer.credit_hold,
+      credit_hold_reason: customer.credit_hold_reason ?? "",
+    });
+    setShowForm(true);
   };
 
   const fieldError = (name: string): string | null => {
-    const err = createMutation.error;
+    const err = updateMutation.error ?? createMutation.error;
     if (err instanceof ApiError && err.fieldErrors?.[name]) return err.fieldErrors[name][0];
     return null;
   };
@@ -112,7 +164,20 @@ export default function CustomersPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold text-slate-800">Customers</h1>
-        <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+        <Button
+          size="sm"
+          onClick={() => {
+            if (showForm) {
+              setShowForm(false);
+              setEditing(null);
+              setForm(emptyForm);
+            } else {
+              setEditing(null);
+              setForm(emptyForm);
+              setShowForm(true);
+            }
+          }}
+        >
           {showForm ? "Close" : "Add customer"}
         </Button>
       </div>
@@ -121,7 +186,7 @@ export default function CustomersPage() {
 
       {showForm ? (
         <Card>
-          <CardHeader title="New customer" subtitle="Credit limit 0 means cash-only." />
+          <CardHeader title={editing ? `Edit ${editing.name}` : "New customer"} subtitle="Credit limit 0 means cash-only." />
           <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
             <div className="col-span-2 lg:col-span-4">
               <ErrorBanner error={createMutation.error} />
@@ -170,9 +235,39 @@ export default function CustomersPage() {
                 onChange={(e) => setForm({ ...form, credit_days: e.target.value })}
               />
             </Field>
+            <Field label="Default discount %" error={fieldError("default_discount_pct")}>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                value={form.default_discount_pct}
+                onChange={(e) => setForm({ ...form, default_discount_pct: e.target.value })}
+              />
+            </Field>
+            <label className="flex items-end gap-2 pb-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={form.credit_hold}
+                onChange={(e) => setForm({ ...form, credit_hold: e.target.checked })}
+              />
+              Credit hold
+            </label>
+            {form.credit_hold ? (
+              <Field label="Credit hold reason" error={fieldError("credit_hold_reason")}>
+                <Input
+                  value={form.credit_hold_reason}
+                  onChange={(e) => setForm({ ...form, credit_hold_reason: e.target.value })}
+                />
+              </Field>
+            ) : null}
             <div className="col-span-2 lg:col-span-4">
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Saving…" : "Create customer"}
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                {createMutation.isPending || updateMutation.isPending
+                  ? "Saving…"
+                  : editing
+                    ? "Save changes"
+                    : "Create customer"}
               </Button>
             </div>
           </form>
@@ -219,6 +314,17 @@ export default function CustomersPage() {
                     </span>
                   </span>
                   {customer.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(customer)}>
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => statusMutation.mutate({ customer, active: !customer.is_active })}
+                    disabled={statusMutation.isPending}
+                  >
+                    {customer.is_active ? "Deactivate" : "Activate"}
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={() => setLedgerFor(customer)}>
                     Ledger
                   </Button>

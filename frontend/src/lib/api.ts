@@ -57,10 +57,11 @@ type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   auth?: boolean;
+  headers?: Record<string, string>;
 };
 
 async function rawFetch(path: string, options: RequestOptions): Promise<Response> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...(options.headers ?? {}) };
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (options.auth !== false && accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
 
@@ -106,10 +107,19 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 export const api = {
   get: <T>(path: string) => apiFetch<T>(path),
   post: <T>(path: string, body?: unknown) => apiFetch<T>(path, { method: "POST", body }),
+  postWithKey: <T>(path: string, body: unknown, key: string) =>
+    apiFetch<T>(path, { method: "POST", body, headers: { "Idempotency-Key": key } }),
   patch: <T>(path: string, body?: unknown) => apiFetch<T>(path, { method: "PATCH", body }),
   put: <T>(path: string, body?: unknown) => apiFetch<T>(path, { method: "PUT", body }),
   delete: <T>(path: string) => apiFetch<T>(path, { method: "DELETE" }),
 };
+
+export function newIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export async function apiDownload(path: string, filename: string): Promise<void> {
   let response = await fetch(`${API_URL}${path}`, {

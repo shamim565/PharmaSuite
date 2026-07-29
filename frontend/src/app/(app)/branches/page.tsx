@@ -19,6 +19,7 @@ export default function BranchesPage() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [editing, setEditing] = useState<Branch | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["branches"],
@@ -35,13 +36,47 @@ export default function BranchesPage() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (payload: typeof emptyForm) =>
+      api.patch<Branch>(`/branches/${editing?.id}/`, payload),
+    onSuccess: () => {
+      setForm(emptyForm);
+      setEditing(null);
+      setShowForm(false);
+      queryClient.invalidateQueries({ queryKey: ["branches"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ branch, active }: { branch: Branch; active: boolean }) =>
+      api.patch(`/branches/${branch.id}/`, { status: active ? "ACTIVE" : "INACTIVE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["branches"] }),
+  });
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    createMutation.mutate(form);
+    if (editing) {
+      updateMutation.mutate(form);
+    } else {
+      createMutation.mutate(form);
+    }
+  };
+
+  const openEdit = (branch: Branch) => {
+    setEditing(branch);
+    setForm({
+      code: branch.code,
+      name: branch.name,
+      type: branch.type,
+      phone: branch.phone ?? "",
+      address: branch.address ?? "",
+    });
+    setShowForm(true);
   };
 
   const fieldError = (name: string): string | null => {
-    const err = createMutation.error;
+    const err = updateMutation.error ?? createMutation.error;
     if (err instanceof ApiError && err.fieldErrors?.[name]) return err.fieldErrors[name][0];
     return null;
   };
@@ -50,14 +85,30 @@ export default function BranchesPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold text-slate-800">Branches</h1>
-        <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+        <Button
+          size="sm"
+          onClick={() => {
+            if (showForm) {
+              setShowForm(false);
+              setEditing(null);
+              setForm(emptyForm);
+            } else {
+              setEditing(null);
+              setForm(emptyForm);
+              setShowForm(true);
+            }
+          }}
+        >
           {showForm ? "Close" : "Add branch"}
         </Button>
       </div>
 
       {showForm ? (
         <Card>
-          <CardHeader title="New branch" subtitle="Branches isolate stock, ledgers and document numbering." />
+          <CardHeader
+            title={editing ? `Edit ${editing.name}` : "New branch"}
+            subtitle="Branches isolate stock, ledgers and document numbering."
+          />
           <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
             <div className="col-span-2 lg:col-span-4">
               <ErrorBanner error={createMutation.error} />
@@ -86,8 +137,12 @@ export default function BranchesPage() {
               </Field>
             </div>
             <div className="col-span-2 lg:col-span-4">
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Saving…" : "Create branch"}
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                {createMutation.isPending || updateMutation.isPending
+                  ? "Saving…"
+                  : editing
+                    ? "Save changes"
+                    : "Create branch"}
               </Button>
             </div>
           </form>
@@ -115,7 +170,20 @@ export default function BranchesPage() {
                     {branch.address ? ` · ${branch.address}` : ""}
                   </p>
                 </div>
-                <Badge tone={branch.status === "ACTIVE" ? "green" : "slate"}>{branch.status}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge tone={branch.status === "ACTIVE" ? "green" : "slate"}>{branch.status}</Badge>
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(branch)}>
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => statusMutation.mutate({ branch, active: branch.status !== "ACTIVE" })}
+                    disabled={statusMutation.isPending}
+                  >
+                    {branch.status === "ACTIVE" ? "Deactivate" : "Activate"}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

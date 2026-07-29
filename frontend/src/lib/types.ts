@@ -461,6 +461,9 @@ export type SalesInvoice = {
   cancel_reason: string;
   credit_override: boolean;
   credit_override_reason: string;
+  fefo_override: boolean;
+  fefo_override_reason: string;
+  delivered_at: string | null;
   created_at: string;
   items: SalesInvoiceItem[];
 };

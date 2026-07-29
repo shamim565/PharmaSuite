@@ -30,6 +30,7 @@ from apps.sales.models import (
     SalesInvoice,
     SalesInvoiceItem,
     SalesInvoiceStatus,
+    SalesPaymentStatus,
     SalesReturn,
     SalesReturnDocStatus,
     SalesReturnItem,
@@ -210,6 +211,7 @@ def confirm_sale(
             return existing
 
     customer = Customer.objects.select_for_update().get(id=invoice.customer_id)
+    prior_advance_balance = customer_balance_from_ledger(customer)
     if customer.credit_hold:
         raise APIError(
             "CUSTOMER_ON_HOLD",
@@ -266,7 +268,18 @@ def confirm_sale(
     expanded: list[tuple[SalesInvoiceItem, MedicineBatch, Decimal]] = []
 
     for item in draft_items:
-        allocations = fefo_allocate(invoice.branch, item.medicine, item.qty)
+        if item.batch is not None:
+            # Explicit batch selection (FEFO override) captured on the draft.
+            batch = MedicineBatch.objects.select_for_update().get(id=item.batch_id)
+            if batch.branch_id != invoice.branch_id or batch.medicine_id != item.medicine_id:
+                raise APIError("INVALID_BATCH", "Selected batch does not belong to this branch/medicine.")
+            if batch.status != BatchStatus.ACTIVE:
+                raise APIError("INVALID_BATCH", "Selected batch is not saleable.")
+            if batch.expiry_date and batch.expiry_date < timezone.localdate():
+                raise APIError("BATCH_EXPIRED", "Selected batch is expired.")
+            allocations = [(batch, item.qty)]
+        else:
+            allocations = fefo_allocate(invoice.branch, item.medicine, item.qty)
         for batch, take in allocations:
             movement_lines.append(
                 MovementLine(
@@ -364,6 +377,28 @@ def confirm_sale(
         actor=actor,
     )
 
+    if getattr(settings, "AUTO_APPLY_ADVANCE", False) and prior_advance_balance < 0:
+        applicable = min(-prior_advance_balance, invoice.grand_total - invoice.paid_total)
+        if applicable > 0:
+            post_customer_ledger_entry(
+                customer=customer,
+                branch=invoice.branch,
+                entry_type=CustomerLedgerEntryType.ADVANCE_APPLIED,
+                amount_delta=money(applicable),
+                source_type="SALES_INVOICE",
+                source_id=invoice.id,
+                source_number=invoice.number,
+                business_date=invoice.business_date,
+                actor=actor,
+            )
+            invoice.paid_total = money(invoice.paid_total + applicable)
+            invoice.payment_status = (
+                SalesPaymentStatus.PAID
+                if invoice.paid_total >= invoice.grand_total
+                else SalesPaymentStatus.PARTIALLY_PAID
+            )
+            invoice.save(update_fields=["paid_total", "payment_status", "updated_at"])
+
     if payment and Decimal(payment["amount"]) > 0:
         record_customer_payment(
             customer=customer,
@@ -381,6 +416,20 @@ def confirm_sale(
         )
 
     invoice.refresh_from_db()
+    return invoice
+
+
+@transaction.atomic
+def mark_invoice_delivered(*, invoice: SalesInvoice, actor) -> SalesInvoice:
+    invoice = SalesInvoice.objects.select_for_update().get(id=invoice.id)
+    if invoice.lifecycle != SalesInvoiceStatus.CONFIRMED:
+        raise APIError("INVALID_STATUS_TRANSITION", "Only confirmed invoices can be delivered.")
+    if invoice.fulfillment_status == "DELIVERED":
+        return invoice
+    invoice.fulfillment_status = "DELIVERED"
+    invoice.delivered_at = timezone.now()
+    invoice.delivered_by = actor if getattr(actor, "is_authenticated", False) else None
+    invoice.save(update_fields=["fulfillment_status", "delivered_at", "delivered_by", "updated_at"])
     return invoice
 
 

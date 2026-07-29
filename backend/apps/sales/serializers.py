@@ -147,6 +147,9 @@ class SalesInvoiceReadSerializer(serializers.ModelSerializer):
             "cancel_reason",
             "credit_override",
             "credit_override_reason",
+            "fefo_override",
+            "fefo_override_reason",
+            "delivered_at",
             "created_at",
             "items",
         ]
@@ -159,12 +162,14 @@ class SalesInvoiceItemInputSerializer(serializers.Serializer):
         max_digits=14, decimal_places=4, required=False, allow_null=True, min_value=Decimal("0")
     )
     line_discount = serializers.DecimalField(
-        max_digits=14, decimal_places=2, required=False, default=Decimal("0"), min_value=Decimal("0")
+        max_digits=14, decimal_places=2, required=False, allow_null=True, default=None, min_value=Decimal("0")
     )
     vat_rate = serializers.DecimalField(
         max_digits=5, decimal_places=2, required=False, allow_null=True
     )
     is_free_goods = serializers.BooleanField(required=False, default=False)
+    batch = serializers.UUIDField(required=False, allow_null=True)
+    fefo_override_reason = serializers.CharField(required=False, allow_blank=True, default="")
 
     def validate(self, attrs):
         if attrs.get("vat_rate") is None:
@@ -210,7 +215,10 @@ class SalesInvoiceWriteSerializer(serializers.Serializer):
             unit_price = Decimal(unit_price or 0)
             qty = Decimal(item["qty"])
             gross = money(qty * unit_price)
-            discount = money(item.get("line_discount") or 0)
+            discount = item.get("line_discount")
+            if discount is None and not item.get("is_free_goods") and self._customer.default_discount_pct > 0:
+                discount = money(gross * self._customer.default_discount_pct / Decimal("100"))
+            discount = money(discount or 0)
             taxable = money(gross - discount)
             vat_rate = Decimal(item.get("vat_rate") or 0)
             vat_amount = money(taxable * vat_rate / Decimal("100"))
@@ -242,14 +250,24 @@ class SalesInvoiceWriteSerializer(serializers.Serializer):
         }
 
     def _persist_items(self, invoice: SalesInvoice, rows) -> None:
+        override_reasons: list[str] = []
         for line_no, row in enumerate(rows, start=1):
             item = row["input"]
+            batch = None
+            batch_number = ""
+            if item.get("batch"):
+                from apps.catalog.models import MedicineBatch
+
+                batch = MedicineBatch.objects.filter(id=item["batch"]).first()
+                if batch is not None:
+                    batch_number = batch.batch_number
+                    override_reasons.append(item.get("fefo_override_reason") or "")
             SalesInvoiceItem.objects.create(
                 invoice=invoice,
                 line_no=line_no,
                 medicine=item["medicine"],
-                batch=None,
-                batch_number="",
+                batch=batch,
+                batch_number=batch_number,
                 qty=item["qty"],
                 unit_price=row["unit_price"],
                 line_discount=row["line_discount"],
@@ -257,6 +275,14 @@ class SalesInvoiceWriteSerializer(serializers.Serializer):
                 vat_amount=row["vat_amount"],
                 line_net=row["line_net"],
                 is_free_goods=item.get("is_free_goods", False),
+            )
+        if override_reasons:
+            invoice.fefo_override = True
+            invoice.fefo_override_reason = next(
+                (reason for reason in override_reasons if reason), "manual batch selection"
+            )
+            invoice.save(
+                update_fields=["fefo_override", "fefo_override_reason", "updated_at"]
             )
 
     def create(self, validated_data):

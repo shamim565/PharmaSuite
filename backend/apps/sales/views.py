@@ -26,6 +26,7 @@ from apps.sales.services import (
     confirm_sales_return,
     create_sales_return,
     fefo_candidates,
+    mark_invoice_delivered,
 )
 
 
@@ -100,6 +101,7 @@ class SalesInvoiceViewSet(
         "partial_update": ["SALE_CREATE"],
         "confirm": ["SALE_CONFIRM"],
         "cancel": ["SALE_CANCEL"],
+        "mark_delivered": ["SALE_CONFIRM"],
         "fefo": ["SALE_VIEW"],
     }
     permission_classes = [HasPermission]
@@ -120,6 +122,7 @@ class SalesInvoiceViewSet(
         return SalesInvoiceReadSerializer
 
     def create(self, request, *args, **kwargs):
+        self._validate_fefo_permission(request)
         serializer = SalesInvoiceWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         invoice = serializer.save()
@@ -128,11 +131,28 @@ class SalesInvoiceViewSet(
         )
 
     def update(self, request, *args, **kwargs):
+        self._validate_fefo_permission(request)
         invoice = self.get_object()
         serializer = SalesInvoiceWriteSerializer(invoice, data=request.data)
         serializer.is_valid(raise_exception=True)
         invoice = serializer.save()
         return Response(SalesInvoiceReadSerializer(invoice).data)
+
+    @staticmethod
+    def _validate_fefo_permission(request):
+        items = request.data.get("items") or []
+        selects_batch = any(
+            isinstance(item, dict) and item.get("batch") for item in items
+        )
+        if selects_batch:
+            user = request.user
+            has_permission = user.is_superuser or "INV_OVERRIDE_FEFO" in user.effective_permission_codes
+            if not has_permission:
+                raise APIError(
+                    "PERMISSION_DENIED",
+                    "You do not have permission to override FEFO batch selection.",
+                    status_code=403,
+                )
 
     @action(detail=False, methods=["get"])
     def fefo(self, request):
@@ -182,6 +202,11 @@ class SalesInvoiceViewSet(
         invoice = cancel_sale(
             invoice=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
         )
+        return Response(SalesInvoiceReadSerializer(invoice).data)
+
+    @action(detail=True, methods=["post"], url_path="mark-delivered")
+    def mark_delivered(self, request, pk=None):
+        invoice = mark_invoice_delivered(invoice=self.get_object(), actor=request.user)
         return Response(SalesInvoiceReadSerializer(invoice).data)
 
 

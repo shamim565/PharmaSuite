@@ -18,13 +18,13 @@ createdb erp_dev            # if not using compose
 # (Homebrew PostgreSQL 17, `pg_ctl -D /opt/homebrew/var/postgresql@17 -o "-p 5433" start`).
 # Postgres.app on 5432 works too — just update DATABASE_URL in backend/.env.
 
-# backend
+# backend (API on port 8000)
 cd backend
 uv sync
 cp .env.example .env        # adjust if needed
 uv run python manage.py migrate
 uv run python manage.py seed_rbac
-uv run python manage.py runserver 8010
+uv run python manage.py runserver 8000
 
 # celery (macOS dev needs the threads pool; Linux/Docker uses prefork)
 uv run celery -A config worker -l info --pool=threads
@@ -36,7 +36,7 @@ npm install
 npm run dev                 # http://localhost:3000
 ```
 
-> Dev API runs on `http://localhost:8010` (frontend `.env.local` matches). Any free port works; update `NEXT_PUBLIC_API_URL` and `CORS_ALLOWED_ORIGINS` together.
+> Dev API runs on `http://localhost:8000` (frontend `.env.local` matches). Any free port works; update `NEXT_PUBLIC_API_URL` and `CORS_ALLOWED_ORIGINS` together.
 
 Default owner created by `seed_rbac`: mobile `01700000000`, password `Admin@1234` (override with `OWNER_MOBILE` / `OWNER_PASSWORD` env).
 

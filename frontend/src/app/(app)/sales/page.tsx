@@ -6,8 +6,18 @@ import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
-import { ApiError, api } from "@/lib/api";
-import type { Branch, Customer, FinancialAccount, Medicine, Paginated, SalesInvoice } from "@/lib/types";
+import { ApiError, api, newIdempotencyKey } from "@/lib/api";
+import type {
+  Branch,
+  Customer,
+  Doctor,
+  FinancialAccount,
+  Medicine,
+  MedicineBatch,
+  Paginated,
+  Representative,
+  SalesInvoice,
+} from "@/lib/types";
 
 type DraftRow = {
   key: number;
@@ -16,6 +26,7 @@ type DraftRow = {
   unit_price: string;
   line_discount: string;
   is_free_goods: boolean;
+  batch: string;
 };
 
 const newRow = (key: number): DraftRow => ({
@@ -25,9 +36,51 @@ const newRow = (key: number): DraftRow => ({
   unit_price: "",
   line_discount: "0",
   is_free_goods: false,
+  batch: "",
 });
 
-const emptyForm = { customer: "", branch: "", business_date: "", notes: "" };
+const emptyForm = {
+  customer: "",
+  branch: "",
+  business_date: "",
+  notes: "",
+  doctor: "",
+  sales_rep: "",
+  fefo_override_reason: "",
+};
+
+function BatchSelect({
+  branch,
+  medicine,
+  value,
+  onChange,
+}: {
+  branch: string;
+  medicine: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { data } = useQuery({
+    queryKey: ["batches", "sale-override", branch, medicine],
+    queryFn: () =>
+      api.get<Paginated<MedicineBatch>>(
+        `/batches/?page_size=100&branch=${branch}&medicine=${medicine}`,
+      ),
+    enabled: Boolean(branch && medicine),
+  });
+  return (
+    <Field label="Batch (FEFO override)">
+      <Select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">FEFO (auto)</option>
+        {data?.results.map((batch) => (
+          <option key={batch.id} value={batch.id}>
+            {batch.batch_number} · {batch.expiry_date ?? "no expiry"} · qty {batch.qty_on_hand}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
 
 function lifecycleTone(status: SalesInvoice["lifecycle"]): "green" | "slate" | "rose" {
   return status === "CONFIRMED" ? "green" : status === "CANCELLED" ? "rose" : "slate";
@@ -61,6 +114,12 @@ export default function SalesPage() {
   const [returnReason, setReturnReason] = useState("CUSTOMER_RETURN");
   const [returnRefundMethod, setReturnRefundMethod] = useState("CUSTOMER_CREDIT");
   const [returnAccountId, setReturnAccountId] = useState("");
+  const [cancelFor, setCancelFor] = useState<SalesInvoice | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [confirmKey, setConfirmKey] = useState(newIdempotencyKey());
+  const [payKey, setPayKey] = useState(newIdempotencyKey());
+  const [returnKey, setReturnKey] = useState(newIdempotencyKey());
+  const [cancelKey, setCancelKey] = useState(newIdempotencyKey());
 
   const salesQuery = useQuery({
     queryKey: ["sales", search],
@@ -83,6 +142,14 @@ export default function SalesPage() {
     queryKey: ["accounts", "select"],
     queryFn: () => api.get<Paginated<FinancialAccount>>("/accounts/?page_size=50&is_active=true"),
   });
+  const doctorsQuery = useQuery({
+    queryKey: ["doctors", "select"],
+    queryFn: () => api.get<Paginated<Doctor>>("/doctors/?page_size=200&is_active=true"),
+  });
+  const repsQuery = useQuery({
+    queryKey: ["reps", "select"],
+    queryFn: () => api.get<Paginated<Representative>>("/representatives/?page_size=100&is_active=true"),
+  });
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["sales"] });
@@ -98,12 +165,16 @@ export default function SalesPage() {
       api.post<SalesInvoice>("/sales/", {
         ...form,
         business_date: form.business_date || undefined,
+        doctor: form.doctor || null,
+        sales_rep: form.sales_rep || null,
         items: rows.map((row) => ({
           medicine: row.medicine,
           qty: row.qty,
           unit_price: row.unit_price || null,
-          line_discount: row.line_discount || "0",
+          line_discount: row.line_discount === "" ? null : row.line_discount,
           is_free_goods: row.is_free_goods,
+          batch: row.batch || null,
+          fefo_override_reason: row.batch ? form.fefo_override_reason : "",
         })),
       }),
     onSuccess: () => {
@@ -116,65 +187,94 @@ export default function SalesPage() {
 
   const confirmMutation = useMutation({
     mutationFn: () =>
-      api.post<SalesInvoice>(`/sales/${confirmFor?.id}/confirm/`, {
-        payment:
-          Number(payAmount) > 0
-            ? { amount: payAmount, method: payMethod, account: payAccount, reference: payReference }
-            : null,
-        allow_credit_override: creditOverride,
-        credit_override_reason: overrideReason,
-      }),
+      api.postWithKey<SalesInvoice>(
+        `/sales/${confirmFor?.id}/confirm/`,
+        {
+          payment:
+            Number(payAmount) > 0
+              ? { amount: payAmount, method: payMethod, account: payAccount, reference: payReference }
+              : null,
+          allow_credit_override: creditOverride,
+          credit_override_reason: overrideReason,
+        },
+        confirmKey,
+      ),
     onSuccess: () => {
       setConfirmFor(null);
       setPayAmount("");
       setPayReference("");
       setCreditOverride(false);
       setOverrideReason("");
+      setConfirmKey(newIdempotencyKey());
       invalidateAll();
     },
   });
 
   const payMutation = useMutation({
     mutationFn: () =>
-      api.post("/payments/", {
-        customer: payFor?.customer,
-        branch: payFor?.branch,
-        amount: payAmount,
-        method: payMethod,
-        account: payAccount,
-        reference: payReference,
-        allocations: [{ invoice: payFor?.id, amount: payAmount }],
-      }),
+      api.postWithKey(
+        "/payments/",
+        {
+          customer: payFor?.customer,
+          branch: payFor?.branch,
+          amount: payAmount,
+          method: payMethod,
+          account: payAccount,
+          reference: payReference,
+          allocations: [{ invoice: payFor?.id, amount: payAmount }],
+        },
+        payKey,
+      ),
     onSuccess: () => {
       setPayFor(null);
       setPayAmount("");
       setPayReference("");
+      setPayKey(newIdempotencyKey());
       invalidateAll();
     },
   });
 
   const cancelMutation = useMutation({
-    mutationFn: (invoice: SalesInvoice) =>
-      api.post(`/sales/${invoice.id}/cancel/`, { reason: "Cancelled from sales register" }),
+    mutationFn: () =>
+      api.postWithKey(
+        `/sales/${cancelFor?.id}/cancel/`,
+        { reason: cancelReason || "Cancelled from sales register" },
+        cancelKey,
+      ),
+    onSuccess: () => {
+      setCancelFor(null);
+      setCancelReason("");
+      setCancelKey(newIdempotencyKey());
+      invalidateAll();
+    },
+  });
+
+  const deliveredMutation = useMutation({
+    mutationFn: (invoice: SalesInvoice) => api.post(`/sales/${invoice.id}/mark-delivered/`, {}),
     onSuccess: () => invalidateAll(),
   });
 
   const returnMutation = useMutation({
     mutationFn: async () => {
-      const draft = await api.post<{ id: string }>("/sales-returns/", {
-        invoice: returnFor?.id,
-        reason_code: returnReason,
-        refund_method: returnRefundMethod,
-        refund_account:
-          returnRefundMethod === "CASH" || returnRefundMethod === "BANK" ? returnAccountId : null,
-        items: [{ invoice_item: returnItemId, qty: returnQty, condition: returnCondition }],
-      });
+      const draft = await api.postWithKey<{ id: string }>(
+        "/sales-returns/",
+        {
+          invoice: returnFor?.id,
+          reason_code: returnReason,
+          refund_method: returnRefundMethod,
+          refund_account:
+            returnRefundMethod === "CASH" || returnRefundMethod === "BANK" ? returnAccountId : null,
+          items: [{ invoice_item: returnItemId, qty: returnQty, condition: returnCondition }],
+        },
+        returnKey,
+      );
       return api.post(`/sales-returns/${draft.id}/confirm/`, {});
     },
     onSuccess: () => {
       setReturnFor(null);
       setReturnItemId("");
       setReturnQty("");
+      setReturnKey(newIdempotencyKey());
       invalidateAll();
     },
   });
@@ -188,6 +288,7 @@ export default function SalesPage() {
     setReturnReason("CUSTOMER_RETURN");
     setReturnRefundMethod("CUSTOMER_CREDIT");
     setReturnAccountId(accountsQuery.data?.results[0]?.id ?? "");
+    setReturnKey(newIdempotencyKey());
   };
 
   const selectedReturnItem = returnFor?.items.find((item) => item.id === returnItemId);
@@ -199,6 +300,7 @@ export default function SalesPage() {
     setPayAccount(accountsQuery.data?.results[0]?.id ?? "");
     setCreditOverride(false);
     setOverrideReason("");
+    setConfirmKey(newIdempotencyKey());
   };
 
   const openPay = (invoice: SalesInvoice) => {
@@ -206,6 +308,13 @@ export default function SalesPage() {
     setPayAmount(invoice.outstanding);
     setPayMethod("CASH");
     setPayAccount(accountsQuery.data?.results[0]?.id ?? "");
+    setPayKey(newIdempotencyKey());
+  };
+
+  const openCancel = (invoice: SalesInvoice) => {
+    setCancelFor(invoice);
+    setCancelReason("");
+    setCancelKey(newIdempotencyKey());
   };
 
   const updateRow = (key: number, patch: Partial<DraftRow>) => {
@@ -269,7 +378,37 @@ export default function SalesPage() {
                   onChange={(e) => setForm({ ...form, business_date: e.target.value })}
                 />
               </Field>
+              <Field label="Doctor (optional attribution)">
+                <Select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })}>
+                  <option value="">—</option>
+                  {doctorsQuery.data?.results.map((doctor) => (
+                    <option key={doctor.id} value={doctor.id}>
+                      {doctor.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Sales rep (optional)">
+                <Select value={form.sales_rep} onChange={(e) => setForm({ ...form, sales_rep: e.target.value })}>
+                  <option value="">—</option>
+                  {repsQuery.data?.results.map((rep) => (
+                    <option key={rep.id} value={rep.id}>
+                      {rep.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             </div>
+
+            {hasPerm("INV_OVERRIDE_FEFO") && rows.some((row) => row.batch) ? (
+              <Field label="FEFO override reason (required when a batch is selected)">
+                <Input
+                  value={form.fefo_override_reason}
+                  onChange={(e) => setForm({ ...form, fefo_override_reason: e.target.value })}
+                  placeholder="e.g. customer requested later expiry"
+                />
+              </Field>
+            ) : null}
 
             <div className="space-y-2">
               {rows.map((row, index) => (
@@ -324,6 +463,16 @@ export default function SalesPage() {
                     />
                     Free goods
                   </label>
+                  {hasPerm("INV_OVERRIDE_FEFO") && row.medicine && form.branch ? (
+                    <div className="col-span-2 lg:col-span-3">
+                      <BatchSelect
+                        branch={form.branch}
+                        medicine={row.medicine}
+                        value={row.batch}
+                        onChange={(value) => updateRow(row.key, { batch: value })}
+                      />
+                    </div>
+                  ) : null}
                   {rows.length > 1 ? (
                     <Button
                       type="button"
@@ -567,6 +716,33 @@ export default function SalesPage() {
         </Card>
       ) : null}
 
+      {cancelFor ? (
+        <Card>
+          <CardHeader
+            title={`Cancel invoice ${cancelFor.number ?? ""}`}
+            subtitle="Allowed only when unpaid and unreturned; stock is restored."
+            action={
+              <Button size="sm" variant="secondary" onClick={() => setCancelFor(null)}>
+                Close
+              </Button>
+            }
+          />
+          <div className="space-y-3 p-4">
+            <ErrorBanner error={cancelMutation.error} />
+            <Field label="Reason">
+              <Input value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+            </Field>
+            <Button
+              variant="danger"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending || !cancelReason}
+            >
+              {cancelMutation.isPending ? "Cancelling…" : "Cancel invoice"}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader
           title="Sales register"
@@ -605,7 +781,11 @@ export default function SalesPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={lifecycleTone(invoice.lifecycle)}>{invoice.lifecycle}</Badge>
                     <Badge tone={paymentTone(invoice.payment_status)}>{invoice.payment_status}</Badge>
+                    {invoice.fulfillment_status === "DELIVERED" ? (
+                      <Badge tone="blue">Delivered</Badge>
+                    ) : null}
                     {invoice.credit_override ? <Badge tone="amber">Credit override</Badge> : null}
+                    {invoice.fefo_override ? <Badge tone="amber">FEFO override</Badge> : null}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -630,10 +810,20 @@ export default function SalesPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => cancelMutation.mutate(invoice)}
+                        onClick={() => openCancel(invoice)}
                         disabled={cancelMutation.isPending}
                       >
                         Cancel
+                      </Button>
+                    ) : null}
+                    {invoice.lifecycle === "CONFIRMED" && invoice.fulfillment_status !== "DELIVERED" ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => deliveredMutation.mutate(invoice)}
+                        disabled={deliveredMutation.isPending}
+                      >
+                        Mark delivered
                       </Button>
                     ) : null}
                     {invoice.lifecycle === "CONFIRMED" && invoice.return_status !== "FULLY_RETURNED" ? (
