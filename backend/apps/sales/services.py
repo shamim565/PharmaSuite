@@ -77,6 +77,10 @@ def post_customer_ledger_entry(
         if existing:
             return existing
 
+    from apps.common.periods import ensure_period_open
+
+    ensure_period_open(business_date, actor)
+
     entry = CustomerLedgerEntry.objects.create(
         customer=customer,
         branch=branch,
@@ -220,6 +224,11 @@ def confirm_sale(
         )
 
     block_days = getattr(settings, "CUSTOMER_OVERDUE_BLOCK_DAYS", 30)
+    from apps.common.settings_service import get_setting_value
+
+    block_days = int(
+        get_setting_value("CUSTOMER_OVERDUE_BLOCK_DAYS", default=block_days) or block_days
+    )
     overdue_cutoff = invoice.business_date - timedelta(days=block_days)
     has_past_due = SalesInvoice.objects.filter(
         customer=customer,
@@ -377,7 +386,10 @@ def confirm_sale(
         actor=actor,
     )
 
-    if getattr(settings, "AUTO_APPLY_ADVANCE", False) and prior_advance_balance < 0:
+    from apps.common.settings_service import get_setting_value
+
+    auto_apply = get_setting_value("AUTO_APPLY_ADVANCE", default=getattr(settings, "AUTO_APPLY_ADVANCE", False))
+    if auto_apply and prior_advance_balance < 0:
         applicable = min(-prior_advance_balance, invoice.grand_total - invoice.paid_total)
         if applicable > 0:
             post_customer_ledger_entry(

@@ -57,3 +57,66 @@ class DocumentSequence(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.branch_id}/{self.doc_type}/{self.fiscal_year}"
+
+
+class FiscalPeriodStatus(models.TextChoices):
+    OPEN = "OPEN", "Open"
+    LOCKED = "LOCKED", "Locked"
+
+
+class Setting(BaseModel):
+    """Key/value company or branch settings. Company scope = branch null."""
+
+    key = models.CharField(max_length=100)
+    branch = models.ForeignKey(
+        "branches.Branch", null=True, blank=True, on_delete=models.CASCADE, related_name="settings"
+    )
+    value = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["key", "branch"], name="uq_setting_key_branch"),
+            models.UniqueConstraint(
+                fields=["key"], condition=models.Q(branch__isnull=True), name="uq_setting_company_key"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.key} ({self.branch_id or 'company'})"
+
+
+class FiscalPeriod(BaseModel):
+    """One fiscal month (July–June fiscal year) for posting locks."""
+
+    fiscal_year = models.PositiveIntegerField()
+    period_month = models.PositiveIntegerField()  # 1 = July, 12 = June
+    start_date = models.DateField()
+    end_date = models.DateField()
+    status = models.CharField(
+        max_length=10, choices=FiscalPeriodStatus.choices, default=FiscalPeriodStatus.OPEN
+    )
+    locked_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    locked_at = models.DateTimeField(null=True, blank=True)
+    lock_reason = models.TextField(blank=True)
+    unlock_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    unlock_at = models.DateTimeField(null=True, blank=True)
+    unlock_reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["fiscal_year", "period_month"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["fiscal_year", "period_month"], name="uq_fiscal_period_month"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"FY{fiscal_year_for_display(self.fiscal_year)} P{self.period_month} {self.status}"
+
+
+def fiscal_year_for_display(fiscal_year: int) -> str:
+    return f"{fiscal_year}-{fiscal_year + 1}"

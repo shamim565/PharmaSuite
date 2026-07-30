@@ -130,6 +130,10 @@ class Command(BaseCommand):
             for name in ("Commission", "Service Income", "Scrap Sales", "Rent Income", "Miscellaneous Income"):
                 IncomeCategory.objects.get_or_create(name=name, defaults={"is_system": True})
 
+            from apps.common.periods import ensure_fiscal_periods
+
+            ensure_fiscal_periods()
+
         self.stdout.write(self.style.SUCCESS("RBAC seed complete"))
         self.stdout.write(f"  permissions created: {permissions_created}")
         self.stdout.write(f"  roles synced: {roles_synced}")

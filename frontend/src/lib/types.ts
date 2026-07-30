@@ -975,3 +975,26 @@ export type AuditLogEntry = {
   ip: string | null;
   created_at: string;
 };
+
+export type SettingGroups = {
+  groups: Record<string, Record<string, string | number | boolean>>;
+};
+
+export type FiscalPeriod = {
+  id: string;
+  fiscal_year: number;
+  period_month: number;
+  start_date: string;
+  end_date: string;
+  status: "OPEN" | "LOCKED";
+  locked_by_name: string;
+  locked_at: string | null;
+  lock_reason: string;
+  unlock_by_name: string;
+  unlock_reason: string;
+  checklist?: {
+    pending_expenses: number;
+    pending_adjustments: number;
+    note: string;
+  };
+};

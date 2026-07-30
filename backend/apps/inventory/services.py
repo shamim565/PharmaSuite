@@ -95,6 +95,10 @@ def post_transactions(
         if existing:
             return existing
 
+    from apps.common.periods import ensure_period_open
+
+    ensure_period_open(business_date, actor)
+
     group_id = transaction_group_id or uuid4()
     business_date = business_date or timezone.localdate()
     postings: list[InventoryTransaction] = []
@@ -285,7 +289,12 @@ def create_stock_adjustment(
         total_value += Decimal(row["qty"]) * unit_cost
 
     adjustment.total_value = total_value.quantize(Decimal("0.01"))
-    threshold = Decimal(str(getattr(settings, "STOCK_ADJUSTMENT_APPROVAL_THRESHOLD", "5000")))
+    from apps.common.settings_service import get_threshold
+
+    threshold = get_threshold(
+        "STOCK_ADJUSTMENT_APPROVAL_THRESHOLD",
+        str(getattr(settings, "STOCK_ADJUSTMENT_APPROVAL_THRESHOLD", "5000")),
+    )
 
     if total_value > threshold:
         adjustment.status = AdjustmentStatus.PENDING_APPROVAL

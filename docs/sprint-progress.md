@@ -673,6 +673,47 @@ All 12 sprints are complete: foundation/auth/RBAC, catalog & batches, inventory 
 - The user's dev server needed a `npm run dev` restart after the env port change; a stale `.next` caused transient 500s, resolved by a clean `next build`.
 - Remaining Tier 2/3 gaps (settings module, fiscal period locking, notifications, attachments, PWA, global search, branch switcher, pack units, cheque lifecycle, statement exports) are scheduled next.
 
+---
+
+## Sprint 14 — Settings module & fiscal period locking
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Settings module**:
+  - `Setting` model (company scope + branch overrides, JSON values) and service with defaults; `GET/PUT /api/v1/settings/` (grouped by company / approvals / credit / expiry / features / numbering), unknown keys rejected, `SETTINGS_VIEW/MANAGE` gated.
+  - Live wiring: expense & stock-adjustment approval thresholds, customer overdue-block days, `AUTO_APPLY_ADVANCE`, and **document numbering prefixes/width** are read from settings with env fallbacks (verified: threshold 100 made a 200-value adjustment require approval; `PURCHASE_PREFIX=TSTP` produced `TSTP-…` numbers on a new branch).
+- **Fiscal period locking**:
+  - `FiscalPeriod` model (July–June fiscal months) + services; periods auto-created for the current and next fiscal year by `seed_rbac`.
+  - `ensure_period_open()` enforced centrally in all four posting choke-points (inventory `post_transactions`, account `post_account_transaction`, supplier ledger, customer ledger) — which covers sales, purchases, payments, returns, adjustments, expenses/incomes, account operations and reversals.
+  - `GET/POST /api/v1/periods/` with lock/unlock actions; lock returns a close checklist (pending expenses/adjustments); only `PERIOD_LOCK` holders can lock, unlock requires `PERIOD_OVERRIDE`; locked months raise `PERIOD_LOCKED` (409).
+- **Settings UI**: `/settings` page with tabs (Company, Approvals, Credit & Expiry, Features, Numbering, Fiscal periods incl. lock/unlock with reason), nav updated.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Sprint 14 smoke script (13 checks) | ✅ 13/13 |
+| Settings round-trip + unknown-key rejection | ✅ |
+| Live threshold (200 > 100 → PENDING); numbering prefix from settings on new branch | ✅ |
+| Period lock → operator posting blocked `PERIOD_LOCKED`; owner override allowed; unlock restores; operator cannot unlock | ✅ |
+| Live: settings groups, 24 periods (2 FYs), settings page 200 | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build`, stock & ledger integrity | ✅ |
+
+### Key endpoints
+- `GET/PUT /api/v1/settings/`
+- `GET /api/v1/periods/`, `POST /api/v1/periods/{id}/lock|unlock/`
+
+### Key screens
+- `/settings` (6 tabs incl. fiscal period lock/unlock)
+
+### Migrations
+- `common.0003` (Setting, FiscalPeriod)
+
+### Known limitations
+- Reversal posting uses today's date, so reversing into a locked month is blocked like any posting (override available).
+- Numbering prefix changes apply to new sequences (new fiscal year/branch); existing documents keep their numbers.
+- Tier 3 items remain (PWA, global search, branch switcher, pack units, cheque lifecycle, exports).
+
 
 
 

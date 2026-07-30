@@ -35,6 +35,10 @@ def post_ledger_entry(
         if existing:
             return existing
 
+    from apps.common.periods import ensure_period_open
+
+    ensure_period_open(business_date, actor)
+
     entry = SupplierLedgerEntry.objects.create(
         supplier=supplier,
         branch=branch,

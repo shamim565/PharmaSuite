@@ -3,6 +3,7 @@
 from decimal import Decimal
 from uuid import UUID, uuid4
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -33,6 +34,10 @@ def post_account_transaction(
         existing = FinancialTransaction.objects.filter(idempotency_key=idempotency_key).first()
         if existing:
             return existing
+
+    from apps.common.periods import ensure_period_open
+
+    ensure_period_open(business_date, actor)
 
     with transaction.atomic():
         locked = FinancialAccount.objects.select_for_update().get(id=account.id)
@@ -76,9 +81,12 @@ def account_ledger_balance(account: FinancialAccount) -> Decimal:
 # --------------------------------------------------------------------------- expenses
 
 def _expense_threshold() -> Decimal:
-    from django.conf import settings
+    from apps.common.settings_service import get_threshold
 
-    return Decimal(str(getattr(settings, "EXPENSE_APPROVAL_THRESHOLD", "5000")))
+    return get_threshold(
+        "EXPENSE_APPROVAL_THRESHOLD",
+        str(getattr(settings, "EXPENSE_APPROVAL_THRESHOLD", "5000")),
+    )
 
 
 def _post_expense(expense, actor) -> None:
