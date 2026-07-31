@@ -114,6 +114,43 @@ export const api = {
   delete: <T>(path: string) => apiFetch<T>(path, { method: "DELETE" }),
 };
 
+export async function apiUpload(
+  path: string,
+  file: File,
+  fields?: Record<string, string>,
+): Promise<unknown> {
+  const form = new FormData();
+  form.append("file", file);
+  for (const [key, value] of Object.entries(fields ?? {})) {
+    form.append(key, value);
+  }
+  let response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    body: form,
+  });
+  if (response.status === 401 && (await tryRefresh())) {
+    response = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      credentials: "include",
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      body: form,
+    });
+  }
+  if (!response.ok) {
+    let message = "Upload failed";
+    try {
+      const body = await response.json();
+      message = body.message ?? message;
+    } catch {
+      // keep default
+    }
+    throw new ApiError(message, String(response.status), response.status);
+  }
+  return response.json();
+}
+
 export function newIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();

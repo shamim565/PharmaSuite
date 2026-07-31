@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { AttachmentPanel } from "@/components/attachments";
 import { ApiError, api } from "@/lib/api";
 import type {
   Branch,
@@ -69,6 +70,7 @@ export default function PurchasesPage() {
   const [returnFor, setReturnFor] = useState<Purchase | null>(null);
   const [cancelFor, setCancelFor] = useState<Purchase | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [filesFor, setFilesFor] = useState<Purchase | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("CASH");
   const [payAccount, setPayAccount] = useState("");
@@ -568,6 +570,22 @@ export default function PurchasesPage() {
         </Card>
       ) : null}
 
+      {filesFor ? (
+        <Card>
+          <CardHeader
+            title={`Documents — ${filesFor.number ?? filesFor.supplier_invoice_number}`}
+            action={
+              <Button size="sm" variant="secondary" onClick={() => setFilesFor(null)}>
+                Close
+              </Button>
+            }
+          />
+          <div className="p-4">
+            <AttachmentPanel ownerType="PURCHASE" ownerId={filesFor.id} title="Supplier invoice & documents" />
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader
           title="Purchase register"
@@ -647,6 +665,13 @@ export default function PurchasesPage() {
                         Cancel
                       </Button>
                     ) : null}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setFilesFor(purchase)}
+                    >
+                      Files
+                    </Button>
                   </div>
                 </div>
               </li>

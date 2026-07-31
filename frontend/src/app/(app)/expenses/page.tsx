@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { AttachmentPanel } from "@/components/attachments";
 import { ApiError, api } from "@/lib/api";
 import type { Branch, Expense, ExpenseCategory, FinancialAccount, Paginated } from "@/lib/types";
 
@@ -34,6 +35,7 @@ export default function ExpensesPage() {
   const [form, setForm] = useState(emptyForm);
   const [rejectFor, setRejectFor] = useState<Expense | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [filesFor, setFilesFor] = useState<Expense | null>(null);
 
   const params = new URLSearchParams({ page_size: "50" });
   if (status) params.set("status", status);
@@ -227,6 +229,22 @@ export default function ExpensesPage() {
         </Card>
       ) : null}
 
+      {filesFor ? (
+        <Card>
+          <CardHeader
+            title={`Bill — ${filesFor.number ?? (filesFor.payee || "expense")}`}
+            action={
+              <Button size="sm" variant="secondary" onClick={() => setFilesFor(null)}>
+                Close
+              </Button>
+            }
+          />
+          <div className="p-4">
+            <AttachmentPanel ownerType="EXPENSE" ownerId={filesFor.id} title="Receipts & bills" />
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader title="Expense register" subtitle={expensesQuery.data ? `${expensesQuery.data.count} expense(s)` : undefined} />
         <ErrorBanner error={expensesQuery.error} />
@@ -271,6 +289,7 @@ export default function ExpensesPage() {
                         </Button>
                       </>
                     ) : null}
+                    <Button size="sm" variant="secondary" onClick={() => setFilesFor(expense)}>Files</Button>
                     {expense.status === "POSTED" && hasPerm("EXPENSE_POST") ? (
                       <Button
                         size="sm"

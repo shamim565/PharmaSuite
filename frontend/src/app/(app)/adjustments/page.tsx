@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { AttachmentPanel } from "@/components/attachments";
 import { ApiError, api } from "@/lib/api";
 import type { Branch, Medicine, MedicineBatch, Paginated, StockAdjustment } from "@/lib/types";
 
@@ -46,6 +47,7 @@ export default function AdjustmentsPage() {
   const [form, setForm] = useState(emptyForm);
   const [rejectFor, setRejectFor] = useState<StockAdjustment | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [filesFor, setFilesFor] = useState<StockAdjustment | null>(null);
 
   const adjustmentsQuery = useQuery({
     queryKey: ["adjustments", search],
@@ -282,6 +284,22 @@ export default function AdjustmentsPage() {
         </Card>
       ) : null}
 
+      {filesFor ? (
+        <Card>
+          <CardHeader
+            title={`Evidence — ${filesFor.number ?? "adjustment"}`}
+            action={
+              <Button size="sm" variant="secondary" onClick={() => setFilesFor(null)}>
+                Close
+              </Button>
+            }
+          />
+          <div className="p-4">
+            <AttachmentPanel ownerType="STOCK_ADJUSTMENT" ownerId={filesFor.id} title="Evidence" />
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader
           title="Adjustment register"
@@ -343,6 +361,7 @@ export default function AdjustmentsPage() {
                           </Button>
                         </>
                       ) : null}
+                      <Button size="sm" variant="secondary" onClick={() => setFilesFor(adjustment)}>Files</Button>
                       {adjustment.status === "POSTED" && hasPerm("STOCK_ADJUST") ? (
                         <Button
                           size="sm"

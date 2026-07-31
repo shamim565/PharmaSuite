@@ -714,6 +714,46 @@ All 12 sprints are complete: foundation/auth/RBAC, catalog & batches, inventory 
 - Numbering prefix changes apply to new sequences (new fiscal year/branch); existing documents keep their numbers.
 - Tier 3 items remain (PWA, global search, branch switcher, pack units, cheque lifecycle, exports).
 
+---
+
+## Sprint 15 — Notifications & attachments
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Notifications**:
+  - `Notification` model (user-scoped, type, severity, deep link, payload) + service; `GET/POST /api/v1/notifications/` (list with `unread_only`, unread-count, mark-read, read-all) — users can only read their own.
+  - **Celery daily jobs** wired to beat: `daily_stock_alerts` (low stock / near expiry / expired digests to stock roles), `daily_due_alerts` (overdue dues + pending approvals to finance roles), `visit_reminders` (planned visits for tomorrow to MRs with linked user accounts).
+- **Attachments**:
+  - `Attachment` model + local media storage (10 MB limit, whitelist: PDF/JPG/PNG/WEBP/CSV/XLSX, SHA-256 checksum).
+  - `GET/POST /api/v1/attachments/` (list/upload) and `GET /api/v1/attachments/{id}/download/`; per-owner permission mapping (PURCHASE→PURCHASE_MANAGE, EXPENSE→EXPENSE_POST, STOCK_ADJUSTMENT→STOCK_ADJUST, DOCTOR_VISIT→VISIT_MANAGE, returns).
+- **Frontend**: notification bell in the shell (unread badge, polling, dropdown with mark-read + deep links), `/notifications` page (unread filter, mark all read), `AttachmentPanel` component wired into purchases (supplier invoice docs), expenses (bills) and adjustments (evidence) with upload + download.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Sprint 15 smoke script (13 checks) | ✅ 13/13 |
+| Stock job found 1 low + 2 near + 1 expired; due job found overdue + pending; visit reminder created for linked MR | ✅ |
+| Owner sees alert notifications; MR sees only own reminder; unread count, mark read, read-all | ✅ |
+| CSV upload (201), download round-trip, unsupported type rejected (400), listing, operator without permission blocked (403) | ✅ |
+| Live: unread-count endpoint, upload with correct content type, notification/purchase/expense pages 200 | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build`, stock & ledger integrity | ✅ |
+
+### Key endpoints
+- `GET /api/v1/notifications/` (+`unread-count`, `/{id}/read/`, `/read-all/`)
+- `GET/POST /api/v1/attachments/`, `GET /api/v1/attachments/{id}/download/`
+
+### Key screens
+- Notification bell (shell), `/notifications`, attachment panels on purchases/expenses/adjustments
+
+### Migrations
+- `common.0004` (Notification, Attachment)
+
+### Known limitations
+- Attachments store on local media in dev; switching to S3 presigned storage is a settings/config change documented in operations (storage abstraction in `apps/common/notifications.py`).
+- Email/SMS delivery of notifications is a provider integration (stub now); in-app is authoritative.
+- Tier 3 items remain (PWA, global search, branch switcher, pack units, cheque lifecycle, exports).
+
 
 
 

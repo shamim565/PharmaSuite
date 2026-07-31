@@ -88,6 +88,9 @@ TIME_ZONE = "Asia/Dhaka"
 USE_I18N = True
 USE_TZ = True
 
+MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -167,6 +170,18 @@ CELERY_BEAT_SCHEDULE = {
     "heartbeat-every-5-minutes": {
         "task": "apps.common.tasks.heartbeat",
         "schedule": 300.0,
+    },
+    "daily-stock-alerts": {
+        "task": "apps.common.tasks.daily_stock_alerts",
+        "schedule": 8 * 60 * 60,  # 08:00 local
+    },
+    "daily-due-alerts": {
+        "task": "apps.common.tasks.daily_due_alerts",
+        "schedule": 9 * 60 * 60,  # 09:00 local
+    },
+    "visit-reminders": {
+        "task": "apps.common.tasks.visit_reminders",
+        "schedule": 18 * 60 * 60,  # 18:00 local
     },
 }
 

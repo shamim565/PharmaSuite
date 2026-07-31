@@ -998,3 +998,30 @@ export type FiscalPeriod = {
     note: string;
   };
 };
+
+export type AppNotification = {
+  id: string;
+  type: string;
+  severity: "INFO" | "WARNING" | "CRITICAL";
+  title: string;
+  body: string;
+  deep_link: string;
+  payload: Record<string, unknown>;
+  is_read: boolean;
+  created_at: string;
+};
+
+export type NotificationList = {
+  count: number;
+  unread_count: number;
+  results: AppNotification[];
+};
+
+export type AttachmentRow = {
+  id: string;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+  uploaded_by_name: string;
+  created_at: string;
+};

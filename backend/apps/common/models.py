@@ -120,3 +120,47 @@ class FiscalPeriod(BaseModel):
 
 def fiscal_year_for_display(fiscal_year: int) -> str:
     return f"{fiscal_year}-{fiscal_year + 1}"
+
+
+class Notification(BaseModel):
+    user = models.ForeignKey(
+        "accounts.User", on_delete=models.CASCADE, related_name="notifications"
+    )
+    type = models.CharField(max_length=40, db_index=True)
+    severity = models.CharField(
+        max_length=10, choices=[("INFO", "Info"), ("WARNING", "Warning"), ("CRITICAL", "Critical")],
+        default="INFO",
+    )
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True)
+    deep_link = models.CharField(max_length=200, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    is_read = models.BooleanField(default=False, db_index=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "is_read", "created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.type} -> {self.user_id}"
+
+
+class Attachment(BaseModel):
+    owner_type = models.CharField(max_length=60, db_index=True)
+    owner_id = models.UUIDField(db_index=True)
+    file_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100)
+    size_bytes = models.PositiveBigIntegerField(default=0)
+    storage_key = models.CharField(max_length=400)
+    checksum = models.CharField(max_length=64, blank=True)
+    uploaded_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="attachments"
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["owner_type", "owner_id"])]
+
+    def __str__(self) -> str:
+        return f"{self.owner_type}:{self.owner_id} {self.file_name}"

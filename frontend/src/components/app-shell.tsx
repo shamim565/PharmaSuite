@@ -1,11 +1,14 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { useAuth } from "@/app/providers";
 import { Button } from "@/components/ui";
+import { api } from "@/lib/api";
+import type { NotificationList } from "@/lib/types";
 
 type NavItem = { href: string; label: string; permission: string; icon: string };
 
@@ -34,6 +37,87 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/audit", label: "Audit", permission: "AUDIT_VIEW", icon: "📜" },
   { href: "/settings", label: "Settings", permission: "SETTINGS_VIEW", icon: "⚙" },
 ];
+
+function NotificationBell() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+
+  const unreadQuery = useQuery({
+    queryKey: ["unread-count"],
+    queryFn: () => api.get<{ count: number }>("/notifications/unread-count/"),
+    refetchInterval: 60_000,
+    enabled: Boolean(user),
+  });
+  const listQuery = useQuery({
+    queryKey: ["notifications", "latest"],
+    queryFn: () => api.get<NotificationList>("/notifications/?page_size=8"),
+    enabled: open && Boolean(user),
+  });
+
+  const readMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/notifications/${id}/read/`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["unread-count"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+
+  const openItem = (item: { id: string; deep_link: string }) => {
+    readMutation.mutate(item.id);
+    setOpen(false);
+    if (item.deep_link) router.push(item.deep_link);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        aria-label="Notifications"
+        onClick={() => setOpen((value) => !value)}
+        className="relative rounded-lg px-2 py-1 text-lg text-slate-600 hover:bg-slate-100"
+      >
+        🔔
+        {(unreadQuery.data?.count ?? 0) > 0 ? (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+            {Math.min(unreadQuery.data?.count ?? 0, 9)}
+          </span>
+        ) : null}
+      </button>
+
+      {open ? (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-40 mt-1 w-80 rounded-xl border border-slate-200 bg-white shadow-lg">
+            <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+              <p className="text-sm font-semibold text-slate-700">Notifications</p>
+              <Link href="/notifications" onClick={() => setOpen(false)} className="text-xs text-emerald-700 hover:underline">
+                View all
+              </Link>
+            </div>
+            {listQuery.data?.results.length ? (
+              <ul className="max-h-80 divide-y divide-slate-100 overflow-auto">
+                {listQuery.data.results.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      className={`w-full px-3 py-2 text-left hover:bg-slate-50 ${item.is_read ? "opacity-60" : ""}`}
+                      onClick={() => openItem(item)}
+                    >
+                      <p className="text-sm font-medium">{item.title}</p>
+                      {item.body ? <p className="truncate text-xs text-slate-500">{item.body}</p> : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="p-4 text-sm text-slate-500">Nothing here yet.</p>
+            )}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, signOut, hasPerm } = useAuth();
@@ -97,7 +181,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ☰
         </button>
         <p className="text-sm font-bold text-emerald-700">Medicine Dealer ERP</p>
-        <span className="text-xs text-slate-500">{user?.full_name?.split(" ")[0]}</span>
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <span className="text-xs text-slate-500">{user?.full_name?.split(" ")[0]}</span>
+        </div>
       </header>
 
       {/* Mobile drawer */}
@@ -134,9 +221,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 "—"}
             </span>
           </p>
-          <div className="text-sm text-slate-600">
+          <p className="text-sm text-slate-600">
             Signed in as <span className="font-medium">{user?.full_name}</span>
-          </div>
+          </p>
+          <NotificationBell />
         </div>
 
         <main className="mx-auto w-full max-w-6xl p-4 pb-20 lg:p-6">{children}</main>
