@@ -283,3 +283,61 @@ class AttachmentDownloadView(APIView):
         response = FileResponse(open(path, "rb"), content_type=attachment.content_type)
         response["Content-Disposition"] = f'attachment; filename="{attachment.file_name}"'
         return response
+
+
+class SearchView(APIView):
+    permission_classes = [HasPermission]
+    required_permissions = []
+
+    def get(self, request):
+        q = (request.query_params.get("q") or "").strip()
+        if len(q) < 2:
+            return Response({"results": {}})
+
+        from apps.catalog.models import Medicine
+        from apps.doctors.models import Doctor
+        from apps.purchases.models import Purchase
+        from apps.sales.models import Customer, SalesInvoice
+        from apps.suppliers.models import Supplier
+
+        def as_list(queryset, fields):
+            def value_of(row, key):
+                for part in key.split("__"):
+                    row = getattr(row, part, None)
+                    if row is None:
+                        return ""
+                return str(row)
+
+            return [
+                {key: value_of(row, key) for key in fields} | {"id": str(row.id)}
+                for row in queryset[:5]
+            ]
+
+        return Response({
+            "results": {
+                "medicines": as_list(
+                    Medicine.objects.filter(name__icontains=q).order_by("name") | Medicine.objects.filter(code__icontains=q).order_by("code"),
+                    ["code", "name", "selling_price"],
+                ),
+                "customers": as_list(
+                    Customer.objects.filter(name__icontains=q).order_by("name") | Customer.objects.filter(code__icontains=q) | Customer.objects.filter(phone__icontains=q),
+                    ["code", "name", "phone"],
+                ),
+                "suppliers": as_list(
+                    Supplier.objects.filter(name__icontains=q).order_by("name") | Supplier.objects.filter(code__icontains=q),
+                    ["code", "name", "phone"],
+                ),
+                "doctors": as_list(
+                    Doctor.objects.filter(name__icontains=q).order_by("name") | Doctor.objects.filter(code__icontains=q),
+                    ["code", "name", "category"],
+                ),
+                "invoices": as_list(
+                    SalesInvoice.objects.filter(number__icontains=q).select_related("customer") | SalesInvoice.objects.filter(customer__name__icontains=q).select_related("customer"),
+                    ["number", "customer__name", "grand_total", "lifecycle"],
+                ),
+                "purchases": as_list(
+                    Purchase.objects.filter(number__icontains=q).select_related("supplier") | Purchase.objects.filter(supplier__name__icontains=q).select_related("supplier"),
+                    ["number", "supplier__name", "grand_total", "lifecycle"],
+                ),
+            }
+        })

@@ -754,6 +754,48 @@ All 12 sprints are complete: foundation/auth/RBAC, catalog & batches, inventory 
 - Email/SMS delivery of notifications is a provider integration (stub now); in-app is authoritative.
 - Tier 3 items remain (PWA, global search, branch switcher, pack units, cheque lifecycle, exports).
 
+---
+
+## Sprint 16 — Cheques, search, exports, branch switch, packs, PWA
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented
+- **Cheque lifecycle**: `Cheque` model + service + API (`GET/POST /api/v1/cheques/`) with state machine — received: `PENDING_DEPOSIT → DEPOSITED → CLEARED | BOUNCED`; issued: `PENDING → PAID | STOPPED`; invalid transitions rejected (400). `CHEQUE_VIEW/CHEQUE_MANAGE` permissions seeded. New `/cheques` page with register form, filters, and per-row lifecycle actions.
+- **Global search**: `GET /api/v1/search/?q=` across medicines, customers, suppliers, doctors, invoices, purchases (≥2 chars). Search box in the shell topbar with grouped dropdown and deep links.
+- **Statement exports**: `GET /customers/{id}/statement/` and `GET /suppliers/{id}/statement/` return chronological CSV with running balances; "Statement CSV" buttons on customer/supplier pages.
+- **Branch switcher**: `PATCH /api/v1/auth/me/` persists `default_branch_id` (validates assignment); topbar dropdown switches branch for the whole app.
+- **Pack units on sales**: medicine options show pack size; a "whole packs" input auto-fills qty as `packs × pack_size`.
+- **PWA**: `manifest.json` + `sw.js` (precache shell, cache-first for same-origin GET, API bypassed) + registration in the root layout.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Sprint 16 smoke script (18 checks) | ✅ 18/18 |
+| Cheque transitions incl. invalid-state rejection; operator blocked from creating (403) | ✅ |
+| Search finds customer/medicine; short query returns empty | ✅ |
+| Customer + supplier statement CSVs with running balance | ✅ |
+| Default branch switch persists; unassigned branch blocked (403) | ✅ |
+| Live: search, cheques list, statement CSV download, manifest/sw/cheques page 200 | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build`, stock & ledger integrity | ✅ |
+
+### Key endpoints
+- `GET/POST /api/v1/cheques/` + `/{id}/deposit|clear|bounce|stop|mark-paid/`
+- `GET /api/v1/search/?q=`
+- `GET /customers/{id}/statement/`, `GET /suppliers/{id}/statement/` (CSV)
+- `PATCH /api/v1/auth/me/` (default branch switch)
+
+### Key screens
+- `/cheques`, global search box + branch switcher (shell), statement buttons (customers/suppliers), pack input (sales), PWA installable
+
+### Migrations
+- `payments.0004` (Cheque)
+
+### Known limitations
+- Search is name/code based (no fuzzy); statements include up to all entries (no date filter on CSV yet).
+- SW cache is static-first; API never cached (auth headers), so offline mode covers only the app shell.
+- With this sprint the approved completeness pass (Tier 1 + 2 + 3) is fully delivered.
+
 
 
 

@@ -6,6 +6,7 @@ from apps.common.api import (
     AttachmentView,
     NotificationViewSet,
     PeriodViewSet,
+    SearchView,
     SettingsView,
 )
 
@@ -15,6 +16,7 @@ router.register("notifications", NotificationViewSet, basename="notification")
 
 urlpatterns = [
     path("settings/", SettingsView.as_view(), name="settings"),
+    path("search/", SearchView.as_view(), name="search"),
     path("attachments/", AttachmentView.as_view(), name="attachments"),
     path("attachments/<uuid:attachment_id>/download/", AttachmentDownloadView.as_view(), name="attachment-download"),
     path("", include(router.urls)),

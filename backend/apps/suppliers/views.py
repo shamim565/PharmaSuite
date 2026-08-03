@@ -26,6 +26,7 @@ class SupplierViewSet(
         "update": ["SUPPLIER_MANAGE"],
         "partial_update": ["SUPPLIER_MANAGE"],
         "ledger": ["SUPPLIER_VIEW"],
+        "statement": ["SUPPLIER_VIEW"],
     }
     permission_classes = [HasPermission]
     serializer_class = SupplierSerializer
@@ -34,6 +35,38 @@ class SupplierViewSet(
     search_fields = ["code", "name", "phone", "bin"]
     ordering_fields = ["name", "code", "balance_cache", "created_at"]
     ordering = ["name"]
+
+    @action(detail=True, methods=["get"])
+    def statement(self, request, pk=None):
+        from django.http import HttpResponse
+
+        supplier = self.get_object()
+        entries = list(
+            supplier.ledger_entries.order_by("created_at", "id")
+        )
+        balance = Decimal("0")
+        rows = []
+        for entry in entries:
+            balance += entry.amount_delta
+            rows.append(
+                {
+                    "date": entry.business_date.isoformat(),
+                    "number": entry.source_number or entry.entry_type,
+                    "description": entry.entry_type,
+                    "amount": f"{entry.amount_delta:.2f}",
+                    "balance": f"{balance:.2f}",
+                }
+            )
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="{supplier.code}-statement.csv"'
+        import csv
+
+        writer = csv.DictWriter(
+            response, fieldnames=["date", "number", "description", "amount", "balance"]
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+        return response
 
     @action(detail=True, methods=["get"])
     def ledger(self, request, pk=None):

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
-import { ApiError, api } from "@/lib/api";
+import { ApiError, api, apiDownload } from "@/lib/api";
 import type { Customer, CustomerLedgerResponse, Paginated } from "@/lib/types";
 
 const emptyForm = {
@@ -327,6 +327,13 @@ export default function CustomersPage() {
                   </Button>
                   <Button size="sm" variant="secondary" onClick={() => setLedgerFor(customer)}>
                     Ledger
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => apiDownload(`/customers/${customer.id}/statement/`, `${customer.code}-statement.csv`)}
+                  >
+                    Statement CSV
                   </Button>
                 </div>
               </li>

@@ -420,9 +420,27 @@ export default function SalesPage() {
                         {medicinesQuery.data?.results.map((medicine) => (
                           <option key={medicine.id} value={medicine.id}>
                             {medicine.name} ({medicine.code})
+                            {medicine.pack_size && Number(medicine.pack_size) > 1 ? ` · pack of ${medicine.pack_size}` : ""}
                           </option>
                         ))}
                       </Select>
+                      {(() => {
+                        const selected = medicinesQuery.data?.results.find((m) => m.id === row.medicine);
+                        const packSize = selected ? Number(selected.pack_size) : 0;
+                        if (!selected || packSize <= 1) return null;
+                        return (
+                          <Input
+                            className="mt-1"
+                            type="number"
+                            min="1"
+                            placeholder={`Whole packs (each = ${packSize} units)`}
+                            onChange={(e) => {
+                              const packs = Number(e.target.value);
+                              if (packs > 0) updateRow(row.key, { qty: String(packs * packSize) });
+                            }}
+                          />
+                        );
+                      })()}
                     </Field>
                   </div>
                   <Field label="Qty">

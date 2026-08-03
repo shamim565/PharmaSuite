@@ -7,8 +7,10 @@ from apps.accounting.models import FinancialAccount
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
-from apps.payments.models import Payment, PaymentStatus
+from apps.payments.models import Cheque, Payment, PaymentStatus
 from apps.payments.serializers import (
+    ChequeCreateSerializer,
+    ChequeReadSerializer,
     CustomerPaymentCreateSerializer,
     CustomerPaymentReadSerializer,
 )
@@ -143,3 +145,72 @@ class DailyCollectionView(APIView):
                 ],
             }
         )
+
+
+class ChequeViewSet(
+    PermissionMappedMixin,
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_map = {
+        "list": ["CHEQUE_VIEW"],
+        "retrieve": ["CHEQUE_VIEW"],
+        "create": ["CHEQUE_MANAGE"],
+        "deposit": ["CHEQUE_MANAGE"],
+        "clear": ["CHEQUE_MANAGE"],
+        "bounce": ["CHEQUE_MANAGE"],
+        "stop": ["CHEQUE_MANAGE"],
+        "mark_paid": ["CHEQUE_MANAGE"],
+    }
+    permission_classes = [HasPermission]
+    serializer_class = ChequeReadSerializer
+    queryset = Cheque.objects.all()
+    filterset_fields = ["direction", "status", "customer", "supplier"]
+    search_fields = ["number", "bank_name", "customer__name", "supplier__name"]
+    ordering_fields = ["date_issued", "amount", "created_at", "status"]
+    ordering = ["-created_at"]
+
+    def create(self, request, *args, **kwargs):
+        from apps.payments.services import create_cheque
+
+        serializer = ChequeCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        cheque = create_cheque(validated=serializer.validated_data, actor=request.user)
+        return Response(ChequeReadSerializer(cheque).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def deposit(self, request, pk=None):
+        from apps.payments.services import deposit_cheque
+
+        cheque = deposit_cheque(self.get_object(), actor=request.user, notes=request.data.get("notes", ""))
+        return Response(ChequeReadSerializer(cheque).data)
+
+    @action(detail=True, methods=["post"])
+    def clear(self, request, pk=None):
+        from apps.payments.services import clear_cheque
+
+        cheque = clear_cheque(self.get_object(), actor=request.user, notes=request.data.get("notes", ""))
+        return Response(ChequeReadSerializer(cheque).data)
+
+    @action(detail=True, methods=["post"])
+    def bounce(self, request, pk=None):
+        from apps.payments.services import bounce_cheque
+
+        cheque = bounce_cheque(self.get_object(), actor=request.user, notes=request.data.get("notes", ""))
+        return Response(ChequeReadSerializer(cheque).data)
+
+    @action(detail=True, methods=["post"])
+    def stop(self, request, pk=None):
+        from apps.payments.services import stop_cheque
+
+        cheque = stop_cheque(self.get_object(), actor=request.user, notes=request.data.get("notes", ""))
+        return Response(ChequeReadSerializer(cheque).data)
+
+    @action(detail=True, methods=["post"], url_path="mark-paid")
+    def mark_paid(self, request, pk=None):
+        from apps.payments.services import mark_cheque_paid
+
+        cheque = mark_cheque_paid(self.get_object(), actor=request.user, notes=request.data.get("notes", ""))
+        return Response(ChequeReadSerializer(cheque).data)

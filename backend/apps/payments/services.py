@@ -11,7 +11,14 @@ from apps.accounting.services import post_account_transaction
 from apps.common.exceptions import APIError
 from apps.common.models import DocumentType
 from apps.common.numbering import allocate_number
-from apps.payments.models import Payment, PaymentAllocation, PaymentStatus
+from apps.payments.models import (
+    Cheque,
+    ChequeDirection,
+    ChequeStatus,
+    Payment,
+    PaymentAllocation,
+    PaymentStatus,
+)
 from apps.sales.models import (
     Customer,
     CustomerLedgerEntry,
@@ -196,3 +203,68 @@ def reverse_customer_payment(*, payment: Payment, actor, reason: str = "") -> Pa
     payment.reversal_reason = reason
     payment.save(update_fields=["status", "reversal_reason", "updated_at"])
     return payment
+
+
+# --------------------------------------------------------------------------- cheques
+
+
+def _date_today():
+    return timezone.localdate()
+
+
+def create_cheque(*, validated, actor) -> Cheque:
+    data = dict(validated)
+    if data.get("customer") and data.get("supplier"):
+        raise APIError("ONE_COUNTERPARTY", "A cheque has either a customer or a supplier, not both.")
+    if not data.get("customer") and not data.get("supplier"):
+        raise APIError("COUNTERPARTY_REQUIRED", "Specify the customer (received) or supplier (issued).")
+    data["status"] = (
+        ChequeStatus.PENDING_DEPOSIT
+        if data.get("direction") == ChequeDirection.RECEIVED
+        else ChequeStatus.PENDING
+    )
+    data["created_by"] = actor
+    return Cheque.objects.create(**data)
+
+
+def _transition(cheque: Cheque, allowed: set[str], target: str, *, date_field: str, actor, notes="") -> Cheque:
+    if cheque.status not in allowed:
+        raise APIError(
+            "INVALID_CHEQUE_STATE",
+            f"Cannot move cheque from {cheque.status} to {target}.",
+            status_code=400,
+        )
+    cheque.status = target
+    setattr(cheque, date_field, _date_today())
+    if notes:
+        cheque.notes = (cheque.notes + "\n" + notes).strip()
+    cheque.save()
+    return cheque
+
+
+def deposit_cheque(cheque: Cheque, actor, notes="") -> Cheque:
+    if cheque.direction != ChequeDirection.RECEIVED:
+        raise APIError("INVALID_CHEQUE_STATE", "Only received cheques can be deposited.")
+    return _transition(cheque, {ChequeStatus.PENDING_DEPOSIT}, ChequeStatus.DEPOSITED, date_field="date_deposited", actor=actor, notes=notes)
+
+
+def clear_cheque(cheque: Cheque, actor, notes="") -> Cheque:
+    if cheque.direction != ChequeDirection.RECEIVED:
+        raise APIError("INVALID_CHEQUE_STATE", "Only received cheques can clear.")
+    return _transition(cheque, {ChequeStatus.DEPOSITED}, ChequeStatus.CLEARED, date_field="date_cleared", actor=actor, notes=notes)
+
+
+def bounce_cheque(cheque: Cheque, actor, notes="") -> Cheque:
+    if cheque.direction != ChequeDirection.RECEIVED:
+        raise APIError("INVALID_CHEQUE_STATE", "Only received cheques can bounce.")
+    return _transition(cheque, {ChequeStatus.DEPOSITED, ChequeStatus.PENDING_DEPOSIT}, ChequeStatus.BOUNCED, date_field="date_bounced", actor=actor, notes=notes)
+
+
+def stop_cheque(cheque: Cheque, actor, notes="") -> Cheque:
+    return _transition(cheque, {ChequeStatus.PENDING_DEPOSIT, ChequeStatus.DEPOSITED, ChequeStatus.PENDING}, ChequeStatus.STOPPED, date_field="date_stopped", actor=actor, notes=notes)
+
+
+def mark_cheque_paid(cheque: Cheque, actor, notes="") -> Cheque:
+    if cheque.direction != ChequeDirection.ISSUED:
+        raise APIError("INVALID_CHEQUE_STATE", "Only issued cheques can be marked paid.")
+    return _transition(cheque, {ChequeStatus.PENDING}, ChequeStatus.PAID, date_field="date_paid", actor=actor, notes=notes)

@@ -95,6 +95,22 @@ class MeView(APIView):
     def get(self, request):
         return Response(MeSerializer(request.user, context={"request": request}).data)
 
+    def patch(self, request):
+        from apps.common.exceptions import APIError
+
+        user = request.user
+        default_branch_id = request.data.get("default_branch_id")
+        if default_branch_id:
+            if str(default_branch_id) not in [str(b) for b in user.branch_ids]:
+                raise APIError(
+                    "BRANCH_NOT_ASSIGNED",
+                    "You can only switch to a branch assigned to you.",
+                    status_code=403,
+                )
+            user.default_branch_id = default_branch_id
+            user.save(update_fields=["default_branch_id", "updated_at"])
+        return Response(MeSerializer(user, context={"request": request}).data)
+
 
 class UserViewSet(
     PermissionMappedMixin,

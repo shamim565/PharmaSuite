@@ -51,6 +51,7 @@ class CustomerViewSet(
         "update": ["CUSTOMER_MANAGE"],
         "partial_update": ["CUSTOMER_MANAGE"],
         "ledger": ["CUSTOMER_VIEW"],
+        "statement": ["CUSTOMER_VIEW"],
     }
     permission_classes = [HasPermission]
     serializer_class = CustomerSerializer
@@ -59,6 +60,38 @@ class CustomerViewSet(
     search_fields = ["code", "name", "phone", "area"]
     ordering_fields = ["name", "code", "balance_cache", "created_at"]
     ordering = ["name"]
+
+    @action(detail=True, methods=["get"])
+    def statement(self, request, pk=None):
+        from django.http import HttpResponse
+
+        customer = self.get_object()
+        entries = list(
+            customer.ledger_entries.order_by("created_at", "id")
+        )
+        balance = Decimal("0")
+        rows = []
+        for entry in entries:
+            balance += entry.amount_delta
+            rows.append(
+                {
+                    "date": entry.business_date.isoformat(),
+                    "number": entry.source_number or entry.entry_type,
+                    "description": entry.entry_type,
+                    "amount": f"{entry.amount_delta:.2f}",
+                    "balance": f"{balance:.2f}",
+                }
+            )
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="{customer.code}-statement.csv"'
+        import csv
+
+        writer = csv.DictWriter(
+            response, fieldnames=["date", "number", "description", "amount", "balance"]
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+        return response
 
     @action(detail=True, methods=["get"])
     def ledger(self, request, pk=None):

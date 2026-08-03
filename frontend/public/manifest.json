@@ -1,0 +1,17 @@
+{
+  "name": "Medicine Dealer ERP",
+  "short_name": "MedERP",
+  "description": "Distribution ERP for a medicine dealer: sales, purchases, stock, dues and reports.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

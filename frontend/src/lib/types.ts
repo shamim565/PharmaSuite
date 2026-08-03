@@ -1025,3 +1025,47 @@ export type AttachmentRow = {
   uploaded_by_name: string;
   created_at: string;
 };
+
+export type Cheque = {
+  id: string;
+  direction: "RECEIVED" | "ISSUED";
+  status:
+    | "PENDING_DEPOSIT"
+    | "DEPOSITED"
+    | "CLEARED"
+    | "BOUNCED"
+    | "PENDING"
+    | "PAID"
+    | "STOPPED";
+  number: string;
+  bank_name: string;
+  bank_branch: string;
+  amount: string;
+  date_issued: string;
+  date_deposited: string | null;
+  date_cleared: string | null;
+  date_bounced: string | null;
+  date_paid: string | null;
+  date_stopped: string | null;
+  customer: string | null;
+  customer_name: string;
+  supplier: string | null;
+  supplier_name: string;
+  invoice: string | null;
+  invoice_number: string;
+  supplier_payment: string | null;
+  supplier_payment_number: string;
+  notes: string;
+  created_at: string;
+};
+
+export type SearchResults = {
+  results: {
+    medicines: Array<{ id: string; code: string; name: string; selling_price: string }>;
+    customers: Array<{ id: string; code: string; name: string; phone: string }>;
+    suppliers: Array<{ id: string; code: string; name: string; phone: string }>;
+    doctors: Array<{ id: string; code: string; name: string; category: string }>;
+    invoices: Array<{ id: string; number: string; customer__name: string; grand_total: string; lifecycle: string }>;
+    purchases: Array<{ id: string; number: string; supplier__name: string; grand_total: string; lifecycle: string }>;
+  };
+};
