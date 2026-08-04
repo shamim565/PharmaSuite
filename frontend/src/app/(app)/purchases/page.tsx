@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
@@ -611,7 +612,11 @@ export default function PurchasesPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="font-medium">
-                      {purchase.number ?? "Draft"}{" "}
+                      {purchase.number ? (
+                        <Link href={`/purchases/${purchase.id}`} className="hover:underline">{purchase.number}</Link>
+                      ) : (
+                        "Draft"
+                      )}{" "}
                       <span className="text-xs text-slate-400">{purchase.supplier_invoice_number}</span>
                     </p>
                     <p className="text-xs text-slate-500">

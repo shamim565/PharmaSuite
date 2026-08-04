@@ -446,12 +446,14 @@ def mark_invoice_delivered(*, invoice: SalesInvoice, actor) -> SalesInvoice:
 
 
 @transaction.atomic
-def cancel_sale(*, invoice: SalesInvoice, actor, reason: str = "") -> SalesInvoice:
+def cancel_sale(*, invoice: SalesInvoice, actor, reason: str = "", idempotency_key: str | None = None) -> SalesInvoice:
     invoice = (
         SalesInvoice.objects.select_for_update()
         .select_related("customer", "branch")
         .get(id=invoice.id)
     )
+    if idempotency_key and invoice.idempotency_key == idempotency_key:
+        return invoice
     if invoice.lifecycle != SalesInvoiceStatus.CONFIRMED:
         raise APIError("INVALID_STATUS_TRANSITION", "Only confirmed invoices can be cancelled.")
     if invoice.paid_total > 0:
@@ -498,7 +500,8 @@ def cancel_sale(*, invoice: SalesInvoice, actor, reason: str = "") -> SalesInvoi
 
     invoice.lifecycle = SalesInvoiceStatus.CANCELLED
     invoice.cancel_reason = reason
-    invoice.save(update_fields=["lifecycle", "cancel_reason", "updated_at"])
+    invoice.idempotency_key = idempotency_key or invoice.idempotency_key
+    invoice.save(update_fields=["lifecycle", "cancel_reason", "idempotency_key", "updated_at"])
     return invoice
 
 
@@ -516,6 +519,7 @@ def create_sales_return(
     notes: str = "",
     items_data: list[dict],
     actor=None,
+    idempotency_key: str | None = None,
 ) -> SalesReturn:
     invoice = (
         SalesInvoice.objects.select_for_update()
@@ -524,6 +528,10 @@ def create_sales_return(
     )
     if invoice.lifecycle != SalesInvoiceStatus.CONFIRMED:
         raise APIError("INVALID_STATUS_TRANSITION", "Only confirmed invoices can be returned.")
+    if idempotency_key:
+        existing_return = SalesReturn.objects.filter(idempotency_key=idempotency_key).first()
+        if existing_return is not None:
+            return existing_return
     if refund_method in (RefundMethod.CASH, RefundMethod.BANK) and refund_account is None:
         raise APIError(
             "REFUND_ACCOUNT_REQUIRED", "A refund account is required for cash/bank refunds."
@@ -564,16 +572,20 @@ def create_sales_return(
             qty=qty,
             condition=row["condition"],
         )
+    sales_return.idempotency_key = idempotency_key or sales_return.idempotency_key
+    sales_return.save(update_fields=["idempotency_key", "updated_at"])
     return sales_return
 
 
 @transaction.atomic
-def confirm_sales_return(*, sales_return: SalesReturn, actor) -> SalesReturn:
+def confirm_sales_return(*, sales_return: SalesReturn, actor, idempotency_key: str | None = None) -> SalesReturn:
     sales_return = (
         SalesReturn.objects.select_for_update()
         .select_related("invoice", "customer", "branch")
         .get(id=sales_return.id)
     )
+    if idempotency_key and sales_return.idempotency_key == idempotency_key:
+        return sales_return
     if sales_return.status == SalesReturnDocStatus.CONFIRMED:
         return sales_return
     if sales_return.status != SalesReturnDocStatus.DRAFT:
@@ -654,6 +666,7 @@ def confirm_sales_return(*, sales_return: SalesReturn, actor) -> SalesReturn:
     sales_return.status = SalesReturnDocStatus.CONFIRMED
     sales_return.confirmed_at = timezone.now()
     sales_return.confirmed_by = actor if getattr(actor, "is_authenticated", False) else None
+    sales_return.idempotency_key = idempotency_key or sales_return.idempotency_key
     sales_return.save()
 
     post_transactions(

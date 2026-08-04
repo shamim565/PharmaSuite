@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounting.models import FinancialAccount
+from apps.audit.services import log_action
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
@@ -118,12 +119,33 @@ class PurchaseViewSet(
             payment=payment,
             idempotency_key=request.headers.get("Idempotency-Key"),
         )
+        log_action(
+            actor=request.user,
+            action="PURCHASE_CONFIRMED",
+            entity_type="purchase",
+            entity_id=purchase.id,
+            after={"number": purchase.number or "", "grand_total": str(purchase.grand_total)},
+            branch=purchase.branch,
+            request=request,
+        )
         return Response(PurchaseReadSerializer(purchase).data)
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         purchase = cancel_purchase(
-            purchase=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
+            purchase=self.get_object(),
+            actor=request.user,
+            reason=request.data.get("reason", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="PURCHASE_CANCELLED",
+            entity_type="purchase",
+            entity_id=purchase.id,
+            after={"number": purchase.number or "", "reason": request.data.get("reason", "")},
+            branch=purchase.branch,
+            request=request,
         )
         return Response(PurchaseReadSerializer(purchase).data)
 
@@ -191,12 +213,33 @@ class SupplierPaymentViewSet(
             actor=request.user,
             idempotency_key=request.headers.get("Idempotency-Key"),
         )
+        log_action(
+            actor=request.user,
+            action="SUPPLIER_PAYMENT",
+            entity_type="supplier_payment",
+            entity_id=payment.id,
+            after={"number": payment.number or "", "amount": str(payment.amount), "method": payment.method},
+            branch=payment.branch,
+            request=request,
+        )
         return Response(SupplierPaymentReadSerializer(payment).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
     def reverse(self, request, pk=None):
         payment = reverse_supplier_payment(
-            payment=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
+            payment=self.get_object(),
+            actor=request.user,
+            reason=request.data.get("reason", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="SUPPLIER_PAYMENT_REVERSED",
+            entity_type="supplier_payment",
+            entity_id=payment.id,
+            after={"number": payment.number or "", "amount": str(payment.amount)},
+            branch=payment.branch,
+            request=request,
         )
         return Response(SupplierPaymentReadSerializer(payment).data)
 
@@ -229,7 +272,25 @@ class PurchaseReturnViewSet(
     def create(self, request, *args, **kwargs):
         serializer = PurchaseReturnCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        idempotency_key = request.headers.get("Idempotency-Key")
+        if idempotency_key:
+            existing = PurchaseReturn.objects.filter(idempotency_key=idempotency_key).first()
+            if existing is not None:
+                return Response(
+                    PurchaseReturnReadSerializer(existing).data, status=status.HTTP_201_CREATED
+                )
         purchase_return = serializer.save()
+        purchase_return.idempotency_key = idempotency_key or purchase_return.idempotency_key
+        purchase_return.save(update_fields=["idempotency_key", "updated_at"])
+        log_action(
+            actor=request.user,
+            action="PURCHASE_RETURN_CREATED",
+            entity_type="purchase_return",
+            entity_id=purchase_return.id,
+            after={"number": purchase_return.number or "", "grand_total": str(purchase_return.grand_total)},
+            branch=purchase_return.branch,
+            request=request,
+        )
         return Response(
             PurchaseReturnReadSerializer(purchase_return).data, status=status.HTTP_201_CREATED
         )
@@ -237,7 +298,18 @@ class PurchaseReturnViewSet(
     @action(detail=True, methods=["post"])
     def confirm(self, request, pk=None):
         purchase_return = confirm_purchase_return(
-            purchase_return=self.get_object(), actor=request.user
+            purchase_return=self.get_object(),
+            actor=request.user,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="PURCHASE_RETURN_CONFIRMED",
+            entity_type="purchase_return",
+            entity_id=purchase_return.id,
+            after={"number": purchase_return.number or "", "grand_total": str(purchase_return.grand_total)},
+            branch=purchase_return.branch,
+            request=request,
         )
         return Response(PurchaseReturnReadSerializer(purchase_return).data)
 

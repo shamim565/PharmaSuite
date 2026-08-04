@@ -279,7 +279,7 @@ def models_f_increment(value):
 
 
 @transaction.atomic
-def cancel_purchase(*, purchase: Purchase, actor, reason: str = "") -> Purchase:
+def cancel_purchase(*, purchase: Purchase, actor, reason: str = "", idempotency_key: str | None = None) -> Purchase:
     purchase = Purchase.objects.select_for_update().select_related("supplier", "branch").get(id=purchase.id)
     if purchase.lifecycle != PurchaseStatus.CONFIRMED:
         raise APIError("INVALID_STATUS_TRANSITION", "Only confirmed purchases can be cancelled.")
@@ -349,6 +349,7 @@ def cancel_purchase(*, purchase: Purchase, actor, reason: str = "") -> Purchase:
 
     purchase.lifecycle = PurchaseStatus.CANCELLED
     purchase.cancel_reason = reason
+    purchase.idempotency_key = idempotency_key or purchase.idempotency_key
     purchase.save(update_fields=["lifecycle", "cancel_reason", "updated_at"])
     return purchase
 
@@ -470,12 +471,14 @@ def record_supplier_payment(
 
 
 @transaction.atomic
-def reverse_supplier_payment(*, payment: SupplierPayment, actor, reason: str = "") -> SupplierPayment:
+def reverse_supplier_payment(*, payment: SupplierPayment, actor, reason: str = "", idempotency_key: str | None = None) -> SupplierPayment:
     payment = (
         SupplierPayment.objects.select_for_update()
         .select_related("supplier", "branch", "account")
         .get(id=payment.id)
     )
+    if idempotency_key and payment.idempotency_key == idempotency_key:
+        return payment
     if payment.status != SupplierPaymentStatus.ACTIVE:
         raise APIError("INVALID_STATUS_TRANSITION", "Only active payments can be reversed.")
 
@@ -521,12 +524,13 @@ def reverse_supplier_payment(*, payment: SupplierPayment, actor, reason: str = "
 
     payment.status = SupplierPaymentStatus.REVERSED
     payment.reversal_reason = reason
-    payment.save(update_fields=["status", "reversal_reason", "updated_at"])
+    payment.idempotency_key = idempotency_key or payment.idempotency_key
+    payment.save(update_fields=["status", "reversal_reason", "idempotency_key", "updated_at"])
     return payment
 
 
 @transaction.atomic
-def confirm_purchase_return(*, purchase_return: PurchaseReturn, actor) -> PurchaseReturn:
+def confirm_purchase_return(*, purchase_return: PurchaseReturn, actor, idempotency_key: str | None = None) -> PurchaseReturn:
     purchase_return = (
         PurchaseReturn.objects.select_for_update()
         .select_related("purchase", "supplier", "branch")
@@ -598,6 +602,7 @@ def confirm_purchase_return(*, purchase_return: PurchaseReturn, actor) -> Purcha
     purchase_return.status = PurchaseReturnDocStatus.CONFIRMED
     purchase_return.confirmed_at = timezone.now()
     purchase_return.confirmed_by = actor if getattr(actor, "is_authenticated", False) else None
+    purchase_return.idempotency_key = idempotency_key or purchase_return.idempotency_key
     purchase_return.save()
 
     post_transactions(

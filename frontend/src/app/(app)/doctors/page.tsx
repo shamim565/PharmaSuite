@@ -6,6 +6,7 @@ import { FormEvent, useState } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import type {
+  DoctorChamber,
   Branch,
   Doctor,
   DoctorMedicine,
@@ -61,6 +62,26 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
     queryKey: ["batches", "sample", sampleMedicine],
     queryFn: () => api.get<Paginated<MedicineBatch>>(`/batches/?page_size=100&medicine=${sampleMedicine}`),
     enabled: Boolean(sampleMedicine),
+  });
+
+  const [chamberForm, setChamberForm] = useState({ name: "", address: "", visiting_hours: "" });
+
+  const chambersQuery = useQuery({
+    queryKey: ["doctor-chambers", doctor.id],
+    queryFn: () => api.get<{ count: number; results: DoctorChamber[] }>(`/doctors/${doctor.id}/chambers/`),
+  });
+
+  const chamberMutation = useMutation({
+    mutationFn: () => api.post(`/doctors/${doctor.id}/chambers/`, chamberForm),
+    onSuccess: () => {
+      setChamberForm({ name: "", address: "", visiting_hours: "" });
+      queryClient.invalidateQueries({ queryKey: ["doctor-chambers", doctor.id] });
+    },
+  });
+
+  const deleteChamberMutation = useMutation({
+    mutationFn: (chamber: DoctorChamber) => api.delete(`/doctors/${doctor.id}/chambers/${chamber.id}/`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["doctor-chambers", doctor.id] }),
   });
 
   const invalidate = () => {
@@ -176,6 +197,53 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
             </div>
             <Button size="sm" onClick={() => mappingMutation.mutate()} disabled={!mappingMedicine || mappingMutation.isPending}>
               Add mapping
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase text-slate-500">Chambers</p>
+          <ErrorBanner error={chamberMutation.error} />
+          {chambersQuery.isLoading ? (
+            <Spinner />
+          ) : !chambersQuery.data || chambersQuery.data.results.length === 0 ? (
+            <EmptyState message="No chambers yet." />
+          ) : (
+            <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+              {chambersQuery.data.results.map((chamber) => (
+                <li key={chamber.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <div>
+                    <p className="font-medium">{chamber.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {chamber.address || "—"}
+                      {chamber.visiting_hours ? ` · ${chamber.visiting_hours}` : ""}
+                    </p>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => deleteChamberMutation.mutate(chamber)}>
+                    Remove
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-40">
+              <Field label="Chamber name">
+                <Input value={chamberForm.name} onChange={(e) => setChamberForm({ ...chamberForm, name: e.target.value })} />
+              </Field>
+            </div>
+            <div className="w-48">
+              <Field label="Address">
+                <Input value={chamberForm.address} onChange={(e) => setChamberForm({ ...chamberForm, address: e.target.value })} />
+              </Field>
+            </div>
+            <div className="w-36">
+              <Field label="Visiting hours">
+                <Input value={chamberForm.visiting_hours} onChange={(e) => setChamberForm({ ...chamberForm, visiting_hours: e.target.value })} />
+              </Field>
+            </div>
+            <Button size="sm" onClick={() => chamberMutation.mutate()} disabled={!chamberForm.name || chamberMutation.isPending}>
+              Add chamber
             </Button>
           </div>
         </div>

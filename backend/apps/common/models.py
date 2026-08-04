@@ -105,6 +105,7 @@ class FiscalPeriod(BaseModel):
     )
     unlock_at = models.DateTimeField(null=True, blank=True)
     unlock_reason = models.TextField(blank=True)
+    idempotency_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
 
     class Meta:
         ordering = ["fiscal_year", "period_month"]

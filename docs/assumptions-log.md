@@ -119,3 +119,9 @@
 ---
 
 *Next review: Phase 2 gate. Questions referenced above are maintained in `docs/open-questions.md`.*
+
+| Date | ID | Decision | Status |
+|---|---|---|---|
+| Sprint 17 | DEC-011 | Purchase accounting stays subledger-only: supplier ledger carries payables; no AP accrual entry type (SRS excludes advanced GL). Financial-position reports subledger totals. | Approved |
+| Sprint 17 | DEC-012 | Invoicing/records use browser print-to-PDF (A4 print views); no server-side PDF engine. | Approved |
+| Sprint 17 | DEC-013 | Automated unit tests remain deferred; SRS DoD deviation recorded — verification via /tmp/smoke_s*.py + docs/uat-checklist.md | Approved |

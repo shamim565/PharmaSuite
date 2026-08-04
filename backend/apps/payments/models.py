@@ -112,6 +112,7 @@ class Cheque(BaseModel):
         related_name="cheques",
     )
     notes = models.TextField(blank=True)
+    idempotency_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
     created_by = models.ForeignKey(
         "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="cheques_created"
     )

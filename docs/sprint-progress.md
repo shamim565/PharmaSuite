@@ -796,6 +796,52 @@ All 12 sprints are complete: foundation/auth/RBAC, catalog & batches, inventory 
 - SW cache is static-first; API never cached (auth headers), so offline mode covers only the app shell.
 - With this sprint the approved completeness pass (Tier 1 + 2 + 3) is fully delivered.
 
+---
+
+## Sprint 17 — SRS compliance closure
+
+**Status:** ✅ Complete (verified end-to-end)
+
+### Implemented (SRS gap closure)
+- **Purchase print record** (SRS 6.1/5.4): `GET /purchases/{id}/` full detail used by new `/purchases/[id]` page with `Print (A4)` (items, batch, expiry, bonus, discounts, VAT, freight, totals); purchase numbers link to it from the register.
+- **Audit coverage** (SRS 13): `log_action` on sale/purchase confirm + cancel, customer/supplier payments + reversals, sale/purchase returns (create + confirm), stock adjustment create/approve/reject/reverse, expense/income post + reverse, period lock/unlock, cheque lifecycle actions, customer/supplier master edits — with totals and reasons.
+- **Idempotency** (SRS 10.1): `Idempotency-Key` now honored on sale cancel, sales-return create/confirm, purchase cancel, purchase-return create/confirm, supplier/customer payment reversals, stock adjustment create/approve/reverse, expense/income reversal, cheque actions, period lock/unlock (new key columns on StockAdjustment, Cheque, FiscalPeriod). Replays return the original result.
+- **Report CSV** (SRS 5.10): `?export=csv` added to profit-loss, inventory-valuation, financial-position, sales-by-doctor, sales-by-rep — all 9 reports now exportable; buttons added on those tabs.
+- **Barcode** (SRS 12.2/10.3): barcode matches included in global search; sales entry scan input (barcode/code + Enter) adds a line.
+- **Keyboard sale entry** (SRS 12.2): Enter on the last line adds a new row; inline availability (sum on-hand + nearest expiry) shown for the selected medicine using the FEFO candidate data.
+- **Doctor chambers** (SRS 5.8): chambers API (list/create/delete on `/doctors/{id}/chambers/`) + UI panel with name/address/visiting hours.
+- **UAT checklist** (SRS 16/19.1): `docs/uat-checklist.md` with the SRS §16.1 critical scenarios and core workflows, sign-off table.
+
+### Decisions recorded (assumptions-log DEC-011..013)
+- Purchase accounting stays subledger-only (no AP accrual; SRS excludes advanced GL).
+- Browser print-to-PDF is the invoicing/record output mechanism.
+- Automated tests remain deferred; deviation from SRS DoD documented; verification via smoke scripts + UAT checklist.
+
+### Verification (manual, no automated tests per project decision)
+| Check | Result |
+|---|---|
+| Sprint 17 smoke script (15 checks) | ✅ 15/15 |
+| Purchase detail with items; audit rows for SALE_CONFIRMED/PERIOD_LOCKED/SALE_CANCELLED | ✅ |
+| Idempotent replay: sale cancel (200,200 same state); sales-return create returns same id | ✅ |
+| 5 report CSV exports (status 200, text/csv, non-empty) | ✅ |
+| Barcode search hit; chambers create/list/delete | ✅ |
+| `manage.py check`, `makemigrations --check`, `ruff`, `next build`, stock & ledger integrity | ✅ |
+
+### Key endpoints
+- `GET /purchases/{id}/` (detail for print), `GET /doctors/{id}/chambers/` (+POST/DELETE)
+- `Idempotency-Key` honored on all posting/reversal actions
+- `?export=csv` on all 9 reports
+
+### Key screens
+- `/purchases/[id]` (print), sales scan + keyboard entry + availability hint, report CSV buttons, doctor chambers panel
+
+### Migrations
+- `inventory.0004`, `payments.0005`, `common.0005` (idempotency key columns)
+
+### Known limitations
+- Audit entries for postings carry actor but not IP/user-agent (no request context in services; views log where available).
+- UAT execution is a business activity (checklist ready in `docs/uat-checklist.md`).
+
 
 
 

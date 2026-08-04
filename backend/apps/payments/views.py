@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounting.models import FinancialAccount
+from apps.audit.services import log_action
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
@@ -85,6 +86,15 @@ class CustomerPaymentViewSet(
             collector=request.user,
             idempotency_key=request.headers.get("Idempotency-Key"),
         )
+        log_action(
+            actor=request.user,
+            action="CUSTOMER_PAYMENT",
+            entity_type="customer_payment",
+            entity_id=payment.id,
+            after={"number": payment.number or "", "amount": str(payment.amount), "method": payment.method},
+            branch=payment.branch,
+            request=request,
+        )
         return Response(
             CustomerPaymentReadSerializer(payment).data, status=status.HTTP_201_CREATED
         )
@@ -92,7 +102,19 @@ class CustomerPaymentViewSet(
     @action(detail=True, methods=["post"])
     def reverse(self, request, pk=None):
         payment = reverse_customer_payment(
-            payment=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
+            payment=self.get_object(),
+            actor=request.user,
+            reason=request.data.get("reason", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="CUSTOMER_PAYMENT_REVERSED",
+            entity_type="customer_payment",
+            entity_id=payment.id,
+            after={"number": payment.number or "", "amount": str(payment.amount)},
+            branch=payment.branch,
+            request=request,
         )
         return Response(CustomerPaymentReadSerializer(payment).data)
 
@@ -184,33 +206,78 @@ class ChequeViewSet(
     def deposit(self, request, pk=None):
         from apps.payments.services import deposit_cheque
 
-        cheque = deposit_cheque(self.get_object(), actor=request.user, notes=request.data.get("notes", ""))
+        cheque = deposit_cheque(
+            self.get_object(),
+            actor=request.user,
+            notes=request.data.get("notes", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user, action="CHEQUE_DEPOSITED", entity_type="cheque", entity_id=cheque.id,
+            after={"number": cheque.number, "status": cheque.status}, request=request,
+        )
         return Response(ChequeReadSerializer(cheque).data)
 
     @action(detail=True, methods=["post"])
     def clear(self, request, pk=None):
         from apps.payments.services import clear_cheque
 
-        cheque = clear_cheque(self.get_object(), actor=request.user, notes=request.data.get("notes", ""))
+        cheque = clear_cheque(
+            self.get_object(),
+            actor=request.user,
+            notes=request.data.get("notes", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user, action="CHEQUE_CLEARED", entity_type="cheque", entity_id=cheque.id,
+            after={"number": cheque.number, "status": cheque.status}, request=request,
+        )
         return Response(ChequeReadSerializer(cheque).data)
 
     @action(detail=True, methods=["post"])
     def bounce(self, request, pk=None):
         from apps.payments.services import bounce_cheque
 
-        cheque = bounce_cheque(self.get_object(), actor=request.user, notes=request.data.get("notes", ""))
+        cheque = bounce_cheque(
+            self.get_object(),
+            actor=request.user,
+            notes=request.data.get("notes", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user, action="CHEQUE_BOUNCED", entity_type="cheque", entity_id=cheque.id,
+            after={"number": cheque.number, "status": cheque.status}, request=request,
+        )
         return Response(ChequeReadSerializer(cheque).data)
 
     @action(detail=True, methods=["post"])
     def stop(self, request, pk=None):
         from apps.payments.services import stop_cheque
 
-        cheque = stop_cheque(self.get_object(), actor=request.user, notes=request.data.get("notes", ""))
+        cheque = stop_cheque(
+            self.get_object(),
+            actor=request.user,
+            notes=request.data.get("notes", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user, action="CHEQUE_STOPPED", entity_type="cheque", entity_id=cheque.id,
+            after={"number": cheque.number, "status": cheque.status}, request=request,
+        )
         return Response(ChequeReadSerializer(cheque).data)
 
     @action(detail=True, methods=["post"], url_path="mark-paid")
     def mark_paid(self, request, pk=None):
         from apps.payments.services import mark_cheque_paid
 
-        cheque = mark_cheque_paid(self.get_object(), actor=request.user, notes=request.data.get("notes", ""))
+        cheque = mark_cheque_paid(
+            self.get_object(),
+            actor=request.user,
+            notes=request.data.get("notes", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user, action="CHEQUE_PAID", entity_type="cheque", entity_id=cheque.id,
+            after={"number": cheque.number, "status": cheque.status}, request=request,
+        )
         return Response(ChequeReadSerializer(cheque).data)

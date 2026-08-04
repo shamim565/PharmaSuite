@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.audit.services import log_action
 from apps.catalog.models import BatchStatus
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
@@ -335,6 +336,16 @@ class StockAdjustmentViewSet(
             notes=data.get("notes", ""),
             items_data=items_data,
             actor=request.user,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="STOCK_ADJUSTMENT_CREATED",
+            entity_type="stock_adjustment",
+            entity_id=adjustment.id,
+            after={"number": adjustment.number or "", "type": adjustment.adjustment_type, "total_value": str(adjustment.total_value), "status": adjustment.status},
+            branch=adjustment.branch,
+            request=request,
         )
         return Response(
             StockAdjustmentReadSerializer(adjustment).data,
@@ -343,7 +354,20 @@ class StockAdjustmentViewSet(
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
-        adjustment = approve_stock_adjustment(adjustment=self.get_object(), actor=request.user)
+        adjustment = approve_stock_adjustment(
+            adjustment=self.get_object(),
+            actor=request.user,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="STOCK_ADJUSTMENT_APPROVED",
+            entity_type="stock_adjustment",
+            entity_id=adjustment.id,
+            after={"number": adjustment.number or "", "total_value": str(adjustment.total_value)},
+            branch=adjustment.branch,
+            request=request,
+        )
         return Response(StockAdjustmentReadSerializer(adjustment).data)
 
     @action(detail=True, methods=["post"])
@@ -351,11 +375,32 @@ class StockAdjustmentViewSet(
         adjustment = reject_stock_adjustment(
             adjustment=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
         )
+        log_action(
+            actor=request.user,
+            action="STOCK_ADJUSTMENT_REJECTED",
+            entity_type="stock_adjustment",
+            entity_id=adjustment.id,
+            after={"number": adjustment.number or "", "reason": request.data.get("reason", "")},
+            branch=adjustment.branch,
+            request=request,
+        )
         return Response(StockAdjustmentReadSerializer(adjustment).data)
 
     @action(detail=True, methods=["post"])
     def reverse(self, request, pk=None):
         adjustment = reverse_stock_adjustment(
-            adjustment=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
+            adjustment=self.get_object(),
+            actor=request.user,
+            reason=request.data.get("reason", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="STOCK_ADJUSTMENT_REVERSED",
+            entity_type="stock_adjustment",
+            entity_id=adjustment.id,
+            after={"number": adjustment.number or "", "reason": request.data.get("reason", "")},
+            branch=adjustment.branch,
+            request=request,
         )
         return Response(StockAdjustmentReadSerializer(adjustment).data)

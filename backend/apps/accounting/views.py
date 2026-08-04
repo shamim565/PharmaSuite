@@ -36,6 +36,7 @@ from apps.accounting.services import (
     transfer_between_accounts,
     withdraw_from_account,
 )
+from apps.audit.services import log_action
 from apps.branches.models import Branch
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
@@ -247,6 +248,15 @@ class ExpenseViewSet(
             actor=request.user,
             idempotency_key=request.headers.get("Idempotency-Key"),
         )
+        log_action(
+            actor=request.user,
+            action="EXPENSE_POSTED",
+            entity_type="expense",
+            entity_id=expense.id,
+            after={"number": expense.number or "", "amount": str(expense.amount), "category": str(expense.category_id)},
+            branch=expense.branch,
+            request=request,
+        )
         return Response(ExpenseReadSerializer(expense).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -264,7 +274,19 @@ class ExpenseViewSet(
     @action(detail=True, methods=["post"])
     def reverse(self, request, pk=None):
         expense = reverse_expense(
-            expense=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
+            expense=self.get_object(),
+            actor=request.user,
+            reason=request.data.get("reason", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="EXPENSE_REVERSED",
+            entity_type="expense",
+            entity_id=expense.id,
+            after={"number": expense.number or "", "amount": str(expense.amount)},
+            branch=expense.branch,
+            request=request,
         )
         return Response(ExpenseReadSerializer(expense).data)
 
@@ -313,12 +335,33 @@ class IncomeViewSet(
             actor=request.user,
             idempotency_key=request.headers.get("Idempotency-Key"),
         )
+        log_action(
+            actor=request.user,
+            action="INCOME_POSTED",
+            entity_type="income",
+            entity_id=income.id,
+            after={"number": income.number or "", "amount": str(income.amount), "category": str(income.category_id)},
+            branch=income.branch,
+            request=request,
+        )
         return Response(IncomeReadSerializer(income).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
     def reverse(self, request, pk=None):
         income = reverse_income(
-            income=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
+            income=self.get_object(),
+            actor=request.user,
+            reason=request.data.get("reason", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="INCOME_REVERSED",
+            entity_type="income",
+            entity_id=income.id,
+            after={"number": income.number or "", "amount": str(income.amount)},
+            branch=income.branch,
+            request=request,
         )
         return Response(IncomeReadSerializer(income).data)
 

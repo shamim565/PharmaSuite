@@ -67,6 +67,14 @@ function ProfitLossTab() {
           <Field label="To">
             <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </Field>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="self-end"
+            onClick={() => apiDownload(`/reports/profit-loss/?date_from=${dateFrom}&date_to=${dateTo}&export=csv`, "profit-loss.csv")}
+          >
+            Download CSV
+          </Button>
         </div>
       </Card>
 
@@ -169,10 +177,15 @@ function ValuationTab() {
 
   return (
     <div className="space-y-4">
-      <Card className="p-4">
-        <p className="text-xs uppercase text-slate-500">Total inventory value (batch cost)</p>
-        <p className="text-2xl font-bold text-slate-800">{money(data?.total_value)}</p>
-      </Card>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <Card className="p-4">
+          <p className="text-xs uppercase text-slate-500">Total inventory value (batch cost)</p>
+          <p className="text-2xl font-bold text-slate-800">{money(data?.total_value)}</p>
+        </Card>
+        <Button size="sm" variant="secondary" onClick={() => apiDownload("/reports/inventory-valuation/?export=csv", "inventory-valuation.csv")}>
+          Download CSV
+        </Button>
+      </div>
       <Card>
         <CardHeader title="Valuation by branch" subtitle={data ? `${data.count} branch(es)` : undefined} />
         <ErrorBanner error={error} />
@@ -219,6 +232,11 @@ function PositionTab() {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button size="sm" variant="secondary" onClick={() => apiDownload("/reports/financial-position/?export=csv", "financial-position.csv")}>
+          Download CSV
+        </Button>
+      </div>
       <ErrorBanner error={error} />
       {isLoading ? (
         <Spinner />
@@ -292,6 +310,14 @@ function AttributionTab({ endpoint, label }: { endpoint: string; label: string }
           <Field label="To">
             <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </Field>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="self-end"
+            onClick={() => apiDownload(`${endpoint}?date_from=${dateFrom}&date_to=${dateTo}&export=csv`, "attribution.csv")}
+          >
+            Download CSV
+          </Button>
         </div>
       </Card>
       <Card>

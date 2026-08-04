@@ -88,7 +88,7 @@ def ensure_period_open(business_date: date | None = None, actor=None) -> FiscalP
     return period
 
 
-def lock_period(*, period: FiscalPeriod, actor, reason: str = "", checklist: dict | None = None) -> FiscalPeriod:
+def lock_period(*, period: FiscalPeriod, actor, reason: str = "", checklist: dict | None = None, idempotency_key: str | None = None) -> FiscalPeriod:
     period.status = FiscalPeriodStatus.LOCKED
     period.locked_by = actor
     period.locked_at = timezone.now()
@@ -96,11 +96,12 @@ def lock_period(*, period: FiscalPeriod, actor, reason: str = "", checklist: dic
     period.unlock_by = None
     period.unlock_at = None
     period.unlock_reason = ""
-    period.save(update_fields=["status", "locked_by", "locked_at", "lock_reason", "unlock_by", "unlock_at", "unlock_reason", "updated_at"])
+    period.idempotency_key = idempotency_key or period.idempotency_key
+    period.save(update_fields=["status", "locked_by", "locked_at", "lock_reason", "unlock_by", "unlock_at", "unlock_reason", "idempotency_key", "updated_at"])
     return period
 
 
-def unlock_period(*, period: FiscalPeriod, actor, reason: str = "") -> FiscalPeriod:
+def unlock_period(*, period: FiscalPeriod, actor, reason: str = "", idempotency_key: str | None = None) -> FiscalPeriod:
     if not actor_has_period_override(actor):
         raise APIError(
             "PERMISSION_DENIED", "Only the owner may reopen a locked fiscal period.", status_code=403
@@ -109,5 +110,6 @@ def unlock_period(*, period: FiscalPeriod, actor, reason: str = "") -> FiscalPer
     period.unlock_by = actor
     period.unlock_at = timezone.now()
     period.unlock_reason = reason
-    period.save(update_fields=["status", "unlock_by", "unlock_at", "unlock_reason", "updated_at"])
+    period.idempotency_key = idempotency_key or period.idempotency_key
+    period.save(update_fields=["status", "unlock_by", "unlock_at", "unlock_reason", "idempotency_key", "updated_at"])
     return period

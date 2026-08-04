@@ -199,7 +199,7 @@ def reject_expense(*, expense, actor, reason: str = ""):
 
 
 @transaction.atomic
-def reverse_expense(*, expense, actor, reason: str = ""):
+def reverse_expense(*, expense, actor, reason: str = "", idempotency_key: str | None = None):
     from apps.accounting.models import Expense
 
     expense = Expense.objects.select_for_update().select_related("account", "branch").get(id=expense.id)
@@ -220,7 +220,8 @@ def reverse_expense(*, expense, actor, reason: str = ""):
     )
     expense.status = "REVERSED"
     expense.note = (expense.note + f"\nReversed: {reason}").strip()
-    expense.save(update_fields=["status", "note", "updated_at"])
+    expense.idempotency_key = idempotency_key or expense.idempotency_key
+    expense.save(update_fields=["status", "note", "idempotency_key", "updated_at"])
     return expense
 
 
@@ -285,7 +286,7 @@ def create_income(
 
 
 @transaction.atomic
-def reverse_income(*, income, actor, reason: str = ""):
+def reverse_income(*, income, actor, reason: str = "", idempotency_key: str | None = None):
     from apps.accounting.models import Income
 
     income = Income.objects.select_for_update().select_related("account", "branch").get(id=income.id)
@@ -306,7 +307,8 @@ def reverse_income(*, income, actor, reason: str = ""):
     )
     income.status = "REVERSED"
     income.note = (income.note + f"\nReversed: {reason}").strip()
-    income.save(update_fields=["status", "note", "updated_at"])
+    income.idempotency_key = idempotency_key or income.idempotency_key
+    income.save(update_fields=["status", "note", "idempotency_key", "updated_at"])
     return income
 
 

@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.audit.services import log_action
 from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
 from apps.suppliers.models import Supplier
@@ -66,6 +67,19 @@ class SupplierViewSet(
         )
         writer.writeheader()
         writer.writerows(rows)
+        return response
+
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        supplier = self.get_object()
+        log_action(
+            actor=request.user,
+            action="SUPPLIER_UPDATED",
+            entity_type="supplier",
+            entity_id=supplier.id,
+            after={"code": supplier.code},
+            request=request,
+        )
         return response
 
     @action(detail=True, methods=["get"])

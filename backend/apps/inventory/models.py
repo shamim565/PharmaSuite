@@ -149,6 +149,7 @@ class StockAdjustment(BaseModel):
     business_date = models.DateField(db_index=True)
     adjustment_type = models.CharField(max_length=10, choices=AdjustmentType.choices)
     reason_code = models.CharField(max_length=25, choices=AdjustmentReason.choices)
+    idempotency_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
     status = models.CharField(
         max_length=20, choices=AdjustmentStatus.choices, default=AdjustmentStatus.PENDING_APPROVAL
     )

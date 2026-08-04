@@ -187,6 +187,20 @@ class ProfitLossReportView(APIView):
         current_profit = Decimal(current["net_profit"])
         previous_profit = Decimal(previous["net_profit"])
 
+        if request.query_params.get("export") == "csv":
+            pl_rows = [
+                ["period_start", date_from.isoformat()],
+                ["period_end", date_to.isoformat()],
+            ]
+            for key in ("revenue", "cogs", "gross_profit", "expenses", "other_income", "net_profit"):
+                value = current.get(key)
+                if isinstance(value, dict):
+                    for subkey, subvalue in value.items():
+                        pl_rows.append([f"{key}.{subkey}", str(subvalue)])
+                else:
+                    pl_rows.append([key, str(value or "0")])
+            return csv_response("profit-loss.csv", ["metric", "value"], pl_rows)
+
         return Response(
             {
                 "current": current,
@@ -248,6 +262,14 @@ class InventoryValuationView(APIView):
         results = [as_strings(row) for row in per_branch.values()]
         total_value = sum((Decimal(row["saleable_value"]) + Decimal(row["quarantine_value"]) + Decimal(row["promo_value"]) for row in results), Decimal("0"))
 
+        if request.query_params.get("export") == "csv":
+            sorted_rows = sorted(results, key=lambda row: row["branch_name"])
+            return csv_response(
+                "inventory-valuation.csv",
+                ["branch_name", "saleable_qty", "saleable_value", "quarantine_qty", "quarantine_value", "promo_qty", "promo_value"],
+                [[row["branch_name"], row["saleable_qty"], row["saleable_value"], row["quarantine_qty"], row["quarantine_value"], row["promo_qty"], row["promo_value"]] for row in sorted_rows],
+            )
+
         return Response(
             {
                 "count": len(results),
@@ -298,19 +320,33 @@ class FinancialPositionView(APIView):
             Decimal("0"),
         )
 
-        return Response(
-            {
-                "receivables": str(money(receivables)),
-                "payables": str(money(payables)),
-                "cash_position": str(money(cash_position)),
-                "accounts": by_account,
-                "stock_value_saleable": str(money(stock_value)),
-                "stock_value_quarantine": str(money(quarantine_value)),
-                "net_working_position": str(
-                    money(Decimal(receivables) - Decimal(payables) + Decimal(cash_position) + stock_value)
-                ),
-            }
-        )
+        payload = {
+            "receivables": str(money(receivables)),
+            "payables": str(money(payables)),
+            "cash_position": str(money(cash_position)),
+            "accounts": by_account,
+            "stock_value_saleable": str(money(stock_value)),
+            "stock_value_quarantine": str(money(quarantine_value)),
+            "net_working_position": str(
+                money(Decimal(receivables) - Decimal(payables) + Decimal(cash_position) + stock_value)
+            ),
+        }
+        if request.query_params.get("export") == "csv":
+            return self._fp_csv(payload, by_account)
+        return Response(payload)
+
+    def _fp_csv(self, payload, by_account):
+        rows = [
+            ["receivables", payload["receivables"]],
+            ["payables", payload["payables"]],
+            ["cash_position", payload["cash_position"]],
+            ["stock_value_saleable", payload["stock_value_saleable"]],
+            ["stock_value_quarantine", payload["stock_value_quarantine"]],
+            ["net_working_position", payload["net_working_position"]],
+        ]
+        for account in by_account:
+            rows.append([f"account.{account['code']}", account["balance"]])
+        return csv_response("financial-position.csv", ["metric", "value"], rows)
 
 
 class SalesAttributionView(APIView):
@@ -356,6 +392,12 @@ class SalesAttributionView(APIView):
             for row in rows
         ]
         total = sum((Decimal(row["net_revenue"]) for row in results), Decimal("0"))
+        if request.query_params.get("export") == "csv":
+            return csv_response(
+                f"sales-by-{self.group_field}.csv",
+                ["name", "net_revenue", "invoice_count"],
+                [[row["name"], row["net_revenue"], row["invoice_count"]] for row in results],
+            )
         return Response(
             {
                 "period": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},

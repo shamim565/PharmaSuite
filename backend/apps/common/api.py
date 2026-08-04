@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.audit.services import log_action
 from apps.common.exceptions import APIError
 from apps.common.models import FiscalPeriod
 from apps.common.periods import lock_period, unlock_period
@@ -75,14 +76,37 @@ class PeriodViewSet(
             "note": "Pending items cannot post into a locked period.",
         }
         period = lock_period(
-            period=period, actor=request.user, reason=request.data.get("reason", ""), checklist=checklist
+            period=period,
+            actor=request.user,
+            reason=request.data.get("reason", ""),
+            checklist=checklist,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="PERIOD_LOCKED",
+            entity_type="fiscal_period",
+            entity_id=period.id,
+            after={"fiscal_year": period.fiscal_year, "period_month": period.period_month, "reason": request.data.get("reason", "")},
+            request=request,
         )
         return Response(self._serialize(period, checklist))
 
     @action(detail=True, methods=["post"])
     def unlock(self, request, pk=None):
         period = unlock_period(
-            period=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
+            period=self.get_object(),
+            actor=request.user,
+            reason=request.data.get("reason", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="PERIOD_UNLOCKED",
+            entity_type="fiscal_period",
+            entity_id=period.id,
+            after={"fiscal_year": period.fiscal_year, "period_month": period.period_month, "reason": request.data.get("reason", "")},
+            request=request,
         )
         return Response(self._serialize(period))
 
@@ -316,7 +340,11 @@ class SearchView(APIView):
         return Response({
             "results": {
                 "medicines": as_list(
-                    Medicine.objects.filter(name__icontains=q).order_by("name") | Medicine.objects.filter(code__icontains=q).order_by("code"),
+                    (
+                        Medicine.objects.filter(name__icontains=q)
+                        | Medicine.objects.filter(code__icontains=q)
+                        | Medicine.objects.filter(barcodes__barcode__icontains=q)
+                    ).distinct().order_by("name"),
                     ["code", "name", "selling_price"],
                 ),
                 "customers": as_list(

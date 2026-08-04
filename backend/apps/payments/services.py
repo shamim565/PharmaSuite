@@ -150,12 +150,14 @@ def record_customer_payment(
 
 
 @transaction.atomic
-def reverse_customer_payment(*, payment: Payment, actor, reason: str = "") -> Payment:
+def reverse_customer_payment(*, payment: Payment, actor, reason: str = "", idempotency_key: str | None = None) -> Payment:
     payment = (
         Payment.objects.select_for_update()
         .select_related("customer", "branch", "account")
         .get(id=payment.id)
     )
+    if idempotency_key and payment.idempotency_key == idempotency_key:
+        return payment
     if payment.status != PaymentStatus.ACTIVE:
         raise APIError("INVALID_STATUS_TRANSITION", "Only active receipts can be reversed.")
 
@@ -201,7 +203,8 @@ def reverse_customer_payment(*, payment: Payment, actor, reason: str = "") -> Pa
 
     payment.status = PaymentStatus.REVERSED
     payment.reversal_reason = reason
-    payment.save(update_fields=["status", "reversal_reason", "updated_at"])
+    payment.idempotency_key = idempotency_key or payment.idempotency_key
+    payment.save(update_fields=["status", "reversal_reason", "idempotency_key", "updated_at"])
     return payment
 
 
@@ -227,7 +230,9 @@ def create_cheque(*, validated, actor) -> Cheque:
     return Cheque.objects.create(**data)
 
 
-def _transition(cheque: Cheque, allowed: set[str], target: str, *, date_field: str, actor, notes="") -> Cheque:
+def _transition(cheque: Cheque, allowed: set[str], target: str, *, date_field: str, actor, notes="", idempotency_key: str | None = None) -> Cheque:
+    if idempotency_key and cheque.idempotency_key == idempotency_key:
+        return cheque
     if cheque.status not in allowed:
         raise APIError(
             "INVALID_CHEQUE_STATE",
@@ -238,33 +243,34 @@ def _transition(cheque: Cheque, allowed: set[str], target: str, *, date_field: s
     setattr(cheque, date_field, _date_today())
     if notes:
         cheque.notes = (cheque.notes + "\n" + notes).strip()
+    cheque.idempotency_key = idempotency_key or cheque.idempotency_key
     cheque.save()
     return cheque
 
 
-def deposit_cheque(cheque: Cheque, actor, notes="") -> Cheque:
+def deposit_cheque(cheque: Cheque, actor, notes="", idempotency_key: str | None = None) -> Cheque:
     if cheque.direction != ChequeDirection.RECEIVED:
         raise APIError("INVALID_CHEQUE_STATE", "Only received cheques can be deposited.")
-    return _transition(cheque, {ChequeStatus.PENDING_DEPOSIT}, ChequeStatus.DEPOSITED, date_field="date_deposited", actor=actor, notes=notes)
+    return _transition(cheque, {ChequeStatus.PENDING_DEPOSIT}, ChequeStatus.DEPOSITED, date_field="date_deposited", actor=actor, notes=notes, idempotency_key=idempotency_key)
 
 
-def clear_cheque(cheque: Cheque, actor, notes="") -> Cheque:
+def clear_cheque(cheque: Cheque, actor, notes="", idempotency_key: str | None = None) -> Cheque:
     if cheque.direction != ChequeDirection.RECEIVED:
         raise APIError("INVALID_CHEQUE_STATE", "Only received cheques can clear.")
-    return _transition(cheque, {ChequeStatus.DEPOSITED}, ChequeStatus.CLEARED, date_field="date_cleared", actor=actor, notes=notes)
+    return _transition(cheque, {ChequeStatus.DEPOSITED}, ChequeStatus.CLEARED, date_field="date_cleared", actor=actor, notes=notes, idempotency_key=idempotency_key)
 
 
-def bounce_cheque(cheque: Cheque, actor, notes="") -> Cheque:
+def bounce_cheque(cheque: Cheque, actor, notes="", idempotency_key: str | None = None) -> Cheque:
     if cheque.direction != ChequeDirection.RECEIVED:
         raise APIError("INVALID_CHEQUE_STATE", "Only received cheques can bounce.")
-    return _transition(cheque, {ChequeStatus.DEPOSITED, ChequeStatus.PENDING_DEPOSIT}, ChequeStatus.BOUNCED, date_field="date_bounced", actor=actor, notes=notes)
+    return _transition(cheque, {ChequeStatus.DEPOSITED, ChequeStatus.PENDING_DEPOSIT}, ChequeStatus.BOUNCED, date_field="date_bounced", actor=actor, notes=notes, idempotency_key=idempotency_key)
 
 
-def stop_cheque(cheque: Cheque, actor, notes="") -> Cheque:
-    return _transition(cheque, {ChequeStatus.PENDING_DEPOSIT, ChequeStatus.DEPOSITED, ChequeStatus.PENDING}, ChequeStatus.STOPPED, date_field="date_stopped", actor=actor, notes=notes)
+def stop_cheque(cheque: Cheque, actor, notes="", idempotency_key: str | None = None) -> Cheque:
+    return _transition(cheque, {ChequeStatus.PENDING_DEPOSIT, ChequeStatus.DEPOSITED, ChequeStatus.PENDING}, ChequeStatus.STOPPED, date_field="date_stopped", actor=actor, notes=notes, idempotency_key=idempotency_key)
 
 
-def mark_cheque_paid(cheque: Cheque, actor, notes="") -> Cheque:
+def mark_cheque_paid(cheque: Cheque, actor, notes="", idempotency_key: str | None = None) -> Cheque:
     if cheque.direction != ChequeDirection.ISSUED:
         raise APIError("INVALID_CHEQUE_STATE", "Only issued cheques can be marked paid.")
-    return _transition(cheque, {ChequeStatus.PENDING}, ChequeStatus.PAID, date_field="date_paid", actor=actor, notes=notes)
+    return _transition(cheque, {ChequeStatus.PENDING}, ChequeStatus.PAID, date_field="date_paid", actor=actor, notes=notes, idempotency_key=idempotency_key)

@@ -12,6 +12,7 @@ from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
 from apps.doctors.models import Doctor, DoctorMedicine, DoctorVisit
 from apps.doctors.serializers import (
+    DoctorChamberSerializer,
     DoctorMedicineSerializer,
     DoctorSerializer,
     DoctorVisitSerializer,
@@ -55,6 +56,27 @@ class DoctorViewSet(
     search_fields = ["code", "name", "phones", "specialty", "registration_no"]
     ordering_fields = ["name", "code", "created_at"]
     ordering = ["name"]
+
+    @action(detail=True, methods=["get", "post"], url_path="chambers")
+    def chambers(self, request, pk=None):
+        doctor = self.get_object()
+        if request.method == "POST":
+            serializer = DoctorChamberSerializer(data={**request.data, "doctor": doctor.id})
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        rows = doctor.chambers.all()
+        return Response({"count": rows.count(), "results": DoctorChamberSerializer(rows, many=True).data})
+
+    @action(detail=True, methods=["delete"], url_path="chambers/(?P<chamber_id>[^/.]+)")
+    def delete_chamber(self, request, pk=None, chamber_id=None):
+        from apps.doctors.models import DoctorChamber
+
+        chamber = DoctorChamber.objects.filter(id=chamber_id, doctor_id=pk).first()
+        if chamber is None:
+            raise APIError("NOT_FOUND", "Chamber not found.")
+        chamber.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["get", "post"], url_path="medicines")
     def medicines(self, request, pk=None):

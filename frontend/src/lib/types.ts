@@ -1069,3 +1069,11 @@ export type SearchResults = {
     purchases: Array<{ id: string; number: string; supplier__name: string; grand_total: string; lifecycle: string }>;
   };
 };
+
+export type DoctorChamber = {
+  id: string;
+  doctor: string;
+  name: string;
+  address: string;
+  visiting_hours: string;
+};

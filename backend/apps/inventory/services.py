@@ -260,9 +260,14 @@ def create_stock_adjustment(
     notes: str = "",
     items_data: list[dict],
     actor=None,
+    idempotency_key: str | None = None,
 ) -> StockAdjustment:
     if not items_data:
         raise APIError("EMPTY_ADJUSTMENT", "A stock adjustment must have at least one line.")
+    if idempotency_key:
+        existing = StockAdjustment.objects.filter(idempotency_key=idempotency_key).first()
+        if existing is not None:
+            return existing
 
     adjustment = StockAdjustment.objects.create(
         branch=branch,
@@ -298,16 +303,20 @@ def create_stock_adjustment(
 
     if total_value > threshold:
         adjustment.status = AdjustmentStatus.PENDING_APPROVAL
-        adjustment.save(update_fields=["total_value", "status", "updated_at"])
+        adjustment.idempotency_key = idempotency_key
+        adjustment.save(update_fields=["total_value", "status", "idempotency_key", "updated_at"])
     else:
-        adjustment.save(update_fields=["total_value", "updated_at"])
+        adjustment.idempotency_key = idempotency_key
+        adjustment.save(update_fields=["total_value", "idempotency_key", "updated_at"])
         _post_stock_adjustment(adjustment, actor)
     return adjustment
 
 
 @transaction.atomic
-def approve_stock_adjustment(*, adjustment: StockAdjustment, actor) -> StockAdjustment:
+def approve_stock_adjustment(*, adjustment: StockAdjustment, actor, idempotency_key: str | None = None) -> StockAdjustment:
     adjustment = StockAdjustment.objects.select_for_update().get(id=adjustment.id)
+    if idempotency_key and adjustment.idempotency_key == idempotency_key:
+        return adjustment
     if adjustment.status != AdjustmentStatus.PENDING_APPROVAL:
         raise APIError("INVALID_STATUS_TRANSITION", "Only pending adjustments can be approved.")
     if actor.id == adjustment.requested_by_id:
@@ -318,7 +327,8 @@ def approve_stock_adjustment(*, adjustment: StockAdjustment, actor) -> StockAdju
         )
     adjustment.approved_by = actor
     adjustment.approved_at = timezone.now()
-    adjustment.save(update_fields=["approved_by", "approved_at", "updated_at"])
+    adjustment.idempotency_key = idempotency_key or adjustment.idempotency_key
+    adjustment.save(update_fields=["approved_by", "approved_at", "idempotency_key", "updated_at"])
     _post_stock_adjustment(adjustment, actor)
     return adjustment
 
@@ -346,9 +356,11 @@ def reject_stock_adjustment(
 
 @transaction.atomic
 def reverse_stock_adjustment(
-    *, adjustment: StockAdjustment, actor, reason: str = ""
+    *, adjustment: StockAdjustment, actor, reason: str = "", idempotency_key: str | None = None
 ) -> StockAdjustment:
     adjustment = StockAdjustment.objects.select_for_update().get(id=adjustment.id)
+    if idempotency_key and adjustment.idempotency_key == idempotency_key:
+        return adjustment
     if adjustment.status != AdjustmentStatus.POSTED:
         raise APIError("INVALID_STATUS_TRANSITION", "Only posted adjustments can be reversed.")
 
@@ -387,5 +399,6 @@ def reverse_stock_adjustment(
     )
     adjustment.status = AdjustmentStatus.REVERSED
     adjustment.notes = (adjustment.notes + f"\nReversed: {reason}").strip()
-    adjustment.save(update_fields=["status", "notes", "updated_at"])
+    adjustment.idempotency_key = idempotency_key or adjustment.idempotency_key
+    adjustment.save(update_fields=["status", "notes", "idempotency_key", "updated_at"])
     return adjustment

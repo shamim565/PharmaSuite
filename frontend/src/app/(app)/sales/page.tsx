@@ -92,7 +92,7 @@ function paymentTone(status: SalesInvoice["payment_status"]): "green" | "amber" 
 
 export default function SalesPage() {
   const queryClient = useQueryClient();
-  const { hasPerm } = useAuth();
+  const { hasPerm, user } = useAuth();
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -138,6 +138,20 @@ export default function SalesPage() {
     queryKey: ["medicines", "select"],
     queryFn: () => api.get<Paginated<Medicine>>("/medicines/?page_size=200&is_active=true"),
   });
+  const selectedMedicine = rows.find((row) => row.medicine)?.medicine;
+  const availabilityQuery = useQuery({
+    queryKey: ["fefo-availability", user?.default_branch_id, selectedMedicine],
+    queryFn: () =>
+      api.get<{ results: Array<{ batch_number: string; expiry_date: string | null; qty_on_hand: string; days_to_expiry: number | null }> }>(
+        `/sales/fefo/?branch=${user?.default_branch_id}&medicine=${selectedMedicine}`,
+      ),
+    enabled: Boolean(selectedMedicine) && Boolean(user?.default_branch_id),
+  });
+  const availability = availabilityQuery.data?.results ?? [];
+  const availableQty = availability.reduce((sum, row) => sum + Number(row.qty_on_hand), 0);
+  const nearestExpiry = availability.length
+    ? availability.reduce((a, b) => ((a.expiry_date ?? "9999") < (b.expiry_date ?? "9999") ? a : b)).expiry_date
+    : null;
   const accountsQuery = useQuery({
     queryKey: ["accounts", "select"],
     queryFn: () => api.get<Paginated<FinancialAccount>>("/accounts/?page_size=50&is_active=true"),
@@ -321,6 +335,13 @@ export default function SalesPage() {
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   };
 
+  const addRow = () => {
+    setRows((prev) => [...prev, newRow(rowSeq)]);
+    setRowSeq((value) => value + 1);
+  };
+
+  const [scanValue, setScanValue] = useState("");
+
   const fieldError = (name: string): string | null => {
     const err = createMutation.error;
     if (err instanceof ApiError && err.fieldErrors?.[name]) return err.fieldErrors[name][0];
@@ -411,11 +432,51 @@ export default function SalesPage() {
             ) : null}
 
             <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={scanValue}
+                  onChange={(e) => setScanValue(e.target.value)}
+                  onKeyDown={async (e) => {
+                    if (e.key !== "Enter") return;
+                    const value = scanValue.trim();
+                    if (!value) return;
+                    e.preventDefault();
+                    try {
+                      const response = await api.get<Paginated<Medicine>>(
+                        `/medicines/?page_size=1&search=${encodeURIComponent(value)}`,
+                      );
+                      const match = response.results[0];
+                      if (match) {
+                        addRow();
+                        setRows((prev) => {
+                          const next = [...prev];
+                          next[next.length - 1] = { ...next[next.length - 1], medicine: match.id };
+                          return next;
+                        });
+                        setScanValue("");
+                      }
+                    } catch {
+                      // ignore scan misses
+                    }
+                  }}
+                  placeholder="Scan or type barcode / medicine code, then Enter"
+                />
+              </div>
               {rows.map((row, index) => (
                 <div key={row.key} className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-6">
                   <div className="col-span-2">
                     <Field label={`Medicine ${index + 1}`}>
-                      <Select value={row.medicine} onChange={(e) => updateRow(row.key, { medicine: e.target.value })} required>
+                      <Select
+                        value={row.medicine}
+                        onChange={(e) => updateRow(row.key, { medicine: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && index === rows.length - 1) {
+                            e.preventDefault();
+                            addRow();
+                          }
+                        }}
+                        required
+                      >
                         <option value="">Select…</option>
                         {medicinesQuery.data?.results.map((medicine) => (
                           <option key={medicine.id} value={medicine.id}>
@@ -441,6 +502,12 @@ export default function SalesPage() {
                           />
                         );
                       })()}
+                      {row.medicine === selectedMedicine && availability.length > 0 ? (
+                        <p className="mt-1 text-[10px] text-slate-400">
+                          Available {availableQty.toFixed(3)}
+                          {nearestExpiry ? ` · nearest expiry ${nearestExpiry}` : ""}
+                        </p>
+                      ) : null}
                     </Field>
                   </div>
                   <Field label="Qty">
@@ -450,6 +517,12 @@ export default function SalesPage() {
                       min="0.001"
                       value={row.qty}
                       onChange={(e) => updateRow(row.key, { qty: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && index === rows.length - 1) {
+                          e.preventDefault();
+                          addRow();
+                        }
+                      }}
                       required
                     />
                   </Field>

@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounting.models import FinancialAccount
+from apps.audit.services import log_action
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
@@ -91,6 +92,19 @@ class CustomerViewSet(
         )
         writer.writeheader()
         writer.writerows(rows)
+        return response
+
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        customer = self.get_object()
+        log_action(
+            actor=request.user,
+            action="CUSTOMER_UPDATED",
+            entity_type="customer",
+            entity_id=customer.id,
+            after={"code": customer.code},
+            request=request,
+        )
         return response
 
     @action(detail=True, methods=["get"])
@@ -228,12 +242,33 @@ class SalesInvoiceViewSet(
             allow_credit_override=bool(request.data.get("allow_credit_override")),
             credit_override_reason=request.data.get("credit_override_reason", ""),
         )
+        log_action(
+            actor=request.user,
+            action="SALE_CONFIRMED",
+            entity_type="sales_invoice",
+            entity_id=invoice.id,
+            after={"number": invoice.number or "", "grand_total": str(invoice.grand_total), "paid_total": str(invoice.paid_total)},
+            branch=invoice.branch,
+            request=request,
+        )
         return Response(SalesInvoiceReadSerializer(invoice).data)
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         invoice = cancel_sale(
-            invoice=self.get_object(), actor=request.user, reason=request.data.get("reason", "")
+            invoice=self.get_object(),
+            actor=request.user,
+            reason=request.data.get("reason", ""),
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="SALE_CANCELLED",
+            entity_type="sales_invoice",
+            entity_id=invoice.id,
+            after={"number": invoice.number or "", "reason": request.data.get("reason", "")},
+            branch=invoice.branch,
+            request=request,
         )
         return Response(SalesInvoiceReadSerializer(invoice).data)
 
@@ -464,6 +499,16 @@ class SalesReturnViewSet(
             notes=data.get("notes", ""),
             items_data=data["items"],
             actor=request.user,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="SALES_RETURN_CREATED",
+            entity_type="sales_return",
+            entity_id=sales_return.id,
+            after={"number": sales_return.number or "", "grand_total": str(sales_return.grand_total)},
+            branch=sales_return.branch,
+            request=request,
         )
         return Response(
             SalesReturnReadSerializer(sales_return).data, status=status.HTTP_201_CREATED
@@ -471,7 +516,20 @@ class SalesReturnViewSet(
 
     @action(detail=True, methods=["post"])
     def confirm(self, request, pk=None):
-        sales_return = confirm_sales_return(sales_return=self.get_object(), actor=request.user)
+        sales_return = confirm_sales_return(
+            sales_return=self.get_object(),
+            actor=request.user,
+            idempotency_key=request.headers.get("Idempotency-Key"),
+        )
+        log_action(
+            actor=request.user,
+            action="SALES_RETURN_CONFIRMED",
+            entity_type="sales_return",
+            entity_id=sales_return.id,
+            after={"number": sales_return.number or "", "grand_total": str(sales_return.grand_total)},
+            branch=sales_return.branch,
+            request=request,
+        )
         return Response(SalesReturnReadSerializer(sales_return).data)
 
     def destroy(self, request, *args, **kwargs):
