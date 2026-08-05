@@ -185,6 +185,8 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+AUDIT_RETENTION_MONTHS = env.int("AUDIT_RETENTION_MONTHS", default=24)
+TOTP_ISSUER = env("TOTP_ISSUER", default="Medicine Dealer ERP")
 LOGIN_MAX_FAILED_ATTEMPTS = env.int("LOGIN_MAX_FAILED_ATTEMPTS", default=5)
 LOGIN_LOCKOUT_MINUTES = env.int("LOGIN_LOCKOUT_MINUTES", default=15)
 PASSWORD_HISTORY_SIZE = env.int("PASSWORD_HISTORY_SIZE", default=5)
@@ -211,3 +213,16 @@ LOGGING = {
     },
     "root": {"handlers": ["console"], "level": "INFO"},
 }
+
+SENTRY_DSN = env("SENTRY_DSN", default="")
+if SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.django import DjangoIntegration
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        environment=env("SENTRY_ENVIRONMENT", default="development" if DEBUG else "production"),
+        traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0),
+        send_default_pii=False,
+    )
