@@ -11,6 +11,7 @@ class DocumentType(models.TextChoices):
     RECEIPT = "RECEIPT", "Customer receipt"
     CREDIT_NOTE = "CREDIT_NOTE", "Credit note (sales return)"
     ADJUSTMENT = "ADJUSTMENT", "Stock adjustment"
+    TRANSFER = "TRANSFER", "Stock transfer"
     EXPENSE = "EXPENSE", "Expense voucher"
     INCOME = "INCOME", "Income voucher"
 
@@ -121,6 +122,32 @@ class FiscalPeriod(BaseModel):
 
 def fiscal_year_for_display(fiscal_year: int) -> str:
     return f"{fiscal_year}-{fiscal_year + 1}"
+
+
+class NotificationCategory(models.TextChoices):
+    STOCK = "STOCK", "Low stock alerts"
+    EXPIRY = "EXPIRY", "Expiry alerts"
+    DUES = "DUES", "Overdue dues alerts"
+    APPROVALS = "APPROVALS", "Pending approval alerts"
+    VISITS = "VISITS", "Visit reminders"
+
+
+class NotificationPreference(BaseModel):
+    user = models.ForeignKey(
+        "accounts.User", on_delete=models.CASCADE, related_name="notification_preferences"
+    )
+    category = models.CharField(max_length=20, choices=NotificationCategory.choices)
+    enabled = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "category"], name="uq_notification_preference"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id}:{self.category}={self.enabled}"
 
 
 class Notification(BaseModel):

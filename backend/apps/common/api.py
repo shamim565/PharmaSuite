@@ -180,6 +180,45 @@ class NotificationViewSet(
         return Response({"updated": mark_all_read(request.user)})
 
     @staticmethod
+    def _preferences_payload(user) -> dict:
+        from apps.common.models import NotificationCategory, NotificationPreference
+
+        existing = {
+            row.category: row.enabled
+            for row in NotificationPreference.objects.filter(user=user)
+        }
+        return {
+            "results": [
+                {
+                    "category": value,
+                    "label": label,
+                    "enabled": existing.get(value, True),
+                }
+                for value, label in NotificationCategory.choices
+            ]
+        }
+
+    @action(detail=False, methods=["get", "put"], url_path="preferences")
+    def preferences(self, request):
+        from apps.common.models import NotificationCategory, NotificationPreference
+
+        if request.method == "GET":
+            return Response(self._preferences_payload(request.user))
+
+        payload = request.data.get("preferences") or {}
+        valid = {value for value, _ in NotificationCategory.choices}
+        unknown = set(payload) - valid
+        if unknown:
+            raise APIError(
+                "UNKNOWN_CATEGORY", f"Unknown categories: {', '.join(sorted(unknown))}"
+            )
+        for category, enabled in payload.items():
+            NotificationPreference.objects.update_or_create(
+                user=request.user, category=category, defaults={"enabled": bool(enabled)}
+            )
+        return Response(self._preferences_payload(request.user))
+
+    @staticmethod
     def _serialize(notification) -> dict:
         return {
             "id": str(notification.id),
@@ -219,10 +258,16 @@ OWNER_PERMISSION_MAP = {
 
 
 def _attachment_permission(owner_type: str, user) -> None:
+    if user.is_superuser:
+        return
     required = OWNER_PERMISSION_MAP.get(owner_type)
     if required is None:
-        return
-    if not (user.is_superuser or required in user.effective_permission_codes):
+        raise APIError(
+            "PERMISSION_DENIED",
+            f"Attachments are not supported for owner type '{owner_type or 'unknown'}'.",
+            status_code=403,
+        )
+    if required not in user.effective_permission_codes:
         raise APIError("PERMISSION_DENIED", f"Permission {required} is required.", status_code=403)
 
 
@@ -337,35 +382,52 @@ class SearchView(APIView):
                 for row in queryset[:5]
             ]
 
-        return Response({
-            "results": {
-                "medicines": as_list(
-                    (
-                        Medicine.objects.filter(name__icontains=q)
-                        | Medicine.objects.filter(code__icontains=q)
-                        | Medicine.objects.filter(barcodes__barcode__icontains=q)
-                    ).distinct().order_by("name"),
-                    ["code", "name", "selling_price"],
+        user = request.user
+
+        def allowed(code: str) -> bool:
+            return user.is_superuser or code in user.effective_permission_codes
+
+        results: dict = {}
+        if allowed("MEDICINE_VIEW"):
+            results["medicines"] = as_list(
+                (
+                    Medicine.objects.filter(name__icontains=q)
+                    | Medicine.objects.filter(code__icontains=q)
+                    | Medicine.objects.filter(barcodes__barcode__icontains=q)
+                ).distinct().order_by("name"),
+                ["code", "name", "selling_price"],
+            )
+        if allowed("CUSTOMER_VIEW"):
+            results["customers"] = as_list(
+                Customer.objects.filter(name__icontains=q).order_by("name")
+                | Customer.objects.filter(code__icontains=q)
+                | Customer.objects.filter(phone__icontains=q),
+                ["code", "name", "phone"],
+            )
+        if allowed("SUPPLIER_VIEW"):
+            results["suppliers"] = as_list(
+                Supplier.objects.filter(name__icontains=q).order_by("name")
+                | Supplier.objects.filter(code__icontains=q),
+                ["code", "name", "phone"],
+            )
+        if allowed("DOCTOR_VIEW"):
+            results["doctors"] = as_list(
+                Doctor.objects.filter(name__icontains=q).order_by("name")
+                | Doctor.objects.filter(code__icontains=q),
+                ["code", "name", "category"],
+            )
+        if allowed("SALE_VIEW"):
+            results["invoices"] = as_list(
+                SalesInvoice.objects.filter(number__icontains=q).select_related("customer")
+                | SalesInvoice.objects.filter(customer__name__icontains=q).select_related(
+                    "customer"
                 ),
-                "customers": as_list(
-                    Customer.objects.filter(name__icontains=q).order_by("name") | Customer.objects.filter(code__icontains=q) | Customer.objects.filter(phone__icontains=q),
-                    ["code", "name", "phone"],
-                ),
-                "suppliers": as_list(
-                    Supplier.objects.filter(name__icontains=q).order_by("name") | Supplier.objects.filter(code__icontains=q),
-                    ["code", "name", "phone"],
-                ),
-                "doctors": as_list(
-                    Doctor.objects.filter(name__icontains=q).order_by("name") | Doctor.objects.filter(code__icontains=q),
-                    ["code", "name", "category"],
-                ),
-                "invoices": as_list(
-                    SalesInvoice.objects.filter(number__icontains=q).select_related("customer") | SalesInvoice.objects.filter(customer__name__icontains=q).select_related("customer"),
-                    ["number", "customer__name", "grand_total", "lifecycle"],
-                ),
-                "purchases": as_list(
-                    Purchase.objects.filter(number__icontains=q).select_related("supplier") | Purchase.objects.filter(supplier__name__icontains=q).select_related("supplier"),
-                    ["number", "supplier__name", "grand_total", "lifecycle"],
-                ),
-            }
-        })
+                ["number", "customer__name", "grand_total", "lifecycle"],
+            )
+        if allowed("PURCHASE_VIEW"):
+            results["purchases"] = as_list(
+                Purchase.objects.filter(number__icontains=q).select_related("supplier")
+                | Purchase.objects.filter(supplier__name__icontains=q).select_related("supplier"),
+                ["number", "supplier__name", "grand_total", "lifecycle"],
+            )
+        return Response({"results": results})
