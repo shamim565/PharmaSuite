@@ -51,6 +51,7 @@ def daily_stock_alerts() -> dict:
             low_text or "Check the inventory page.",
             "/inventory",
             severity="WARNING",
+            category="STOCK",
         )
     if near:
         created += notify_users(
@@ -60,6 +61,7 @@ def daily_stock_alerts() -> dict:
             "; ".join(f"{name} {batch} ({days}d)" for name, batch, days in near[:8]),
             "/inventory",
             severity="WARNING",
+            category="EXPIRY",
         )
     if expired:
         created += notify_users(
@@ -69,6 +71,7 @@ def daily_stock_alerts() -> dict:
             "; ".join(f"{name} {batch} ({days}d)" for name, batch, days in expired[:8]),
             "/inventory",
             severity="CRITICAL",
+            category="EXPIRY",
         )
     return {"created": created, "low": len(low_rows), "near": len(near), "expired": len(expired)}
 
@@ -102,6 +105,7 @@ def daily_due_alerts() -> dict:
             f"Total overdue: {overdue_value:.2f}",
             "/dues",
             severity="WARNING",
+            category="DUES",
         )
 
     pending_expenses = Expense.objects.filter(status="PENDING_APPROVAL").count()
@@ -114,6 +118,7 @@ def daily_due_alerts() -> dict:
             f"{pending_expenses} expense(s), {pending_adjustments} adjustment(s)",
             "/expenses",
             severity="WARNING",
+            category="APPROVALS",
         )
     return {"created": created, "overdue": overdue_count, "pending": pending_expenses + pending_adjustments}
 
@@ -147,5 +152,6 @@ def visit_reminders() -> dict:
                 f"{len(doctors)} visit(s) planned tomorrow",
                 ", ".join(doctors[:8]),
                 "/doctors",
+                category="VISITS",
             )
     return {"created": created, "reps_notified": len(by_rep)}

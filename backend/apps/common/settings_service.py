@@ -21,6 +21,8 @@ SETTINGS_KEYS: dict[str, tuple] = {
     "STOCK_ADJUSTMENT_APPROVAL_THRESHOLD": ("approvals", "Stock adjustment approval threshold", "5000"),
     "CUSTOMER_OVERDUE_BLOCK_DAYS": ("credit", "Customer overdue block days", "30"),
     "AUTO_APPLY_ADVANCE": ("features", "Auto-apply customer advance at sale", False),
+    "SALES_VAT_ENABLED": ("features", "Charge VAT on sales invoices", False),
+    "PURCHASE_VAT_ENABLED": ("features", "Charge VAT on purchases", False),
     "NEAR_EXPIRY_DAYS": ("expiry", "Near-expiry warning days", "90"),
     "INVOICE_PREFIX": ("numbering", "Invoice prefix", "INV"),
     "RECEIPT_PREFIX": ("numbering", "Receipt prefix", "RCP"),
@@ -29,6 +31,7 @@ SETTINGS_KEYS: dict[str, tuple] = {
     "PURCHASE_PREFIX": ("numbering", "Purchase prefix", "PUR"),
     "SUPPLIER_PAYMENT_PREFIX": ("numbering", "Supplier payment prefix", "PPV"),
     "ADJUSTMENT_PREFIX": ("numbering", "Adjustment prefix", "ADJ"),
+    "TRANSFER_PREFIX": ("numbering", "Stock transfer prefix", "TRF"),
     "EXPENSE_PREFIX": ("numbering", "Expense prefix", "EXP"),
     "INCOME_PREFIX": ("numbering", "Income prefix", "INC"),
     "DOCUMENT_NUMBER_WIDTH": ("numbering", "Document number width", 6),
@@ -52,6 +55,18 @@ def get_setting_value(key: str, branch=None, default=None):
     if row is None:
         return default
     return row.value
+
+
+def get_setting_bool(key: str, default: bool = False, branch=None) -> bool:
+    """Read a boolean setting, coercing strings like "false"/"0" written by the UI."""
+    raw = get_setting_value(key, branch=branch)
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return bool(raw)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def set_setting_value(key: str, value, branch=None, actor=None) -> Setting:

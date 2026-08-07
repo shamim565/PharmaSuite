@@ -17,6 +17,7 @@ PREFIXES = {
     DocumentType.RECEIPT: "RCP",
     DocumentType.CREDIT_NOTE: "CRN",
     DocumentType.ADJUSTMENT: "ADJ",
+    DocumentType.TRANSFER: "TRF",
     DocumentType.EXPENSE: "EXP",
     DocumentType.INCOME: "INC",
 }
@@ -29,6 +30,7 @@ PREFIX_SETTING_BY_DOC = {
     DocumentType.RECEIPT: "RECEIPT_PREFIX",
     DocumentType.CREDIT_NOTE: "CREDIT_NOTE_PREFIX",
     DocumentType.ADJUSTMENT: "ADJUSTMENT_PREFIX",
+    DocumentType.TRANSFER: "TRANSFER_PREFIX",
     DocumentType.EXPENSE: "EXPENSE_PREFIX",
     DocumentType.INCOME: "INCOME_PREFIX",
 }

@@ -22,9 +22,27 @@ ALLOWED_CONTENT_TYPES = {
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
-def notify(user, type: str, title: str, body: str = "", deep_link: str = "", payload=None, severity: str = "INFO"):
-    """Create an in-app notification for one user."""
+def is_category_enabled(user, category: str) -> bool:
+    from apps.common.models import NotificationPreference
+
+    preference = NotificationPreference.objects.filter(user=user, category=category).first()
+    return preference.enabled if preference is not None else True
+
+
+def notify(
+    user,
+    type: str,
+    title: str,
+    body: str = "",
+    deep_link: str = "",
+    payload=None,
+    severity: str = "INFO",
+    category: str | None = None,
+):
+    """Create an in-app notification for one user (respecting their preferences)."""
     if not user or not getattr(user, "is_authenticated", False):
+        return None
+    if category and not is_category_enabled(user, category):
         return None
     return Notification.objects.create(
         user=user,
@@ -37,10 +55,19 @@ def notify(user, type: str, title: str, body: str = "", deep_link: str = "", pay
     )
 
 
-def notify_users(users, type: str, title: str, body: str = "", deep_link: str = "", payload=None, severity: str = "INFO"):
+def notify_users(
+    users,
+    type: str,
+    title: str,
+    body: str = "",
+    deep_link: str = "",
+    payload=None,
+    severity: str = "INFO",
+    category: str | None = None,
+):
     created = 0
     for user in users:
-        if notify(user, type, title, body, deep_link, payload, severity):
+        if notify(user, type, title, body, deep_link, payload, severity, category):
             created += 1
     return created
 
