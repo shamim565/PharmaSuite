@@ -20,6 +20,7 @@ PERMISSION_CATALOG: list[tuple[str, str, str, str, bool]] = [
     ("STOCK_VIEW_COST", "inventory", "view", "View stock cost and valuation", True),
     ("STOCK_ADJUST", "inventory", "adjust", "Create stock adjustments and write-offs", True),
     ("INV_OVERRIDE_FEFO", "inventory", "override", "Override FEFO batch selection", True),
+    ("STOCK_TRANSFER", "inventory", "transfer", "Transfer stock between branches", True),
     # Payments / cheques
     ("CHEQUE_VIEW", "payments", "view", "View cheques", False),
     ("CHEQUE_MANAGE", "payments", "manage", "Create cheques and run lifecycle actions", True),

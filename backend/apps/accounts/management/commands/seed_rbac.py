@@ -20,7 +20,18 @@ from apps.branches.models import Branch, BranchType
 class Command(BaseCommand):
     help = "Seed the RBAC permission catalog, system roles, main branch, and owner user."
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--sync-permissions",
+            action="store_true",
+            help=(
+                "Re-apply built-in role definitions, overwriting any permission edits "
+                "made through the UI/API. Without this flag, existing roles are left as-is."
+            ),
+        )
+
     def handle(self, *args, **options):
+        sync_permissions = options["sync_permissions"]
         permissions_created = 0
         roles_synced = 0
 
@@ -38,7 +49,7 @@ class Command(BaseCommand):
                 permissions_created += int(created)
 
             for role_code, definition in ROLE_DEFINITIONS.items():
-                role, _ = Role.objects.update_or_create(
+                role, created = Role.objects.get_or_create(
                     code=role_code,
                     defaults={
                         "name": definition["name"],
@@ -47,20 +58,30 @@ class Command(BaseCommand):
                         "branch_scope": definition.get("scope", BranchScope.ASSIGNED),
                     },
                 )
-                codes = role_permission_codes(definition)
-                permission_map = {p.code: p for p in Permission.objects.filter(code__in=codes)}
-                RolePermission.objects.filter(role=role).exclude(
-                    permission__code__in=codes
-                ).delete()
-                existing = set(role.role_permissions.values_list("permission__code", flat=True))
-                RolePermission.objects.bulk_create(
-                    [
-                        RolePermission(role=role, permission=permission_map[code])
-                        for code in sorted(codes)
-                        if code not in existing
-                    ],
-                    ignore_conflicts=True,
-                )
+                # Role permissions are editable via the UI/API; only (re)apply the
+                # built-in definition on creation or when explicitly requested.
+                if created or sync_permissions:
+                    role.name = definition["name"]
+                    role.description = definition.get("description", "")
+                    role.branch_scope = definition.get("scope", BranchScope.ASSIGNED)
+                    role.save(update_fields=["name", "description", "branch_scope", "updated_at"])
+
+                    codes = role_permission_codes(definition)
+                    permission_map = {p.code: p for p in Permission.objects.filter(code__in=codes)}
+                    RolePermission.objects.filter(role=role).exclude(
+                        permission__code__in=codes
+                    ).delete()
+                    existing = set(
+                        role.role_permissions.values_list("permission__code", flat=True)
+                    )
+                    RolePermission.objects.bulk_create(
+                        [
+                            RolePermission(role=role, permission=permission_map[code])
+                            for code in sorted(codes)
+                            if code not in existing
+                        ],
+                        ignore_conflicts=True,
+                    )
                 roles_synced += 1
 
             branch, branch_created = Branch.objects.get_or_create(
