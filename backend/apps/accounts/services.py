@@ -16,6 +16,7 @@ from apps.accounts.models import (
     LoginAttempt,
     PasswordHistory,
     Permission,
+    PermissionEffect,
     Role,
     RolePermission,
     User,
@@ -149,6 +150,123 @@ def handle_refresh(raw_token: str, request) -> tuple[User, str, str]:
     return user, access, str(new_refresh)
 
 
+# --------------------------------------------------------------------------- 2FA (TOTP)
+
+
+def generate_totp_secret(user: User) -> str:
+    import pyotp
+
+    if user.totp_enabled:
+        raise APIError(
+            "TOTP_ALREADY_ENABLED", "Two-factor authentication is already enabled.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    user.totp_secret = pyotp.random_base32()
+    user.save(update_fields=["totp_secret", "updated_at"])
+    return user.totp_secret
+
+
+def totp_provisioning_uri(user: User) -> str:
+    import pyotp
+
+    if not user.totp_secret:
+        raise APIError(
+            "TOTP_NOT_SETUP", "Two-factor authentication is not set up.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    return pyotp.TOTP(user.totp_secret).provisioning_uri(
+        name=user.mobile, issuer_name=settings.TOTP_ISSUER
+    )
+
+
+def verify_totp_code(user: User, code: str) -> bool:
+    import pyotp
+
+    if not user.totp_secret or not code:
+        return False
+    return bool(pyotp.TOTP(user.totp_secret).verify(str(code).strip(), valid_window=1))
+
+
+def enable_totp(user: User, code: str, request=None) -> User:
+    if not user.totp_secret:
+        raise APIError(
+            "TOTP_NOT_SETUP", "Request a setup secret first.", status.HTTP_400_BAD_REQUEST
+        )
+    if not verify_totp_code(user, code):
+        raise APIError("INVALID_TOTP", "Invalid authentication code.", status.HTTP_400_BAD_REQUEST)
+    user.totp_enabled = True
+    user.save(update_fields=["totp_enabled", "updated_at"])
+    log_action(
+        actor=user, action="totp_enabled", entity_type="User", entity_id=user.id, request=request
+    )
+    return user
+
+
+def disable_totp(user: User, code: str, request=None) -> User:
+    if not user.totp_enabled:
+        raise APIError(
+            "TOTP_NOT_ENABLED", "Two-factor authentication is not enabled.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    if not verify_totp_code(user, code):
+        raise APIError("INVALID_TOTP", "Invalid authentication code.", status.HTTP_400_BAD_REQUEST)
+    user.totp_enabled = False
+    user.totp_secret = ""
+    user.save(update_fields=["totp_enabled", "totp_secret", "updated_at"])
+    log_action(
+        actor=user, action="totp_disabled", entity_type="User", entity_id=user.id, request=request
+    )
+    return user
+
+
+def reset_totp(actor: User, target: User, request=None) -> User:
+    """Admin-side 2FA reset (e.g. lost device)."""
+    _ensure_actor_can_manage_target(actor, target)
+    target.totp_enabled = False
+    target.totp_secret = ""
+    target.save(update_fields=["totp_enabled", "totp_secret", "updated_at"])
+    revoke_all_sessions(target)
+    log_action(
+        actor=actor, action="totp_reset", entity_type="User", entity_id=target.id, request=request
+    )
+    return target
+
+
+def issue_mfa_token(user: User) -> str:
+    from rest_framework_simplejwt.tokens import AccessToken
+
+    token = AccessToken()
+    token["user_id"] = str(user.id)
+    token["mfa"] = True
+    return str(token)
+
+
+def complete_mfa_login(mfa_token: str, code: str) -> User:
+    from rest_framework_simplejwt.exceptions import TokenError
+    from rest_framework_simplejwt.tokens import AccessToken
+
+    try:
+        payload = AccessToken(mfa_token)
+    except TokenError as exc:
+        raise APIError(
+            "INVALID_MFA_TOKEN",
+            "Two-factor session expired. Please sign in again.",
+            status.HTTP_401_UNAUTHORIZED,
+        ) from exc
+    if not payload.get("mfa"):
+        raise APIError(
+            "INVALID_MFA_TOKEN", "Invalid two-factor token.", status.HTTP_401_UNAUTHORIZED
+        )
+    user = User.objects.filter(id=payload.get("user_id")).first()
+    if user is None or user.status != UserStatus.ACTIVE or not user.totp_enabled:
+        raise APIError(
+            "INVALID_MFA_TOKEN", "Two-factor session expired.", status.HTTP_401_UNAUTHORIZED
+        )
+    if not verify_totp_code(user, code):
+        raise APIError("INVALID_TOTP", "Invalid authentication code.", status.HTTP_400_BAD_REQUEST)
+    return user
+
+
 def validate_password_policy(user: User, raw_password: str) -> None:
     try:
         validate_password(raw_password, user=user)
@@ -202,7 +320,112 @@ def _snapshot_user(user: User) -> dict:
     }
 
 
-def _assign_roles_and_branches(user: User, role_ids, branch_ids, default_branch_id) -> None:
+def _permission_codes_for_roles(role_ids) -> set[str]:
+    return set(
+        RolePermission.objects.filter(
+            role_id__in=role_ids, effect=PermissionEffect.ALLOW
+        ).values_list("permission__code", flat=True)
+    )
+
+
+def _ensure_actor_can_grant(actor: User, codes: set[str]) -> None:
+    """Non-superusers may only grant permissions they themselves hold."""
+    if actor.is_superuser or not codes:
+        return
+    missing = codes - actor.effective_permission_codes
+    if missing:
+        raise APIError(
+            "PRIVILEGE_ESCALATION",
+            "You cannot grant permissions you do not hold: " + ", ".join(sorted(missing)),
+            status_code=403,
+        )
+
+
+def _ensure_actor_can_edit_role(actor: User, role: Role) -> None:
+    """Non-superusers may not edit roles holding permissions they lack."""
+    if actor.is_superuser:
+        return
+    missing = _permission_codes_for_roles([role.id]) - actor.effective_permission_codes
+    if missing:
+        raise APIError(
+            "ROLE_MORE_PRIVILEGED",
+            "You cannot edit a role that holds permissions you do not hold.",
+            status_code=403,
+        )
+
+
+def _ensure_actor_can_manage_target(actor: User, target: User) -> None:
+    """Non-superusers may not modify users holding permissions they lack."""
+    if actor.is_superuser or actor.id == target.id:
+        return
+    if target.is_superuser:
+        raise APIError(
+            "TARGET_MORE_PRIVILEGED",
+            "Only a superuser can modify a superuser.",
+            status_code=403,
+        )
+    extra = target.effective_permission_codes - actor.effective_permission_codes
+    if extra:
+        raise APIError(
+            "TARGET_MORE_PRIVILEGED",
+            "You cannot modify a user holding permissions you do not hold.",
+            status_code=403,
+        )
+
+
+def _ensure_actor_can_assign_scope(actor: User, branch_scope: str) -> None:
+    if branch_scope == BranchScope.ALL and not (
+        actor.is_superuser or actor.has_all_branch_scope
+    ):
+        raise APIError(
+            "PRIVILEGE_ESCALATION",
+            "Only users with all-branch scope can grant all-branch access.",
+            status_code=403,
+        )
+
+
+def _guard_role_assignment(actor: User, role_ids) -> None:
+    if not role_ids:
+        return
+    roles = list(Role.objects.filter(id__in=role_ids))
+    _ensure_actor_can_grant(actor, _permission_codes_for_roles(role_ids))
+    if actor.is_superuser or actor.has_all_branch_scope:
+        return
+    for role in roles:
+        if role.branch_scope == BranchScope.ALL:
+            raise APIError(
+                "PRIVILEGE_ESCALATION",
+                f"Only all-branch users can assign the all-branch role {role.code}.",
+                status_code=403,
+            )
+
+
+def _guard_branch_assignment(actor: User, branch_ids) -> None:
+    if not branch_ids or actor.is_superuser or actor.has_all_branch_scope:
+        return
+    allowed = {str(branch_id) for branch_id in actor.branch_ids}
+    extra = {str(branch_id) for branch_id in branch_ids} - allowed
+    if extra:
+        raise APIError(
+            "BRANCH_SCOPE_EXCEEDED",
+            "You cannot assign branches outside your own scope.",
+            status_code=403,
+        )
+
+
+def _assign_roles_and_branches(
+    actor: User, user: User, role_ids, branch_ids, default_branch_id
+) -> None:
+    if role_ids is not None:
+        _guard_role_assignment(actor, role_ids)
+    if branch_ids is not None:
+        _guard_branch_assignment(actor, branch_ids)
+    if default_branch_id is not None and branch_ids is None:
+        if not UserBranch.objects.filter(user=user, branch_id=default_branch_id).exists():
+            raise APIError(
+                "INVALID_DEFAULT_BRANCH",
+                "Default branch must be one of the user's assigned branches.",
+            )
     if role_ids is not None:
         UserRole.objects.filter(user=user).delete()
         UserRole.objects.bulk_create(
@@ -240,7 +463,7 @@ def create_user(actor: User, data: dict, request=None) -> User:
     user.save()
 
     _assign_roles_and_branches(
-        user, data.get("role_ids"), data.get("branch_ids"), data.get("default_branch_id")
+        actor, user, data.get("role_ids"), data.get("branch_ids"), data.get("default_branch_id")
     )
     log_action(
         actor=actor,
@@ -255,6 +478,7 @@ def create_user(actor: User, data: dict, request=None) -> User:
 
 @transaction.atomic
 def update_user(actor: User, user: User, data: dict, request=None) -> User:
+    _ensure_actor_can_manage_target(actor, user)
     before = _snapshot_user(user)
 
     if "email" in data and data["email"]:
@@ -270,6 +494,7 @@ def update_user(actor: User, user: User, data: dict, request=None) -> User:
 
     user.save()
     _assign_roles_and_branches(
+        actor,
         user,
         data.get("role_ids"),
         data.get("branch_ids"),
@@ -289,6 +514,7 @@ def update_user(actor: User, user: User, data: dict, request=None) -> User:
 
 @transaction.atomic
 def set_user_status(actor: User, user: User, *, active: bool, request=None) -> User:
+    _ensure_actor_can_manage_target(actor, user)
     if user.id == actor.id and not active:
         raise ConflictError("CANNOT_DEACTIVATE_SELF", "You cannot deactivate your own account.")
 
@@ -323,6 +549,11 @@ def set_user_status(actor: User, user: User, *, active: bool, request=None) -> U
 
 @transaction.atomic
 def replace_role_permissions(actor: User, role: Role, permissions: list[dict], request=None) -> Role:
+    _ensure_actor_can_edit_role(actor, role)
+    _ensure_actor_can_grant(
+        actor,
+        {row["code"] for row in permissions if row.get("effect", "ALLOW") == "ALLOW"},
+    )
     before = list(
         role.role_permissions.values_list("permission__code", "effect")
     )
@@ -360,6 +591,7 @@ def replace_role_permissions(actor: User, role: Role, permissions: list[dict], r
 def create_role(actor: User, data: dict, request=None) -> Role:
     if Role.objects.filter(code__iexact=data["code"]).exists():
         raise ConflictError("ROLE_CODE_TAKEN", "A role with this code already exists.")
+    _ensure_actor_can_assign_scope(actor, data.get("branch_scope", BranchScope.ASSIGNED))
     role = Role.objects.create(
         code=data["code"].upper(),
         name=data["name"],
@@ -380,6 +612,9 @@ def create_role(actor: User, data: dict, request=None) -> Role:
 def update_role(actor: User, role: Role, data: dict, request=None) -> Role:
     if role.is_system and "code" in data:
         raise ConflictError("SYSTEM_ROLE_LOCKED", "System roles cannot change their code.")
+    _ensure_actor_can_edit_role(actor, role)
+    if "branch_scope" in data and data["branch_scope"]:
+        _ensure_actor_can_assign_scope(actor, data["branch_scope"])
     before = {"name": role.name, "description": role.description, "branch_scope": role.branch_scope}
     for field in ("name", "description", "branch_scope"):
         if field in data and data[field] is not None:

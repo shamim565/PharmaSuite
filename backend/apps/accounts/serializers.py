@@ -70,6 +70,7 @@ class MeSerializer(serializers.ModelSerializer):
             "is_superuser",
             "must_change_password",
             "default_branch_id",
+            "totp_enabled",
             "roles",
             "branches",
             "permissions",
@@ -109,6 +110,7 @@ class UserSerializer(serializers.ModelSerializer):
             "email",
             "status",
             "is_superuser",
+            "totp_enabled",
             "default_branch_id",
             "last_login_at",
             "created_at",
@@ -181,6 +183,29 @@ class UserUpdateSerializer(serializers.Serializer):
     role_ids = serializers.ListField(child=serializers.UUIDField(), required=False)
     branch_ids = serializers.ListField(child=serializers.UUIDField(), required=False)
     default_branch_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate_role_ids(self, value):
+        found = {str(f) for f in Role.objects.filter(id__in=value).values_list("id", flat=True)}
+        missing = {str(m) for m in value} - found
+        if missing:
+            raise serializers.ValidationError("One or more roles do not exist.")
+        return value
+
+    def validate_branch_ids(self, value):
+        found = {str(f) for f in Branch.objects.filter(id__in=value).values_list("id", flat=True)}
+        missing = {str(m) for m in value} - found
+        if missing:
+            raise serializers.ValidationError("One or more branches do not exist.")
+        return value
+
+    def validate(self, attrs):
+        default_branch = attrs.get("default_branch_id")
+        branch_ids = attrs.get("branch_ids")
+        if default_branch and branch_ids is not None and default_branch not in branch_ids:
+            raise serializers.ValidationError(
+                {"default_branch_id": "Default branch must be one of the assigned branches."}
+            )
+        return attrs
 
 
 class LoginSerializer(serializers.Serializer):

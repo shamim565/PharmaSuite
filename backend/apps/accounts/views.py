@@ -28,6 +28,22 @@ from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
 
 
+def _auth_response(request, user, access: str, refresh: str) -> Response:
+    response = Response(
+        {"access": access, "user": MeSerializer(user, context={"request": request}).data}
+    )
+    response.set_cookie(
+        key=settings.REFRESH_COOKIE_NAME,
+        value=refresh,
+        max_age=int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds()),
+        httponly=True,
+        samesite="Lax",
+        secure=settings.REFRESH_COOKIE_SECURE,
+        path=settings.REFRESH_COOKIE_PATH,
+    )
+    return response
+
+
 class LoginView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -39,18 +55,36 @@ class LoginView(APIView):
         user = services.authenticate_user(
             request, serializer.validated_data["identifier"], serializer.validated_data["password"]
         )
+        if user.totp_enabled:
+            return Response(
+                {"mfa_required": True, "mfa_token": services.issue_mfa_token(user)}
+            )
         access, refresh = services.issue_tokens(user)
-        response = Response({"access": access, "user": MeSerializer(user, context={"request": request}).data})
-        response.set_cookie(
-            key=settings.REFRESH_COOKIE_NAME,
-            value=refresh,
-            max_age=int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds()),
-            httponly=True,
-            samesite="Lax",
-            secure=settings.REFRESH_COOKIE_SECURE,
-            path=settings.REFRESH_COOKIE_PATH,
+        return _auth_response(request, user, access, refresh)
+
+
+class MfaLoginView(APIView):
+    """Second login step when TOTP two-factor is enabled."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
+
+    def post(self, request):
+        mfa_token = str(request.data.get("mfa_token") or "")
+        code = str(request.data.get("code") or "")
+        user = services.complete_mfa_login(mfa_token, code)
+        access, refresh = services.issue_tokens(user)
+        from apps.audit.services import log_action
+
+        log_action(
+            actor=user,
+            action="login_mfa",
+            entity_type="User",
+            entity_id=user.id,
+            request=request,
         )
-        return response
+        return _auth_response(request, user, access, refresh)
 
 
 class RefreshView(APIView):
@@ -63,17 +97,40 @@ class RefreshView(APIView):
                 "NO_REFRESH_TOKEN", "No active session. Please sign in.", status.HTTP_401_UNAUTHORIZED
             )
         user, access, new_refresh = services.handle_refresh(raw, request)
-        response = Response({"access": access, "user": MeSerializer(user, context={"request": request}).data})
-        response.set_cookie(
-            key=settings.REFRESH_COOKIE_NAME,
-            value=new_refresh,
-            max_age=int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds()),
-            httponly=True,
-            samesite="Lax",
-            secure=settings.REFRESH_COOKIE_SECURE,
-            path=settings.REFRESH_COOKIE_PATH,
+        return _auth_response(request, user, access, new_refresh)
+
+
+class MeMfaSetupView(APIView):
+    required_permissions: list[str] = []
+
+    def post(self, request):
+        secret = services.generate_totp_secret(request.user)
+        return Response(
+            {
+                "secret": secret,
+                "provisioning_uri": services.totp_provisioning_uri(request.user),
+            }
         )
-        return response
+
+
+class MeMfaEnableView(APIView):
+    required_permissions: list[str] = []
+
+    def post(self, request):
+        services.enable_totp(
+            request.user, str(request.data.get("code") or ""), request=request
+        )
+        return Response({"totp_enabled": True})
+
+
+class MeMfaDisableView(APIView):
+    required_permissions: list[str] = []
+
+    def post(self, request):
+        services.disable_totp(
+            request.user, str(request.data.get("code") or ""), request=request
+        )
+        return Response({"totp_enabled": False})
 
 
 class LogoutView(APIView):
@@ -128,6 +185,7 @@ class UserViewSet(
         "partial_update": ["USER_MANAGE"],
         "deactivate": ["USER_MANAGE"],
         "activate": ["USER_MANAGE"],
+        "reset_2fa": ["USER_MANAGE"],
     }
     permission_classes = [HasPermission]
     filterset_fields = ["status", "user_roles__role__code"]
@@ -172,6 +230,11 @@ class UserViewSet(
     @action(detail=True, methods=["post"])
     def activate(self, request, pk=None):
         user = services.set_user_status(request.user, self.get_object(), active=True, request=request)
+        return Response(UserSerializer(user, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], url_path="reset-2fa")
+    def reset_2fa(self, request, pk=None):
+        user = services.reset_totp(request.user, self.get_object(), request=request)
         return Response(UserSerializer(user, context={"request": request}).data)
 
 
@@ -230,12 +293,20 @@ class RoleViewSet(
 
 
 class PermissionListView(APIView):
-    required_permissions = ["ROLE_VIEW"]
-
-    def get_permissions(self):
-        return [HasPermission()]
+    permission_classes = [HasPermission]
+    required_permissions = []
 
     def get(self, request):
+        user = request.user
+        if not (
+            user.is_superuser
+            or user.effective_permission_codes & {"ROLE_VIEW", "ROLE_MANAGE"}
+        ):
+            raise APIError(
+                "PERMISSION_DENIED",
+                "ROLE_VIEW or ROLE_MANAGE is required.",
+                status_code=403,
+            )
         module = request.query_params.get("module")
         qs = Permission.objects.all()
         if module:
