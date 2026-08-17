@@ -191,6 +191,18 @@ class MedicineBatchSerializer(serializers.ModelSerializer):
         return (obj.expiry_date - timezone.localdate()).days
 
     def validate(self, attrs):
+        if self.instance is not None and any(
+            field in attrs for field in ("qty_on_hand", "qty_received_total")
+        ):
+            raise serializers.ValidationError(
+                {
+                    "qty_on_hand": (
+                        "Batch quantities are ledger-controlled and cannot be edited directly. "
+                        "Post a stock adjustment instead."
+                    )
+                }
+            )
+
         medicine = attrs.get("medicine") or getattr(self.instance, "medicine", None)
         expiry = attrs.get("expiry_date", getattr(self.instance, "expiry_date", None))
         manufacturing = attrs.get("manufacturing_date", getattr(self.instance, "manufacturing_date", None))
