@@ -42,6 +42,12 @@ def end_medicine_mapping(*, mapping: DoctorMedicine):
 
 
 def _issue_sample(*, visit: DoctorVisit, medicine: Medicine, batch: MedicineBatch, qty: Decimal, actor):
+    if batch.branch_id != visit.branch_id:
+        raise APIError(
+            "INVALID_BATCH", "Sample batch does not belong to the visit's branch."
+        )
+    if batch.medicine_id != medicine.id:
+        raise APIError("INVALID_BATCH", "Sample batch does not belong to the medicine.")
     postings = post_transactions(
         branch=visit.branch,
         lines=[
@@ -123,6 +129,60 @@ def mark_visit_missed(*, visit: DoctorVisit, reason: str = "", actor=None):
     visit.status = VisitStatus.MISSED
     visit.missed_reason = reason
     visit.save(update_fields=["status", "missed_reason", "updated_at"])
+    return visit
+
+
+@transaction.atomic
+def reverse_visit_samples(*, visit: DoctorVisit, actor, reason: str = "") -> DoctorVisit:
+    """Return issued samples to the promotional pool and mark them reversed."""
+    visit = DoctorVisit.objects.select_for_update().get(id=visit.id)
+    if visit.status != VisitStatus.COMPLETED:
+        raise APIError(
+            "INVALID_STATUS_TRANSITION", "Only completed visits can have samples reversed."
+        )
+    samples = list(visit.samples.select_related("medicine", "batch").filter(reversed=False))
+    if not samples:
+        raise APIError("NOTHING_TO_REVERSE", "No unreversed samples on this visit.")
+
+    post_transactions(
+        branch=visit.branch,
+        lines=[
+            MovementLine(
+                medicine=sample.medicine,
+                batch=sample.batch,
+                qty_delta=sample.qty,
+                unit_cost=sample.unit_cost,
+                pool=StockPool.PROMO,
+            )
+            for sample in samples
+        ],
+        entry_type=EntryType.REVERSAL,
+        source_type="DOCTOR_VISIT_REVERSAL",
+        source_id=visit.id,
+        source_number=str(visit.id)[:8],
+        business_date=timezone.localdate(),
+        actor=actor,
+    )
+
+    now = timezone.now()
+    for sample in samples:
+        sample.reversed = True
+        sample.reversed_at = now
+        sample.save(update_fields=["reversed", "reversed_at", "updated_at"])
+
+    visit.notes = (f"{visit.notes}\nSamples reversed: {reason}".strip())
+    visit.save(update_fields=["notes", "updated_at"])
+    return visit
+
+
+@transaction.atomic
+def cancel_visit(*, visit: DoctorVisit, reason: str = "", actor=None):
+    visit = DoctorVisit.objects.select_for_update().get(id=visit.id)
+    if visit.status != VisitStatus.PLANNED:
+        raise APIError("INVALID_STATUS_TRANSITION", "Only planned visits can be cancelled.")
+    visit.status = VisitStatus.CANCELLED
+    visit.cancel_reason = reason
+    visit.save(update_fields=["status", "cancel_reason", "updated_at"])
     return visit
 
 

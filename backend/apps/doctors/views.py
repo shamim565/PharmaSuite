@@ -6,11 +6,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.audit.services import log_action
 from apps.catalog.models import Medicine, MedicineBatch
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
-from apps.doctors.models import Doctor, DoctorMedicine, DoctorVisit
+from apps.doctors.models import Doctor, DoctorMedicine, DoctorVisit, VisitStatus
 from apps.doctors.serializers import (
     DoctorChamberSerializer,
     DoctorMedicineSerializer,
@@ -19,10 +20,12 @@ from apps.doctors.serializers import (
     VisitCompleteSerializer,
 )
 from apps.doctors.services import (
+    cancel_visit,
     complete_visit,
     end_medicine_mapping,
     mark_visit_missed,
     open_medicine_mapping,
+    reverse_visit_samples,
     visit_coverage,
 )
 
@@ -31,6 +34,13 @@ def scoped_branch(user, queryset, field: str = "branch_id"):
     if user.is_superuser or user.has_all_branch_scope:
         return queryset
     return queryset.filter(**{f"{field}__in": user.branch_ids})
+
+
+def _require_doctor_manage(user) -> None:
+    if not (user.is_superuser or "DOCTOR_MANAGE" in user.effective_permission_codes):
+        raise APIError(
+            "PERMISSION_DENIED", "Permission DOCTOR_MANAGE is required.", status_code=403
+        )
 
 
 class DoctorViewSet(
@@ -47,7 +57,9 @@ class DoctorViewSet(
         "create": ["DOCTOR_MANAGE"],
         "update": ["DOCTOR_MANAGE"],
         "partial_update": ["DOCTOR_MANAGE"],
-        "medicines": ["DOCTOR_MANAGE"],
+        "chambers": ["DOCTOR_VIEW"],
+        "delete_chamber": ["DOCTOR_MANAGE"],
+        "medicines": ["DOCTOR_VIEW"],
     }
     permission_classes = [HasPermission]
     serializer_class = DoctorSerializer
@@ -57,13 +69,46 @@ class DoctorViewSet(
     ordering_fields = ["name", "code", "created_at"]
     ordering = ["name"]
 
+    def perform_create(self, serializer):
+        doctor = serializer.save()
+        log_action(
+            actor=self.request.user,
+            action="DOCTOR_CREATED",
+            entity_type="doctor",
+            entity_id=doctor.id,
+            after=DoctorSerializer(doctor).data,
+            request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        before = DoctorSerializer(self.get_object()).data
+        doctor = serializer.save()
+        log_action(
+            actor=self.request.user,
+            action="DOCTOR_UPDATED",
+            entity_type="doctor",
+            entity_id=doctor.id,
+            before=before,
+            after=DoctorSerializer(doctor).data,
+            request=self.request,
+        )
+
     @action(detail=True, methods=["get", "post"], url_path="chambers")
     def chambers(self, request, pk=None):
         doctor = self.get_object()
         if request.method == "POST":
+            _require_doctor_manage(request.user)
             serializer = DoctorChamberSerializer(data={**request.data, "doctor": doctor.id})
             serializer.is_valid(raise_exception=True)
-            serializer.save()
+            chamber = serializer.save()
+            log_action(
+                actor=request.user,
+                action="DOCTOR_CHAMBER_ADDED",
+                entity_type="doctor_chamber",
+                entity_id=chamber.id,
+                after=DoctorChamberSerializer(chamber).data,
+                request=request,
+            )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         rows = doctor.chambers.all()
         return Response({"count": rows.count(), "results": DoctorChamberSerializer(rows, many=True).data})
@@ -75,6 +120,14 @@ class DoctorViewSet(
         chamber = DoctorChamber.objects.filter(id=chamber_id, doctor_id=pk).first()
         if chamber is None:
             raise APIError("NOT_FOUND", "Chamber not found.")
+        log_action(
+            actor=request.user,
+            action="DOCTOR_CHAMBER_DELETED",
+            entity_type="doctor_chamber",
+            entity_id=chamber.id,
+            before=DoctorChamberSerializer(chamber).data,
+            request=request,
+        )
         chamber.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -88,6 +141,7 @@ class DoctorViewSet(
                 rows = rows.filter(effective_to__isnull=True)
             return Response(DoctorMedicineSerializer(rows, many=True).data)
 
+        _require_doctor_manage(request.user)
         serializer = DoctorMedicineSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         mapping = open_medicine_mapping(
@@ -95,6 +149,14 @@ class DoctorViewSet(
             medicine=serializer.validated_data["medicine"],
             priority=serializer.validated_data.get("priority", ""),
             strength_note=serializer.validated_data.get("strength_note", ""),
+        )
+        log_action(
+            actor=request.user,
+            action="DOCTOR_MEDICINE_OPENED",
+            entity_type="doctor_medicine",
+            entity_id=mapping.id,
+            after=DoctorMedicineSerializer(mapping).data,
+            request=request,
         )
         return Response(DoctorMedicineSerializer(mapping).data, status=status.HTTP_201_CREATED)
 
@@ -109,9 +171,33 @@ class DoctorMedicineViewSet(
     serializer_class = DoctorMedicineSerializer
     queryset = DoctorMedicine.objects.select_related("medicine", "doctor")
 
+    def update(self, request, *args, **kwargs):
+        mapping = self.get_object()
+        before = {"priority": mapping.priority, "strength_note": mapping.strength_note}
+        response = super().update(request, *args, **kwargs)
+        updated = self.get_object()
+        log_action(
+            actor=request.user,
+            action="DOCTOR_MEDICINE_UPDATED",
+            entity_type="doctor_medicine",
+            entity_id=updated.id,
+            before=before,
+            after={"priority": updated.priority, "strength_note": updated.strength_note},
+            request=request,
+        )
+        return response
+
     @action(detail=True, methods=["post"])
     def end(self, request, pk=None):
         mapping = end_medicine_mapping(mapping=self.get_object())
+        log_action(
+            actor=request.user,
+            action="DOCTOR_MEDICINE_ENDED",
+            entity_type="doctor_medicine",
+            entity_id=mapping.id,
+            after=DoctorMedicineSerializer(mapping).data,
+            request=request,
+        )
         return Response(DoctorMedicineSerializer(mapping).data)
 
 
@@ -131,6 +217,8 @@ class DoctorVisitViewSet(
         "partial_update": ["VISIT_MANAGE"],
         "complete": ["VISIT_MANAGE"],
         "miss": ["VISIT_MANAGE"],
+        "cancel": ["VISIT_MANAGE"],
+        "reverse_samples": ["VISIT_MANAGE"],
     }
     permission_classes = [HasPermission]
     queryset = DoctorVisit.objects.select_related(
@@ -151,16 +239,58 @@ class DoctorVisitViewSet(
             qs = qs.filter(planned_date__lte=planned_to)
         return qs
 
-    def get_serializer_class(self):
-        if self.action in ("create", "update", "partial_update"):
-            return DoctorVisitSerializer
-        return DoctorVisitSerializer
+    def _ensure_branch_in_scope(self, branch_id) -> None:
+        user = self.request.user
+        if user.is_superuser or user.has_all_branch_scope:
+            return
+        if str(branch_id) not in {str(branch) for branch in user.branch_ids}:
+            raise APIError(
+                "BRANCH_SCOPE_EXCEEDED",
+                "You cannot manage visits for a branch outside your scope.",
+                status_code=403,
+            )
 
     def create(self, request, *args, **kwargs):
         serializer = DoctorVisitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        self._ensure_branch_in_scope(serializer.validated_data["branch"].id)
         visit = serializer.save(created_by=request.user)
+        log_action(
+            actor=request.user,
+            action="DOCTOR_VISIT_CREATED",
+            entity_type="doctor_visit",
+            entity_id=visit.id,
+            after=DoctorVisitSerializer(visit).data,
+            branch=visit.branch,
+            request=request,
+        )
         return Response(DoctorVisitSerializer(visit).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        visit = self.get_object()
+        if visit.status != VisitStatus.PLANNED:
+            raise APIError(
+                "INVALID_STATUS_TRANSITION",
+                "Only planned visits can be edited; use complete, miss or cancel.",
+            )
+        partial = kwargs.pop("partial", False)
+        serializer = DoctorVisitSerializer(visit, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        branch = serializer.validated_data.get("branch") or visit.branch
+        self._ensure_branch_in_scope(branch.id)
+        before = DoctorVisitSerializer(visit).data
+        serializer.save()
+        log_action(
+            actor=request.user,
+            action="DOCTOR_VISIT_UPDATED",
+            entity_type="doctor_visit",
+            entity_id=visit.id,
+            before=before,
+            after=DoctorVisitSerializer(visit).data,
+            branch=visit.branch,
+            request=request,
+        )
+        return Response(DoctorVisitSerializer(visit).data)
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
@@ -188,12 +318,64 @@ class DoctorVisitViewSet(
             notes=data.get("notes", ""),
             samples=samples,
         )
+        log_action(
+            actor=request.user,
+            action="DOCTOR_VISIT_COMPLETED",
+            entity_type="doctor_visit",
+            entity_id=visit.id,
+            after=DoctorVisitSerializer(visit).data,
+            branch=visit.branch,
+            request=request,
+        )
         return Response(DoctorVisitSerializer(visit).data)
 
     @action(detail=True, methods=["post"])
     def miss(self, request, pk=None):
         visit = mark_visit_missed(
             visit=self.get_object(), reason=request.data.get("reason", ""), actor=request.user
+        )
+        log_action(
+            actor=request.user,
+            action="DOCTOR_VISIT_MISSED",
+            entity_type="doctor_visit",
+            entity_id=visit.id,
+            after={"reason": visit.missed_reason},
+            branch=visit.branch,
+            request=request,
+        )
+        return Response(DoctorVisitSerializer(visit).data)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        visit = cancel_visit(
+            visit=self.get_object(), reason=request.data.get("reason", ""), actor=request.user
+        )
+        log_action(
+            actor=request.user,
+            action="DOCTOR_VISIT_CANCELLED",
+            entity_type="doctor_visit",
+            entity_id=visit.id,
+            after={"reason": visit.cancel_reason},
+            branch=visit.branch,
+            request=request,
+        )
+        return Response(DoctorVisitSerializer(visit).data)
+
+    @action(detail=True, methods=["post"], url_path="reverse-samples")
+    def reverse_samples(self, request, pk=None):
+        visit = reverse_visit_samples(
+            visit=self.get_object(),
+            actor=request.user,
+            reason=str(request.data.get("reason") or ""),
+        )
+        log_action(
+            actor=request.user,
+            action="DOCTOR_VISIT_SAMPLES_REVERSED",
+            entity_type="doctor_visit",
+            entity_id=visit.id,
+            after={"reason": request.data.get("reason", "")},
+            branch=visit.branch,
+            request=request,
         )
         return Response(DoctorVisitSerializer(visit).data)
 

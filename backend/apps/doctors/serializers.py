@@ -97,7 +97,18 @@ class DoctorVisitSampleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DoctorVisitSample
-        fields = ["id", "medicine", "medicine_name", "medicine_code", "batch", "batch_number", "qty", "unit_cost"]
+        fields = [
+            "id",
+            "medicine",
+            "medicine_name",
+            "medicine_code",
+            "batch",
+            "batch_number",
+            "qty",
+            "unit_cost",
+            "reversed",
+            "reversed_at",
+        ]
 
 
 class DoctorVisitSerializer(serializers.ModelSerializer):
@@ -127,8 +138,16 @@ class DoctorVisitSerializer(serializers.ModelSerializer):
             "next_visit_date",
             "notes",
             "missed_reason",
+            "cancel_reason",
             "created_at",
             "samples",
+        ]
+        read_only_fields = [
+            "status",
+            "visited_at",
+            "missed_reason",
+            "cancel_reason",
+            "created_at",
         ]
 
 

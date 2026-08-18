@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models.functions import Lower
 
 from apps.common.models import BaseModel
 
@@ -40,7 +41,7 @@ class Doctor(BaseModel):
     doctor_type = models.CharField(
         max_length=12, choices=DoctorType.choices, default=DoctorType.CONSULTANT
     )
-    registration_no = models.CharField(max_length=50, null=True, blank=True, unique=True)
+    registration_no = models.CharField(max_length=50, null=True, blank=True)
     category = models.CharField(max_length=2, choices=DoctorCategory.choices, default=DoctorCategory.B)
     potential_rating = models.CharField(max_length=10, blank=True)
     territory = models.ForeignKey(
@@ -58,6 +59,13 @@ class Doctor(BaseModel):
     class Meta:
         ordering = ["name"]
         indexes = [models.Index(fields=["is_active"]), models.Index(fields=["specialty"])]
+        constraints = [
+            models.UniqueConstraint(
+                Lower("registration_no"),
+                condition=models.Q(registration_no__isnull=False),
+                name="uq_doctor_registration_no_ci",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.code})"
@@ -114,6 +122,7 @@ class DoctorVisit(BaseModel):
     next_visit_date = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True)
     missed_reason = models.CharField(max_length=200, blank=True)
+    cancel_reason = models.CharField(max_length=200, blank=True)
     created_by = models.ForeignKey(
         "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
@@ -147,6 +156,8 @@ class DoctorVisitSample(BaseModel):
         on_delete=models.PROTECT,
         related_name="visit_samples",
     )
+    reversed = models.BooleanField(default=False)
+    reversed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
