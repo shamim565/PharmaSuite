@@ -27,6 +27,9 @@ from apps.inventory.models import (
     StockAdjustmentItem,
     StockBalance,
     StockPool,
+    StockTransfer,
+    StockTransferItem,
+    TransferStatus,
 )
 
 POOL_FIELD = {
@@ -61,9 +64,10 @@ def _locked_balance(branch, medicine, batch) -> StockBalance:
         )
     except StockBalance.DoesNotExist:
         try:
-            return StockBalance.objects.create(
-                branch=branch, medicine=medicine, batch=batch
-            )
+            with transaction.atomic():
+                return StockBalance.objects.create(
+                    branch=branch, medicine=medicine, batch=batch
+                )
         except IntegrityError:
             return StockBalance.objects.select_for_update().get(
                 branch=branch, medicine=medicine, batch=batch
@@ -103,69 +107,82 @@ def post_transactions(
     business_date = business_date or timezone.localdate()
     postings: list[InventoryTransaction] = []
 
-    with transaction.atomic():
-        ordered = sorted(lines, key=lambda line: (str(line.medicine.id), str(line.batch.id)))
-        balances: dict[UUID, StockBalance] = {}
+    try:
+        with transaction.atomic():
+            ordered = sorted(lines, key=lambda line: (str(line.medicine.id), str(line.batch.id)))
+            balances: dict[UUID, StockBalance] = {}
 
-        for line in ordered:
-            qty_delta = Decimal(line.qty_delta)
-            if qty_delta == 0:
-                raise APIError("INVALID_QUANTITY", "Quantity must not be zero.")
+            for line in ordered:
+                qty_delta = Decimal(line.qty_delta)
+                if qty_delta == 0:
+                    raise APIError("INVALID_QUANTITY", "Quantity must not be zero.")
 
-            balance = balances.get(line.batch.id) or _locked_balance(
-                branch, line.medicine, line.batch
-            )
-            balances[line.batch.id] = balance
-
-            field = POOL_FIELD[line.pool]
-            new_value = getattr(balance, field) + qty_delta
-            if new_value < 0:
-                raise APIError(
-                    "INSUFFICIENT_STOCK",
-                    (
-                        f"Not enough {line.pool.lower()} stock for {line.medicine.name} "
-                        f"batch {line.batch.batch_number}: available "
-                        f"{getattr(balance, field)}, requested {abs(qty_delta)}."
-                    ),
-                    status_code=409,
+                balance = balances.get(line.batch.id) or _locked_balance(
+                    branch, line.medicine, line.batch
                 )
+                balances[line.batch.id] = balance
 
-            unit_cost = (
-                Decimal(line.unit_cost)
-                if line.unit_cost is not None
-                else Decimal(line.batch.unit_cost or 0)
+                field = POOL_FIELD[line.pool]
+                new_value = getattr(balance, field) + qty_delta
+                if new_value < 0:
+                    raise APIError(
+                        "INSUFFICIENT_STOCK",
+                        (
+                            f"Not enough {line.pool.lower()} stock for {line.medicine.name} "
+                            f"batch {line.batch.batch_number}: available "
+                            f"{getattr(balance, field)}, requested {abs(qty_delta)}."
+                        ),
+                        status_code=409,
+                    )
+
+                unit_cost = (
+                    Decimal(line.unit_cost)
+                    if line.unit_cost is not None
+                    else Decimal(line.batch.unit_cost or 0)
+                )
+                setattr(balance, field, new_value)
+                balance.version += 1
+                balance.save(update_fields=[field, "version", "updated_at"])
+
+                posting = InventoryTransaction.objects.create(
+                    branch=branch,
+                    medicine=line.medicine,
+                    batch=line.batch,
+                    entry_type=entry_type,
+                    pool=line.pool,
+                    qty_delta=qty_delta,
+                    unit_cost=unit_cost,
+                    value_delta=(qty_delta * unit_cost).quantize(Decimal("0.01")),
+                    source_type=source_type,
+                    source_id=source_id,
+                    source_number=source_number,
+                    transaction_group_id=group_id,
+                    idempotency_key=idempotency_key if len(lines) == 1 else None,
+                    business_date=business_date,
+                    created_by=actor if getattr(actor, "is_authenticated", False) else None,
+                )
+                postings.append(posting)
+
+            for batch_id, balance in balances.items():
+                batch = next(line.batch for line in ordered if line.batch.id == batch_id)
+                batch.qty_on_hand = balance.qty_on_hand
+                if balance.qty_on_hand <= 0 and batch.status == BatchStatus.ACTIVE:
+                    batch.status = BatchStatus.DEPLETED
+                elif balance.qty_on_hand > 0 and batch.status == BatchStatus.DEPLETED:
+                    batch.status = BatchStatus.ACTIVE
+                batch.save(update_fields=["qty_on_hand", "status", "updated_at"])
+    except IntegrityError:
+        # A concurrent request with the same idempotency key won the race; its
+        # postings are the canonical ones. Our savepoint rolled back cleanly.
+        if idempotency_key:
+            existing = list(
+                InventoryTransaction.objects.filter(idempotency_key=idempotency_key).order_by(
+                    "created_at"
+                )
             )
-            setattr(balance, field, new_value)
-            balance.version += 1
-            balance.save(update_fields=[field, "version", "updated_at"])
-
-            posting = InventoryTransaction.objects.create(
-                branch=branch,
-                medicine=line.medicine,
-                batch=line.batch,
-                entry_type=entry_type,
-                pool=line.pool,
-                qty_delta=qty_delta,
-                unit_cost=unit_cost,
-                value_delta=(qty_delta * unit_cost).quantize(Decimal("0.01")),
-                source_type=source_type,
-                source_id=source_id,
-                source_number=source_number,
-                transaction_group_id=group_id,
-                idempotency_key=idempotency_key if len(lines) == 1 else None,
-                business_date=business_date,
-                created_by=actor if getattr(actor, "is_authenticated", False) else None,
-            )
-            postings.append(posting)
-
-        for batch_id, balance in balances.items():
-            batch = next(line.batch for line in ordered if line.batch.id == batch_id)
-            batch.qty_on_hand = balance.qty_on_hand
-            if balance.qty_on_hand <= 0 and batch.status == BatchStatus.ACTIVE:
-                batch.status = BatchStatus.DEPLETED
-            elif balance.qty_on_hand > 0 and batch.status == BatchStatus.DEPLETED:
-                batch.status = BatchStatus.ACTIVE
-            batch.save(update_fields=["qty_on_hand", "status", "updated_at"])
+            if existing:
+                return existing
+        raise
 
     return postings
 
@@ -192,6 +209,170 @@ def ledger_quantities(branch, medicine, batch) -> dict[str, Decimal]:
     for row in rows:
         totals[row["pool"]] = row["total"] or Decimal("0")
     return totals
+
+
+# --------------------------------------------------------------------------- stock transfers
+
+
+def _get_or_create_target_batch(transfer: StockTransfer, item: StockTransferItem) -> MedicineBatch:
+    batch = (
+        MedicineBatch.objects.select_for_update()
+        .filter(
+            branch=transfer.to_branch,
+            medicine=item.medicine,
+            batch_number=item.batch.batch_number,
+            expiry_date=item.batch.expiry_date,
+        )
+        .first()
+    )
+    if batch is not None:
+        return batch
+    try:
+        with transaction.atomic():
+            return MedicineBatch.objects.create(
+                branch=transfer.to_branch,
+                medicine=item.medicine,
+                batch_number=item.batch.batch_number,
+                manufacturing_date=item.batch.manufacturing_date,
+                expiry_date=item.batch.expiry_date,
+                unit_cost=item.unit_cost,
+            )
+    except IntegrityError:
+        return MedicineBatch.objects.select_for_update().get(
+            branch=transfer.to_branch,
+            medicine=item.medicine,
+            batch_number=item.batch.batch_number,
+            expiry_date=item.batch.expiry_date,
+        )
+
+
+@transaction.atomic
+def create_stock_transfer(
+    *,
+    from_branch,
+    to_branch,
+    business_date=None,
+    notes: str = "",
+    items_data: list[dict],
+    actor=None,
+    idempotency_key: str | None = None,
+) -> StockTransfer:
+    if str(from_branch.id) == str(to_branch.id):
+        raise APIError("SAME_BRANCH", "Source and destination branches must differ.")
+    if not items_data:
+        raise APIError("EMPTY_TRANSFER", "A stock transfer must have at least one line.")
+    if idempotency_key:
+        existing = StockTransfer.objects.filter(idempotency_key=idempotency_key).first()
+        if existing is not None:
+            return existing
+
+    try:
+        with transaction.atomic():
+            transfer = StockTransfer.objects.create(
+                from_branch=from_branch,
+                to_branch=to_branch,
+                business_date=business_date or timezone.localdate(),
+                notes=notes,
+                requested_by=actor if getattr(actor, "is_authenticated", False) else None,
+                idempotency_key=idempotency_key,
+            )
+            for row in items_data:
+                batch: MedicineBatch = row["batch"]
+                if batch.branch_id != from_branch.id:
+                    raise APIError(
+                        "INVALID_BATCH", "Source batch does not belong to the source branch."
+                    )
+                if str(batch.medicine_id) != str(row["medicine"].id):
+                    raise APIError("INVALID_BATCH", "Batch does not belong to the selected medicine.")
+                StockTransferItem.objects.create(
+                    transfer=transfer,
+                    medicine=row["medicine"],
+                    batch=batch,
+                    qty=Decimal(row["qty"]),
+                    pool=row.get("pool") or StockPool.SALEABLE,
+                    unit_cost=batch.unit_cost,
+                )
+            return transfer
+    except IntegrityError:
+        if idempotency_key:
+            existing = StockTransfer.objects.filter(idempotency_key=idempotency_key).first()
+            if existing is not None:
+                return existing
+        raise
+
+
+@transaction.atomic
+def confirm_stock_transfer(*, transfer: StockTransfer, actor) -> StockTransfer:
+    transfer = (
+        StockTransfer.objects.select_for_update()
+        .select_related("from_branch", "to_branch")
+        .get(id=transfer.id)
+    )
+    if transfer.status == TransferStatus.CONFIRMED:
+        return transfer
+    if transfer.status != TransferStatus.DRAFT:
+        raise APIError("INVALID_STATUS_TRANSITION", "Only draft transfers can be confirmed.")
+
+    items = list(transfer.items.select_related("medicine", "batch"))
+    if not items:
+        raise APIError("EMPTY_TRANSFER", "A stock transfer must have at least one line.")
+
+    transfer.number = transfer.number or allocate_number(
+        branch=transfer.from_branch,
+        doc_type=DocumentType.TRANSFER,
+        business_date=transfer.business_date,
+    )
+
+    post_transactions(
+        branch=transfer.from_branch,
+        lines=[
+            MovementLine(
+                medicine=item.medicine,
+                batch=item.batch,
+                qty_delta=-item.qty,
+                unit_cost=item.unit_cost,
+                pool=item.pool,
+            )
+            for item in items
+        ],
+        entry_type=EntryType.TRANSFER,
+        source_type="STOCK_TRANSFER",
+        source_id=transfer.id,
+        source_number=transfer.number,
+        business_date=transfer.business_date,
+        actor=actor,
+    )
+
+    in_lines = []
+    for item in items:
+        target_batch = _get_or_create_target_batch(transfer, item)
+        in_lines.append(
+            MovementLine(
+                medicine=item.medicine,
+                batch=target_batch,
+                qty_delta=item.qty,
+                unit_cost=item.unit_cost,
+                pool=item.pool,
+            )
+        )
+    post_transactions(
+        branch=transfer.to_branch,
+        lines=in_lines,
+        entry_type=EntryType.TRANSFER,
+        source_type="STOCK_TRANSFER",
+        source_id=transfer.id,
+        source_number=transfer.number,
+        business_date=transfer.business_date,
+        actor=actor,
+    )
+
+    transfer.status = TransferStatus.CONFIRMED
+    transfer.confirmed_at = timezone.now()
+    transfer.confirmed_by = actor if getattr(actor, "is_authenticated", False) else None
+    transfer.save(
+        update_fields=["status", "number", "confirmed_at", "confirmed_by", "updated_at"]
+    )
+    return transfer
 
 
 # --------------------------------------------------------------------------- stock adjustments
@@ -269,47 +450,59 @@ def create_stock_adjustment(
         if existing is not None:
             return existing
 
-    adjustment = StockAdjustment.objects.create(
-        branch=branch,
-        business_date=business_date or timezone.localdate(),
-        adjustment_type=adjustment_type,
-        reason_code=reason_code,
-        notes=notes,
-        requested_by=actor if getattr(actor, "is_authenticated", False) else None,
-    )
+    try:
+        with transaction.atomic():
+            adjustment = StockAdjustment.objects.create(
+                branch=branch,
+                business_date=business_date or timezone.localdate(),
+                adjustment_type=adjustment_type,
+                reason_code=reason_code,
+                notes=notes,
+                requested_by=actor if getattr(actor, "is_authenticated", False) else None,
+            )
 
-    total_value = Decimal("0")
-    for row in items_data:
-        batch: MedicineBatch = row["batch"]
-        unit_cost = Decimal(row.get("unit_cost") or batch.unit_cost or 0)
-        StockAdjustmentItem.objects.create(
-            adjustment=adjustment,
-            medicine=row["medicine"],
-            batch=batch,
-            qty=Decimal(row["qty"]),
-            pool=row.get("pool") or StockPool.SALEABLE,
-            target_pool=row.get("target_pool"),
-            unit_cost=unit_cost,
-        )
-        total_value += Decimal(row["qty"]) * unit_cost
+            total_value = Decimal("0")
+            for row in items_data:
+                batch: MedicineBatch = row["batch"]
+                unit_cost = Decimal(row.get("unit_cost") or batch.unit_cost or 0)
+                StockAdjustmentItem.objects.create(
+                    adjustment=adjustment,
+                    medicine=row["medicine"],
+                    batch=batch,
+                    qty=Decimal(row["qty"]),
+                    pool=row.get("pool") or StockPool.SALEABLE,
+                    target_pool=row.get("target_pool"),
+                    unit_cost=unit_cost,
+                )
+                total_value += Decimal(row["qty"]) * unit_cost
 
-    adjustment.total_value = total_value.quantize(Decimal("0.01"))
-    from apps.common.settings_service import get_threshold
+            adjustment.total_value = total_value.quantize(Decimal("0.01"))
+            from apps.common.settings_service import get_threshold
 
-    threshold = get_threshold(
-        "STOCK_ADJUSTMENT_APPROVAL_THRESHOLD",
-        str(getattr(settings, "STOCK_ADJUSTMENT_APPROVAL_THRESHOLD", "5000")),
-    )
+            threshold = get_threshold(
+                "STOCK_ADJUSTMENT_APPROVAL_THRESHOLD",
+                str(getattr(settings, "STOCK_ADJUSTMENT_APPROVAL_THRESHOLD", "5000")),
+            )
 
-    if total_value > threshold:
-        adjustment.status = AdjustmentStatus.PENDING_APPROVAL
-        adjustment.idempotency_key = idempotency_key
-        adjustment.save(update_fields=["total_value", "status", "idempotency_key", "updated_at"])
-    else:
-        adjustment.idempotency_key = idempotency_key
-        adjustment.save(update_fields=["total_value", "idempotency_key", "updated_at"])
-        _post_stock_adjustment(adjustment, actor)
-    return adjustment
+            if total_value > threshold:
+                adjustment.status = AdjustmentStatus.PENDING_APPROVAL
+                adjustment.idempotency_key = idempotency_key
+                adjustment.save(
+                    update_fields=["total_value", "status", "idempotency_key", "updated_at"]
+                )
+            else:
+                adjustment.idempotency_key = idempotency_key
+                adjustment.save(update_fields=["total_value", "idempotency_key", "updated_at"])
+                _post_stock_adjustment(adjustment, actor)
+            return adjustment
+    except IntegrityError:
+        # A concurrent request with the same idempotency key won the race; return
+        # its adjustment instead of surfacing a 500.
+        if idempotency_key:
+            existing = StockAdjustment.objects.filter(idempotency_key=idempotency_key).first()
+            if existing is not None:
+                return existing
+        raise
 
 
 @transaction.atomic

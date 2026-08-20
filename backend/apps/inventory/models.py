@@ -119,6 +119,64 @@ class StockBalance(BaseModel):
         return f"{self.batch_id}: {self.qty_on_hand} on hand"
 
 
+class TransferStatus(models.TextChoices):
+    DRAFT = "DRAFT", "Draft"
+    CONFIRMED = "CONFIRMED", "Confirmed"
+
+
+class StockTransfer(BaseModel):
+    """Inter-branch stock transfer. Stock moves only when confirmed."""
+
+    number = models.CharField(max_length=40, null=True, blank=True, unique=True)
+    from_branch = models.ForeignKey(
+        "branches.Branch", on_delete=models.PROTECT, related_name="stock_transfers_out"
+    )
+    to_branch = models.ForeignKey(
+        "branches.Branch", on_delete=models.PROTECT, related_name="stock_transfers_in"
+    )
+    business_date = models.DateField(db_index=True)
+    status = models.CharField(
+        max_length=10, choices=TransferStatus.choices, default=TransferStatus.DRAFT, db_index=True
+    )
+    notes = models.TextField(blank=True)
+    idempotency_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
+    requested_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirmed_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["-business_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["from_branch", "business_date"]),
+            models.Index(fields=["to_branch", "business_date"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.number or f"transfer {self.id}"
+
+
+class StockTransferItem(BaseModel):
+    transfer = models.ForeignKey(StockTransfer, on_delete=models.CASCADE, related_name="items")
+    medicine = models.ForeignKey(
+        "catalog.Medicine", on_delete=models.PROTECT, related_name="stock_transfer_items"
+    )
+    batch = models.ForeignKey(
+        "catalog.MedicineBatch", on_delete=models.PROTECT, related_name="stock_transfer_items"
+    )
+    qty = models.DecimalField(max_digits=14, decimal_places=3)
+    pool = models.CharField(max_length=12, choices=StockPool.choices, default=StockPool.SALEABLE)
+    unit_cost = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal("0"))
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=models.Q(qty__gt=0), name="ck_transfer_qty_positive"),
+        ]
+
+
 class AdjustmentType(models.TextChoices):
     INCREASE = "INCREASE", "Increase"
     DECREASE = "DECREASE", "Decrease"
