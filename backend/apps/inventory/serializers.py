@@ -7,6 +7,8 @@ from apps.inventory.models import (
     StockAdjustment,
     StockAdjustmentItem,
     StockBalance,
+    StockTransfer,
+    StockTransferItem,
 )
 
 
@@ -69,6 +71,74 @@ class StockBalanceSerializer(serializers.ModelSerializer):
             "qty_quarantine",
             "reorder_level",
             "updated_at",
+        ]
+
+
+class StockTransferItemInputSerializer(serializers.Serializer):
+    medicine = serializers.UUIDField()
+    batch = serializers.UUIDField()
+    qty = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=Decimal("0.001"))
+    pool = serializers.ChoiceField(
+        choices=["SALEABLE", "PROMO", "QUARANTINE"], default="SALEABLE"
+    )
+
+
+class StockTransferCreateSerializer(serializers.Serializer):
+    from_branch = serializers.UUIDField()
+    to_branch = serializers.UUIDField()
+    business_date = serializers.DateField(required=False)
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
+    items = StockTransferItemInputSerializer(many=True, allow_empty=False)
+
+
+class StockTransferItemReadSerializer(serializers.ModelSerializer):
+    medicine_name = serializers.CharField(source="medicine.name", read_only=True)
+    medicine_code = serializers.CharField(source="medicine.code", read_only=True)
+    batch_number = serializers.CharField(source="batch.batch_number", read_only=True)
+
+    class Meta:
+        model = StockTransferItem
+        fields = [
+            "id",
+            "medicine",
+            "medicine_name",
+            "medicine_code",
+            "batch",
+            "batch_number",
+            "qty",
+            "pool",
+            "unit_cost",
+        ]
+
+
+class StockTransferReadSerializer(serializers.ModelSerializer):
+    from_branch_name = serializers.CharField(source="from_branch.name", read_only=True)
+    to_branch_name = serializers.CharField(source="to_branch.name", read_only=True)
+    requested_by_name = serializers.CharField(
+        source="requested_by.full_name", read_only=True, default=""
+    )
+    confirmed_by_name = serializers.CharField(
+        source="confirmed_by.full_name", read_only=True, default=""
+    )
+    items = StockTransferItemReadSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = StockTransfer
+        fields = [
+            "id",
+            "number",
+            "from_branch",
+            "from_branch_name",
+            "to_branch",
+            "to_branch_name",
+            "business_date",
+            "status",
+            "notes",
+            "requested_by_name",
+            "confirmed_by_name",
+            "confirmed_at",
+            "created_at",
+            "items",
         ]
 
 
