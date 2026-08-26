@@ -280,7 +280,7 @@ class SalesReturnDocStatus(models.TextChoices):
 class SalesReturn(BaseModel):
     number = models.CharField(max_length=40, null=True, blank=True, unique=True)
     invoice = models.ForeignKey(
-        SalesInvoice, on_delete=models.PROTECT, related_name="returns"
+        SalesInvoice, null=True, blank=True, on_delete=models.PROTECT, related_name="returns"
     )
     customer = models.ForeignKey(
         Customer, on_delete=models.PROTECT, related_name="sales_returns"
@@ -332,7 +332,11 @@ class SalesReturn(BaseModel):
 class SalesReturnItem(BaseModel):
     sales_return = models.ForeignKey(SalesReturn, on_delete=models.CASCADE, related_name="items")
     invoice_item = models.ForeignKey(
-        SalesInvoiceItem, on_delete=models.PROTECT, related_name="return_items"
+        SalesInvoiceItem,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="return_items",
     )
     batch = models.ForeignKey(
         "catalog.MedicineBatch", on_delete=models.PROTECT, related_name="sales_return_items"
