@@ -3,6 +3,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from rest_framework import serializers
 
 from apps.catalog.models import Medicine
+from apps.common.settings_service import get_setting_bool
 from apps.sales.models import (
     Customer,
     CustomerLedgerEntry,
@@ -105,6 +106,9 @@ class SalesInvoiceReadSerializer(serializers.ModelSerializer):
     customer_address = serializers.CharField(source="customer.address", read_only=True)
     doctor_name = serializers.CharField(source="doctor.name", read_only=True, default="")
     sales_rep_name = serializers.CharField(source="sales_rep.name", read_only=True, default="")
+    confirmed_by_name = serializers.CharField(
+        source="confirmed_by.full_name", read_only=True, default=""
+    )
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     branch_address = serializers.CharField(source="branch.address", read_only=True)
     branch_phone = serializers.CharField(source="branch.phone", read_only=True)
@@ -144,6 +148,7 @@ class SalesInvoiceReadSerializer(serializers.ModelSerializer):
             "due_date",
             "notes",
             "confirmed_at",
+            "confirmed_by_name",
             "cancel_reason",
             "credit_override",
             "credit_override_reason",
@@ -207,6 +212,7 @@ class SalesInvoiceWriteSerializer(serializers.Serializer):
         return value
 
     def _build_rows(self, items_data):
+        vat_enabled = get_setting_bool("SALES_VAT_ENABLED", default=False)
         rows = []
         for item in items_data:
             unit_price = item.get("unit_price")
@@ -221,6 +227,8 @@ class SalesInvoiceWriteSerializer(serializers.Serializer):
             discount = money(discount or 0)
             taxable = money(gross - discount)
             vat_rate = Decimal(item.get("vat_rate") or 0)
+            if not vat_enabled:
+                vat_rate = Decimal("0")
             vat_amount = money(taxable * vat_rate / Decimal("100"))
             rows.append(
                 {
@@ -330,10 +338,21 @@ class SalesInvoiceWriteSerializer(serializers.Serializer):
 
 
 class SalesReturnItemReadSerializer(serializers.ModelSerializer):
-    medicine_name = serializers.CharField(source="invoice_item.medicine.name", read_only=True)
-    medicine_code = serializers.CharField(source="invoice_item.medicine.code", read_only=True)
-    line_no = serializers.IntegerField(source="invoice_item.line_no", read_only=True)
+    medicine_name = serializers.SerializerMethodField()
+    medicine_code = serializers.SerializerMethodField()
+    line_no = serializers.SerializerMethodField()
     batch_number = serializers.CharField(source="batch.batch_number", read_only=True)
+
+    def get_medicine_name(self, obj):
+        medicine = obj.invoice_item.medicine if obj.invoice_item_id else obj.batch.medicine
+        return medicine.name
+
+    def get_medicine_code(self, obj):
+        medicine = obj.invoice_item.medicine if obj.invoice_item_id else obj.batch.medicine
+        return medicine.code
+
+    def get_line_no(self, obj):
+        return obj.invoice_item.line_no if obj.invoice_item_id else None
 
     class Meta:
         model = SalesReturnItem
@@ -357,9 +376,12 @@ class SalesReturnItemReadSerializer(serializers.ModelSerializer):
 
 class SalesReturnReadSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source="customer.name", read_only=True)
-    invoice_number = serializers.CharField(source="invoice.number", read_only=True)
+    invoice_number = serializers.SerializerMethodField()
     items = SalesReturnItemReadSerializer(many=True, read_only=True)
     grand_total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+
+    def get_invoice_number(self, obj):
+        return obj.invoice.number if obj.invoice_id else None
 
     class Meta:
         model = SalesReturn
@@ -392,6 +414,37 @@ class SalesReturnItemInputSerializer(serializers.Serializer):
     invoice_item = serializers.UUIDField()
     qty = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=Decimal("0.001"))
     condition = serializers.ChoiceField(choices=["RESELLABLE", "DAMAGED", "EXPIRED"])
+
+
+class DirectReturnItemInputSerializer(serializers.Serializer):
+    medicine = serializers.UUIDField()
+    batch = serializers.UUIDField()
+    qty = serializers.DecimalField(max_digits=14, decimal_places=3, min_value=Decimal("0.001"))
+    condition = serializers.ChoiceField(choices=["RESELLABLE", "DAMAGED", "EXPIRED"])
+    unit_price = serializers.DecimalField(
+        max_digits=14, decimal_places=4, required=False, allow_null=True, min_value=Decimal("0")
+    )
+
+
+class DirectReturnCreateSerializer(serializers.Serializer):
+    customer = serializers.UUIDField()
+    branch = serializers.UUIDField()
+    reason_code = serializers.ChoiceField(
+        choices=[
+            "CUSTOMER_RETURN",
+            "DAMAGED",
+            "EXPIRED_AT_CUSTOMER",
+            "WRONG_ITEM",
+            "EXCESS_SUPPLY",
+        ]
+    )
+    refund_method = serializers.ChoiceField(
+        choices=["CUSTOMER_CREDIT", "CASH", "BANK", "ADJUST_DUES"], default="CUSTOMER_CREDIT"
+    )
+    refund_account = serializers.UUIDField(required=False, allow_null=True)
+    business_date = serializers.DateField(required=False)
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
+    items = DirectReturnItemInputSerializer(many=True, allow_empty=False)
 
 
 class SalesReturnCreateSerializer(serializers.Serializer):
