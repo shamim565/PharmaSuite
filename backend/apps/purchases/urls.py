@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from apps.purchases.views import (
     PayableAgingView,
+    PurchasePdfView,
     PurchaseReturnViewSet,
     PurchaseViewSet,
     SupplierPaymentViewSet,
@@ -14,6 +15,7 @@ router.register("supplier-payments", SupplierPaymentViewSet, basename="supplier-
 router.register("purchase-returns", PurchaseReturnViewSet, basename="purchase-return")
 
 urlpatterns = [
+    path("purchases/<uuid:purchase_id>/print/", PurchasePdfView.as_view(), name="purchase-pdf"),
     path("", include(router.urls)),
     path("purchases/reports/payable-aging/", PayableAgingView.as_view(), name="report-payable-aging"),
 ]

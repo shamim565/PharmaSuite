@@ -50,6 +50,9 @@ class PurchaseItemReadSerializer(serializers.ModelSerializer):
 class PurchaseReadSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source="supplier.name", read_only=True)
     branch_name = serializers.CharField(source="branch.name", read_only=True)
+    confirmed_by_name = serializers.CharField(
+        source="confirmed_by.full_name", read_only=True, default=""
+    )
     items = PurchaseItemReadSerializer(many=True, read_only=True)
     outstanding = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
 
@@ -79,6 +82,7 @@ class PurchaseReadSerializer(serializers.ModelSerializer):
             "outstanding",
             "notes",
             "confirmed_at",
+            "confirmed_by_name",
             "cancel_reason",
             "created_at",
             "items",

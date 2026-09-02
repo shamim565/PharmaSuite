@@ -18,6 +18,7 @@ from apps.catalog.models import BatchStatus, MedicineBatch
 from apps.common.exceptions import APIError
 from apps.common.models import DocumentType
 from apps.common.numbering import allocate_number
+from apps.common.settings_service import get_setting_bool
 from apps.inventory.models import EntryType
 from apps.inventory.services import MovementLine, post_transactions
 from apps.purchases.models import (
@@ -55,6 +56,8 @@ def compute_line_totals(item: dict) -> dict:
     unit_cost = Decimal(item["unit_cost"])
     discount = money(item.get("line_discount") or 0)
     vat_rate = Decimal(item.get("vat_rate") if item.get("vat_rate") is not None else 15)
+    if not get_setting_bool("PURCHASE_VAT_ENABLED", default=False):
+        vat_rate = Decimal("0")
 
     qty_base = (qty * factor).quantize(Decimal("0.001"))
     bonus_base = (bonus * factor).quantize(Decimal("0.001"))
