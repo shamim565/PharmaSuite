@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 
+import django_filters
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -42,6 +43,16 @@ def scoped_purchases(user, queryset):
     return queryset.filter(branch_id__in=user.branch_ids)
 
 
+class SupplierPaymentFilter(django_filters.FilterSet):
+    """Allows filtering payments by the purchase they are allocated to."""
+
+    purchase = django_filters.UUIDFilter(field_name="allocations__purchase")
+
+    class Meta:
+        model = SupplierPayment
+        fields = ["supplier", "branch", "status", "method", "purchase"]
+
+
 class PurchaseViewSet(
     PermissionMappedMixin,
     mixins.ListModelMixin,
@@ -61,7 +72,7 @@ class PurchaseViewSet(
     }
     permission_classes = [HasPermission]
     queryset = (
-        Purchase.objects.select_related("supplier", "branch")
+        Purchase.objects.select_related("supplier", "branch", "confirmed_by")
         .prefetch_related("items__medicine")
     )
     filterset_fields = ["lifecycle", "payment_status", "return_status", "supplier", "branch"]
@@ -167,7 +178,7 @@ class SupplierPaymentViewSet(
     queryset = SupplierPayment.objects.select_related(
         "supplier", "branch", "account"
     ).prefetch_related("allocations__purchase")
-    filterset_fields = ["supplier", "branch", "status", "method"]
+    filterset_class = SupplierPaymentFilter
     search_fields = ["number", "reference", "supplier__name"]
     ordering = ["-business_date", "-created_at"]
     serializer_class = SupplierPaymentReadSerializer
@@ -374,3 +385,28 @@ class PayableAgingView(APIView):
                 "results": [as_strings(row) for row in results],
             }
         )
+
+
+class PurchasePdfView(APIView):
+    permission_classes = [HasPermission]
+    required_permissions = ["PURCHASE_VIEW"]
+
+    def get(self, request, purchase_id):
+        from django.http import HttpResponse
+
+        from apps.purchases.pdf import build_purchase_pdf
+
+        queryset = (
+            Purchase.objects.select_related("supplier", "branch", "confirmed_by")
+            .prefetch_related("items__medicine", "items__batch")
+        )
+        purchase = scoped_purchases(request.user, queryset).filter(id=purchase_id).first()
+        if purchase is None:
+            raise APIError("NOT_FOUND", "Purchase not found.")
+
+        pdf = build_purchase_pdf(purchase)
+
+        response = HttpResponse(pdf, content_type="application/pdf")
+        filename = purchase.number or f"purchase-{purchase.id}"
+        response["Content-Disposition"] = f'attachment; filename="{filename}.pdf"'
+        return response
