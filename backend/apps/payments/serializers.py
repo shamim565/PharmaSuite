@@ -7,13 +7,13 @@ from apps.payments.models import Cheque, ChequeDirection, Payment, PaymentAlloca
 
 class PaymentAllocationInputSerializer(serializers.Serializer):
     invoice = serializers.UUIDField()
-    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0.01)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
 
 
 class CustomerPaymentCreateSerializer(serializers.Serializer):
     customer = serializers.UUIDField()
     branch = serializers.UUIDField()
-    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0.01)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
     method = serializers.ChoiceField(choices=["CASH", "BANK", "MFS", "CHEQUE"])
     account = serializers.UUIDField()
     business_date = serializers.DateField(required=False)

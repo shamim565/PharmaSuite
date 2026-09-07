@@ -281,3 +281,30 @@ class ChequeViewSet(
             after={"number": cheque.number, "status": cheque.status}, request=request,
         )
         return Response(ChequeReadSerializer(cheque).data)
+
+
+class PaymentReceiptPdfView(APIView):
+    permission_classes = [HasPermission]
+    required_permissions = ["PAYMENT_VIEW"]
+
+    def get(self, request, payment_id):
+        from django.http import HttpResponse
+
+        from apps.payments.pdf import build_receipt_pdf
+
+        queryset = Payment.objects.select_related(
+            "customer", "branch", "account", "collector"
+        ).prefetch_related("allocations__invoice")
+        user = request.user
+        if not (user.is_superuser or user.has_all_branch_scope):
+            queryset = queryset.filter(branch_id__in=user.branch_ids)
+        payment = queryset.filter(id=payment_id).first()
+        if payment is None:
+            raise APIError("NOT_FOUND", "Receipt not found.")
+
+        pdf = build_receipt_pdf(payment)
+
+        response = HttpResponse(pdf, content_type="application/pdf")
+        filename = payment.number or f"receipt-{payment.id}"
+        response["Content-Disposition"] = f'attachment; filename="{filename}.pdf"'
+        return response
