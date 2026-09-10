@@ -1,7 +1,43 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens (Tailwind v4).
+ *
+ * `primary` is the app's brand color (currently the emerald scale) and
+ * `danger` is the destructive/negative color (currently rose). Everything
+ * in the UI should use these tokens instead of raw palette names so a
+ * rebrand or contrast tweak is a one-file change.
+ */
+@theme {
+  --color-primary-50: oklch(97.9% 0.021 166.113);
+  --color-primary-100: oklch(95% 0.052 163.051);
+  --color-primary-200: oklch(90.5% 0.093 164.15);
+  --color-primary-300: oklch(84.5% 0.143 164.978);
+  --color-primary-400: oklch(76.5% 0.177 163.223);
+  --color-primary-500: oklch(69.6% 0.17 162.48);
+  --color-primary-600: oklch(59.6% 0.145 163.225);
+  --color-primary-700: oklch(50.8% 0.118 165.612);
+  --color-primary-800: oklch(43.2% 0.095 166.913);
+  --color-primary-900: oklch(37.8% 0.077 168.94);
+  --color-primary-950: oklch(26.2% 0.051 172.552);
+
+  --color-danger-50: oklch(96.9% 0.015 12.422);
+  --color-danger-100: oklch(94.1% 0.03 12.58);
+  --color-danger-200: oklch(89.2% 0.058 10.001);
+  --color-danger-300: oklch(81% 0.117 11.638);
+  --color-danger-400: oklch(71.2% 0.194 13.428);
+  --color-danger-500: oklch(64.5% 0.246 16.439);
+  --color-danger-600: oklch(58.6% 0.253 17.585);
+  --color-danger-700: oklch(51.4% 0.222 16.935);
+  --color-danger-800: oklch(45.5% 0.188 13.697);
+  --color-danger-900: oklch(41% 0.159 10.272);
+  --color-danger-950: oklch(27.1% 0.105 12.094);
+}
+
 :root {
   color-scheme: light;
+  /* Height of the fixed mobile bottom nav (used to offset sticky bars/toasts). */
+  --bottom-nav-height: 3.75rem;
 }
 
 body {
@@ -23,5 +59,16 @@ body {
     border: none !important;
     box-shadow: none !important;
     padding: 0 !important;
+  }
+  /* Documents paginate cleanly: rows never split, headers repeat on each page. */
+  table {
+    break-inside: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    break-inside: avoid;
+    break-after: auto;
   }
 }
