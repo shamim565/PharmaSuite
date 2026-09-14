@@ -25,6 +25,27 @@ export class ApiError extends Error {
 let accessToken: string | null = null;
 let refreshPromise: Promise<boolean> | null = null;
 
+let unauthorizedHandler: (() => void) | null = null;
+let lastUnauthorizedNotify = 0;
+
+/**
+ * Register a callback invoked when the session can no longer be refreshed
+ * (expired/revoked). The app uses this to clear auth state and redirect to
+ * the login screen instead of stranding the user on 401 error banners.
+ */
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
+function notifyUnauthorized() {
+  accessToken = null;
+  const now = Date.now();
+  // De-duplicate: several parallel requests will all 401 at once.
+  if (now - lastUnauthorizedNotify < 5_000) return;
+  lastUnauthorizedNotify = now;
+  unauthorizedHandler?.();
+}
+
 export const authToken = {
   get: () => accessToken,
   set: (token: string | null) => {
@@ -81,6 +102,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     if (refreshed) {
       response = await rawFetch(path, options);
     }
+    if (response.status === 401) notifyUnauthorized();
   }
 
   if (!response.ok) {
@@ -130,13 +152,16 @@ export async function apiUpload(
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     body: form,
   });
-  if (response.status === 401 && (await tryRefresh())) {
-    response = await fetch(`${API_URL}${path}`, {
-      method: "POST",
-      credentials: "include",
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-      body: form,
-    });
+  if (response.status === 401) {
+    if (await tryRefresh()) {
+      response = await fetch(`${API_URL}${path}`, {
+        method: "POST",
+        credentials: "include",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        body: form,
+      });
+    }
+    if (response.status === 401) notifyUnauthorized();
   }
   if (!response.ok) {
     let message = "Upload failed";
@@ -163,11 +188,14 @@ export async function apiDownload(path: string, filename: string): Promise<void>
     credentials: "include",
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
   });
-  if (response.status === 401 && (await tryRefresh())) {
-    response = await fetch(`${API_URL}${path}`, {
-      credentials: "include",
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-    });
+  if (response.status === 401) {
+    if (await tryRefresh()) {
+      response = await fetch(`${API_URL}${path}`, {
+        credentials: "include",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      });
+    }
+    if (response.status === 401) notifyUnauthorized();
   }
   if (!response.ok) {
     throw new ApiError("Download failed", String(response.status), response.status);
@@ -183,12 +211,37 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   URL.revokeObjectURL(url);
 }
 
-export async function login(identifier: string, password: string) {
-  const data = await apiFetch<{ access: string; user: import("./types").CurrentUser }>("/auth/login/", {
+export type LoginResult =
+  | { mfa_required: true; mfa_token: string }
+  | { mfa_required: false; user: import("./types").CurrentUser };
+
+export async function login(identifier: string, password: string): Promise<LoginResult> {
+  const data = await apiFetch<{
+    mfa_required?: boolean;
+    mfa_token?: string;
+    access?: string;
+    user?: import("./types").CurrentUser;
+  }>("/auth/login/", {
     method: "POST",
     body: { identifier, password },
     auth: false,
   });
+  if (data.mfa_required) {
+    return { mfa_required: true, mfa_token: data.mfa_token ?? "" };
+  }
+  accessToken = data.access ?? null;
+  return { mfa_required: false, user: data.user as import("./types").CurrentUser };
+}
+
+export async function loginMfa(mfaToken: string, code: string) {
+  const data = await apiFetch<{ access: string; user: import("./types").CurrentUser }>(
+    "/auth/login/mfa/",
+    {
+      method: "POST",
+      body: { mfa_token: mfaToken, code },
+      auth: false,
+    },
+  );
   accessToken = data.access;
   return data.user;
 }
