@@ -15,6 +15,24 @@ export type Role = {
   permissions?: { code: string; module: string; label: string; effect: string }[];
 };
 
+export type RolePermissionEntry = {
+  code: string;
+  module: string;
+  label: string;
+  effect: "ALLOW" | "DENY";
+};
+
+export type PermissionItem = {
+  id: string;
+  code: string;
+  module: string;
+  action: string;
+  label: string;
+  is_sensitive: boolean;
+};
+
+export type PermissionCatalog = Record<string, PermissionItem[]>;
+
 export type Branch = {
   id: string;
   code: string;
@@ -41,6 +59,7 @@ export type CurrentUser = {
   email: string | null;
   is_superuser: boolean;
   must_change_password: boolean;
+  totp_enabled: boolean;
   default_branch_id: string | null;
   roles: { id: string; code: string; name: string }[];
   branches: BranchMembership[];
@@ -54,6 +73,7 @@ export type UserRecord = {
   email: string | null;
   status: "PENDING_ACTIVATION" | "ACTIVE" | "DEACTIVATED";
   is_superuser: boolean;
+  totp_enabled: boolean;
   roles: { id: string; code: string; name: string }[];
   branches: BranchMembership[];
   last_login_at: string | null;
@@ -122,6 +142,9 @@ export type Medicine = {
   pack_size: string;
   purchase_price: string;
   selling_price: string;
+  retail_price: string | null;
+  wholesale_price: string | null;
+  custom_price: string | null;
   mrp: string;
   vat_rate: string;
   reorder_level: string;
@@ -133,6 +156,35 @@ export type Medicine = {
   is_active: boolean;
   barcode: string;
   conversions: MedicineUnitConversion[];
+};
+
+export type StockTransferItem = {
+  id: string;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  batch: string;
+  batch_number: string;
+  qty: string;
+  pool: "SALEABLE" | "PROMO" | "QUARANTINE";
+  unit_cost: string;
+};
+
+export type StockTransfer = {
+  id: string;
+  number: string | null;
+  from_branch: string;
+  from_branch_name: string;
+  to_branch: string;
+  to_branch_name: string;
+  business_date: string;
+  status: "DRAFT" | "CONFIRMED";
+  notes: string;
+  requested_by_name: string;
+  confirmed_by_name: string;
+  confirmed_at: string | null;
+  created_at: string;
+  items: StockTransferItem[];
 };
 
 export type BatchStatus = "ACTIVE" | "DEPLETED" | "EXPIRED" | "QUARANTINE" | "DAMAGED" | "RECALLED";
@@ -332,6 +384,7 @@ export type Purchase = {
   outstanding: string;
   notes: string;
   confirmed_at: string | null;
+  confirmed_by_name: string;
   cancel_reason: string;
   created_at: string;
   items: PurchaseItem[];
@@ -458,6 +511,7 @@ export type SalesInvoice = {
   due_date: string | null;
   notes: string;
   confirmed_at: string | null;
+  confirmed_by_name: string;
   cancel_reason: string;
   credit_override: boolean;
   credit_override_reason: string;
@@ -513,6 +567,10 @@ export type DueListResponse = {
   count: number;
   totals: { outstanding: string; overdue: string };
   results: DueListRow[];
+  page?: number;
+  page_size?: number;
+  next?: boolean;
+  previous?: boolean;
 };
 
 export type AdvanceRow = {
@@ -559,8 +617,8 @@ export type DailyCollectionReport = {
 
 export type SalesReturnItem = {
   id: string;
-  invoice_item: string;
-  line_no: number;
+  invoice_item: string | null;
+  line_no: number | null;
   medicine_name: string;
   medicine_code: string;
   batch: string;
@@ -577,8 +635,8 @@ export type SalesReturnItem = {
 export type SalesReturn = {
   id: string;
   number: string | null;
-  invoice: string;
-  invoice_number: string;
+  invoice: string | null;
+  invoice_number: string | null;
   customer: string;
   customer_name: string;
   branch: string;
@@ -850,6 +908,8 @@ export type DoctorVisitSample = {
   batch_number: string;
   qty: string;
   unit_cost: string;
+  reversed: boolean;
+  reversed_at: string | null;
 };
 
 export type DoctorVisit = {
@@ -870,6 +930,7 @@ export type DoctorVisit = {
   next_visit_date: string | null;
   notes: string;
   missed_reason: string;
+  cancel_reason: string;
   created_at: string;
   samples: DoctorVisitSample[];
 };
@@ -1009,6 +1070,16 @@ export type AppNotification = {
   payload: Record<string, unknown>;
   is_read: boolean;
   created_at: string;
+};
+
+export type NotificationPreference = {
+  category: string;
+  label: string;
+  enabled: boolean;
+};
+
+export type NotificationPreferenceList = {
+  results: NotificationPreference[];
 };
 
 export type NotificationList = {
