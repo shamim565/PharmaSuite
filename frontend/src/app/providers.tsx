@@ -1,10 +1,21 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { logout as apiLogout, restoreSession } from "@/lib/api";
+import { ToastProvider, pushToast } from "@/components/ui";
+import { ApiError, logout as apiLogout, restoreSession, setUnauthorizedHandler } from "@/lib/api";
 import type { CurrentUser } from "@/lib/types";
+
+declare module "@tanstack/react-query" {
+  interface Register {
+    mutationMeta: {
+      /** Toast shown after this mutation succeeds. A function receives the mutation variables/data. */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      successMessage?: string | ((variables: any, data: any) => string);
+    };
+  }
+}
 
 type AuthState = {
   user: CurrentUser | null;
@@ -28,7 +39,26 @@ export function useAuth() {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
-    () => new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } }),
+    () =>
+      new QueryClient({
+        mutationCache: new MutationCache({
+          onError: (error) => {
+            // Field-level validation errors are already shown inline on the
+            // form — only toast errors the user cannot see elsewhere.
+            if (error instanceof ApiError && error.fieldErrors) return;
+            pushToast(
+              error instanceof ApiError ? error.message : "Something went wrong",
+              "error",
+            );
+          },
+          onSuccess: (data, variables, _context, mutation) => {
+            const meta = mutation.meta?.successMessage;
+            const message = typeof meta === "function" ? meta(variables, data) : meta;
+            if (message) pushToast(message, "success");
+          },
+        }),
+        defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+      }),
   );
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,6 +75,17 @@ export function Providers({ children }: { children: React.ReactNode }) {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      pushToast("Session expired — please sign in again.", "error");
+      if (window.location.pathname !== "/login") {
+        window.location.assign("/login");
+      }
+    });
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   const signOut = useCallback(async () => {
@@ -64,7 +105,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+      <AuthContext.Provider value={value}>
+        <ToastProvider>{children}</ToastProvider>
+      </AuthContext.Provider>
     </QueryClientProvider>
   );
 }
