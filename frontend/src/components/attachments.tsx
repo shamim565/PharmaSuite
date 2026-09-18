@@ -3,8 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 
-import { Badge, Button, ErrorBanner, Field, Spinner } from "@/components/ui";
-import { api, apiDownload, apiUpload } from "@/lib/api";
+import { Badge, Button, ErrorBanner, Field, Spinner, pushToast } from "@/components/ui";
+import { ApiError, api, apiDownload, apiUpload } from "@/lib/api";
 import type { AttachmentRow } from "@/lib/types";
 
 function formatSize(bytes: number): string {
@@ -34,6 +34,7 @@ export function AttachmentPanel({
   });
 
   const uploadMutation = useMutation({
+    meta: { successMessage: "File uploaded" },
     mutationFn: (file: File) =>
       apiUpload("/attachments/", file, { owner_type: ownerType, owner_id: ownerId }),
     onSuccess: () => {
@@ -82,7 +83,13 @@ export function AttachmentPanel({
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => apiDownload(`/attachments/${attachment.id}/download/`, attachment.file_name)}
+                onClick={async () => {
+                  try {
+                    await apiDownload(`/attachments/${attachment.id}/download/`, attachment.file_name);
+                  } catch (err) {
+                    pushToast(err instanceof ApiError ? err.message : "Download failed", "error");
+                  }
+                }}
               >
                 Download
               </Button>
