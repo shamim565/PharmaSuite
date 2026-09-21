@@ -1,5 +1,13 @@
-const CACHE = "mederp-v1";
-const PRECACHE = ["/", "/manifest.json", "/icon.svg"];
+const CACHE = "mederp-v2";
+const PRECACHE = [
+  "/",
+  "/manifest.json",
+  "/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-512.png",
+  "/icons/apple-touch-icon.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
