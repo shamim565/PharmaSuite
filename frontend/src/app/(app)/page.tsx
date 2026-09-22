@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { Badge, Card, CardHeader, ErrorBanner, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
+import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import type { DashboardSummary, DashboardWidgets } from "@/lib/types";
 
 function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -12,14 +13,9 @@ function KpiCard({ label, value, hint }: { label: string; value: string; hint?: 
     <Card className="p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-bold text-slate-800">{value}</p>
-      {hint ? <p className="text-xs text-slate-400">{hint}</p> : null}
+      {hint ? <p className="text-xs text-slate-500">{hint}</p> : null}
     </Card>
   );
-}
-
-function money(value: string | number | null | undefined): string {
-  if (value === null || value === undefined) return "—";
-  return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function SalesTrend({ widgets }: { widgets: DashboardWidgets }) {
@@ -37,16 +33,20 @@ function SalesTrend({ widgets }: { widgets: DashboardWidgets }) {
           {widgets.sales_trend.map((row) => (
             <div
               key={row.date}
-              title={`${row.date}: ${money(row.revenue)} (${row.invoices})`}
-              className="flex-1 rounded-t bg-emerald-500/80 hover:bg-emerald-600"
+              title={`${row.date}: ${formatMoney(row.revenue)} (${row.invoices})`}
+              className="flex-1 rounded-t bg-primary-500/80 hover:bg-primary-600"
               style={{ height: `${Math.max((Number(row.revenue) / maxRevenue) * 100, 4)}%` }}
             />
           ))}
         </div>
       )}
-      <div className="flex justify-between px-4 pb-3 text-[10px] text-slate-400">
-        <span>{widgets.sales_trend[0]?.date ?? ""}</span>
-        <span>{widgets.sales_trend[widgets.sales_trend.length - 1]?.date ?? ""}</span>
+      <div className="flex justify-between px-4 pb-3 text-xs text-slate-500">
+        <span>{widgets.sales_trend[0]?.date ? formatDate(widgets.sales_trend[0].date) : ""}</span>
+        <span>
+          {widgets.sales_trend[widgets.sales_trend.length - 1]?.date
+            ? formatDate(widgets.sales_trend[widgets.sales_trend.length - 1].date)
+            : ""}
+        </span>
       </div>
     </Card>
   );
@@ -81,7 +81,7 @@ function WidgetsSection() {
                       {row.code} · qty {row.qty}
                     </p>
                   </div>
-                  <span className="font-mono font-semibold">{money(row.revenue)}</span>
+                  <span className="font-mono font-semibold">{formatMoney(row.revenue)}</span>
                 </li>
               ))}
             </ul>
@@ -100,7 +100,7 @@ function WidgetsSection() {
                     <p className="font-medium">{row.name}</p>
                     <p className="text-xs text-slate-500">{row.invoices} invoice(s)</p>
                   </div>
-                  <span className="font-mono font-semibold">{money(row.revenue)}</span>
+                  <span className="font-mono font-semibold">{formatMoney(row.revenue)}</span>
                 </li>
               ))}
             </ul>
@@ -114,7 +114,7 @@ function WidgetsSection() {
             title="Low stock"
             subtitle="At or below reorder level"
             action={
-              <Link href="/inventory" className="text-xs font-medium text-emerald-700 hover:underline">
+              <Link href="/inventory" className="text-xs font-medium text-primary-700 hover:underline">
                 Open inventory →
               </Link>
             }
@@ -142,7 +142,7 @@ function WidgetsSection() {
           <CardHeader
             title="Near expiry (≤ 90 days)"
             action={
-              <Link href="/inventory" className="text-xs font-medium text-emerald-700 hover:underline">
+              <Link href="/inventory" className="text-xs font-medium text-primary-700 hover:underline">
                 Open inventory →
               </Link>
             }
@@ -163,7 +163,7 @@ function WidgetsSection() {
                     </p>
                   </div>
                   <Badge tone={row.days_to_expiry <= 30 ? "rose" : "amber"}>
-                    {row.expiry_date} ({row.days_to_expiry}d)
+                    {formatDate(row.expiry_date)} ({row.days_to_expiry}d)
                   </Badge>
                 </li>
               ))}
@@ -190,7 +190,7 @@ export default function DashboardPage() {
         {data ? (
           <span className="text-xs text-slate-500">
             {data.branch_scope === "ALL" ? "All branches" : "Assigned branches"} ·{" "}
-            {new Date(data.generated_at).toLocaleString()}
+            {formatDateTime(data.generated_at)}
           </span>
         ) : null}
       </div>
@@ -221,20 +221,22 @@ export default function DashboardPage() {
           <Card>
             <CardHeader title="Operations" subtitle="Live figures from the ledgers." />
             <div className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
-              {[
-                ["Sales today", data.operations.sales_today],
-                ["Collections today", data.operations.collections_today],
-                ["Customer due", data.operations.customer_due],
-                ["Supplier payable", data.operations.supplier_payable],
-                ["Cash position", data.operations.cash_position],
-                ["Stock value", data.operations.stock_value],
-                ["Low stock", data.operations.low_stock_count],
-                ["Near expiry", data.operations.near_expiry_count],
-              ].map(([label, value]) => (
-                <div key={String(label)} className="rounded-lg bg-slate-50 p-3">
+              {(
+                [
+                  ["Sales today", data.operations.sales_today, true],
+                  ["Collections today", data.operations.collections_today, true],
+                  ["Customer due", data.operations.customer_due, true],
+                  ["Supplier payable", data.operations.supplier_payable, true],
+                  ["Cash position", data.operations.cash_position, true],
+                  ["Stock value", data.operations.stock_value, true],
+                  ["Low stock", data.operations.low_stock_count, false],
+                  ["Near expiry", data.operations.near_expiry_count, false],
+                ] as Array<[string, string | number | null, boolean]>
+              ).map(([label, value, isMoney]) => (
+                <div key={label} className="rounded-lg bg-slate-50 p-3">
                   <p className="text-xs text-slate-500">{label}</p>
                   <p className="text-lg font-semibold text-slate-700">
-                    {value === null ? "—" : typeof value === "number" ? money(value) : String(value)}
+                    {isMoney ? formatMoney(value) : value === null ? "—" : String(value)}
                   </p>
                 </div>
               ))}
