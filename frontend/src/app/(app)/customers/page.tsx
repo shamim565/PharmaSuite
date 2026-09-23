@@ -3,8 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
 import { ApiError, api, apiDownload } from "@/lib/api";
+import { formatDate, formatMoney } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
 import type { Customer, CustomerLedgerResponse, Paginated } from "@/lib/types";
 
 const emptyForm = {
@@ -31,7 +33,7 @@ function LedgerPanel({ customer, onClose }: { customer: Customer; onClose: () =>
     <Card>
       <CardHeader
         title={`Ledger — ${customer.name}`}
-        subtitle={data ? `Due: ${data.balance}` : undefined}
+        subtitle={data ? `Due: ${formatMoney(data.balance)}` : undefined}
         action={
           <Button size="sm" variant="secondary" onClick={onClose}>
             Close
@@ -52,17 +54,17 @@ function LedgerPanel({ customer, onClose }: { customer: Customer; onClose: () =>
                 <div>
                   <p className="font-medium">{entry.entry_type}</p>
                   <p className="text-xs text-slate-500">
-                    {entry.business_date} · {entry.source_type}
+                    {entry.business_date ? formatDate(entry.business_date) : ""} · {entry.source_type}
                     {entry.source_number ? ` #${entry.source_number}` : ""}
-                    {entry.due_date ? ` · due ${entry.due_date}` : ""}
+                    {entry.due_date ? ` · due ${formatDate(entry.due_date)}` : ""}
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className={`font-mono font-semibold ${positive ? "text-rose-700" : "text-emerald-700"}`}>
-                    {positive ? "+" : ""}
-                    {entry.amount_delta}
+                  <span className={`font-mono font-semibold ${positive ? "text-danger-700" : "text-primary-700"}`}>
+                    {positive ? "+" : "−"}
+                    {formatMoney(Math.abs(Number(entry.amount_delta)))}
                   </span>
-                  <span className="text-xs text-slate-500">bal {entry.running_balance}</span>
+                  <span className="text-xs text-slate-500">bal {formatMoney(entry.running_balance)}</span>
                 </div>
               </li>
             );
@@ -76,15 +78,19 @@ function LedgerPanel({ customer, onClose }: { customer: Customer; onClose: () =>
 export default function CustomersPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [ledgerFor, setLedgerFor] = useState<Customer | null>(null);
   const [editing, setEditing] = useState<Customer | null>(null);
+  const debouncedSearch = useDebouncedValue(search);
+
+  const params = new URLSearchParams({ page_size: "50", page: String(page) });
+  if (debouncedSearch) params.set("search", debouncedSearch);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["customers", search],
-    queryFn: () =>
-      api.get<Paginated<Customer>>(`/customers/?page_size=50&search=${encodeURIComponent(search)}`),
+    queryKey: ["customers", debouncedSearch, page],
+    queryFn: () => api.get<Paginated<Customer>>(`/customers/?${params.toString()}`),
   });
 
   const payloadFor = (payload: typeof emptyForm) => ({
@@ -102,6 +108,7 @@ export default function CustomersPage() {
   });
 
   const createMutation = useMutation({
+    meta: { successMessage: "Customer created" },
     mutationFn: (payload: typeof emptyForm) => api.post<Customer>("/customers/", payloadFor(payload)),
     onSuccess: () => {
       setForm(emptyForm);
@@ -111,6 +118,7 @@ export default function CustomersPage() {
   });
 
   const updateMutation = useMutation({
+    meta: { successMessage: "Customer updated" },
     mutationFn: (payload: typeof emptyForm) =>
       api.patch<Customer>(`/customers/${editing?.id}/`, payloadFor(payload)),
     onSuccess: () => {
@@ -122,6 +130,7 @@ export default function CustomersPage() {
   });
 
   const statusMutation = useMutation({
+    meta: { successMessage: "Customer status updated" },
     mutationFn: ({ customer, active }: { customer: Customer; active: boolean }) =>
       api.patch(`/customers/${customer.id}/`, { is_active: active }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["customers"] }),
@@ -281,8 +290,12 @@ export default function CustomersPage() {
           action={
             <Input
               placeholder="Search name, phone, area…"
+              aria-label="Search customers"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="w-48"
             />
           }
@@ -298,33 +311,52 @@ export default function CustomersPage() {
               <li key={customer.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
                   <p className="font-medium">
-                    {customer.name} <span className="font-mono text-xs text-slate-400">{customer.code}</span>
+                    {customer.name} <span className="font-mono text-xs text-slate-500">{customer.code}</span>
                   </p>
                   <p className="text-xs text-slate-500">
                     {customer.customer_type} · {customer.price_tier} · credit {customer.credit_days}d
+                    {Number(customer.credit_limit) > 0
+                      ? ` · limit ${formatMoney(customer.credit_limit)}`
+                      : ""}
                     {customer.area ? ` · ${customer.area}` : ""}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   {customer.credit_hold ? <Badge tone="rose">Credit hold</Badge> : null}
+                  {Number(customer.credit_limit) > 0 &&
+                  Number(customer.balance_cache) > Number(customer.credit_limit) ? (
+                    <Badge tone="rose">Over limit</Badge>
+                  ) : null}
                   <span className="text-sm">
                     Due:{" "}
-                    <span className={Number(customer.balance_cache) > 0 ? "font-semibold text-rose-700" : "text-slate-500"}>
-                      {customer.balance_cache}
+                    <span className={Number(customer.balance_cache) > 0 ? "font-semibold text-danger-700" : "text-slate-500"}>
+                      {formatMoney(customer.balance_cache)}
                     </span>
                   </span>
                   {customer.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
                   <Button size="sm" variant="secondary" onClick={() => openEdit(customer)}>
                     Edit
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => statusMutation.mutate({ customer, active: !customer.is_active })}
-                    disabled={statusMutation.isPending}
-                  >
-                    {customer.is_active ? "Deactivate" : "Activate"}
-                  </Button>
+                  {customer.is_active ? (
+                    <ConfirmButton
+                      size="sm"
+                      variant="ghost"
+                      confirmLabel="Deactivate?"
+                      onConfirm={() => statusMutation.mutate({ customer, active: false })}
+                      disabled={statusMutation.isPending}
+                    >
+                      Deactivate
+                    </ConfirmButton>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => statusMutation.mutate({ customer, active: true })}
+                      disabled={statusMutation.isPending}
+                    >
+                      Activate
+                    </Button>
+                  )}
                   <Button size="sm" variant="secondary" onClick={() => setLedgerFor(customer)}>
                     Ledger
                   </Button>
@@ -340,6 +372,14 @@ export default function CustomersPage() {
             ))}
           </ul>
         )}
+        {data && data.count > 0 ? (
+          <Pagination
+            page={page}
+            hasPrevious={Boolean(data.previous)}
+            hasNext={Boolean(data.next)}
+            onChange={setPage}
+          />
+        ) : null}
       </Card>
     </div>
   );
