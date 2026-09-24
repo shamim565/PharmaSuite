@@ -8,14 +8,18 @@ import {
   Button,
   Card,
   CardHeader,
+  ConfirmButton,
   EmptyState,
   ErrorBanner,
   Field,
   Input,
+  Pagination,
   Select,
   Spinner,
 } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
+import { formatMoney } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
 import type {
   Generic,
   Manufacturer,
@@ -65,6 +69,7 @@ function ConversionsPanel({
   });
 
   const addMutation = useMutation({
+    meta: { successMessage: "Conversion added" },
     mutationFn: () =>
       api.post(`/medicines/${medicine.id}/conversions/`, { unit: unitId, factor_to_base: factor }),
     onSuccess: () => {
@@ -76,6 +81,7 @@ function ConversionsPanel({
   });
 
   const deleteMutation = useMutation({
+    meta: { successMessage: "Conversion removed" },
     mutationFn: (id: string) => api.delete(`/medicines/conversions/${id}/`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["conversions", medicine.id] }),
   });
@@ -107,14 +113,15 @@ function ConversionsPanel({
                   {conversion.is_purchase_default ? <Badge tone="blue">purchase</Badge> : null}
                   {conversion.is_sale_default ? <Badge tone="green">sale</Badge> : null}
                 </span>
-                <Button
+                <ConfirmButton
                   size="sm"
                   variant="ghost"
-                  onClick={() => deleteMutation.mutate(conversion.id)}
+                  confirmLabel="Remove?"
+                  onConfirm={() => deleteMutation.mutate(conversion.id)}
                   disabled={deleteMutation.isPending}
                 >
                   Remove
-                </Button>
+                </ConfirmButton>
               </li>
             ))}
           </ul>
@@ -161,9 +168,12 @@ function ConversionsPanel({
 export default function ItemsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [editing, setEditing] = useState<Medicine | null>(null);
   const [conversionsFor, setConversionsFor] = useState<Medicine | null>(null);
+  const debouncedSearch = useDebouncedValue(search);
 
   const genericsQuery = useQuery({
     queryKey: ["generics", "select"],
@@ -183,22 +193,26 @@ export default function ItemsPage() {
     queryFn: () => api.get<Paginated<Unit>>("/units/?page_size=200&is_active=true"),
   });
 
+  const medicineParams = new URLSearchParams({ page_size: "50", page: String(page) });
+  if (debouncedSearch) medicineParams.set("search", debouncedSearch);
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["medicines", search],
-    queryFn: () =>
-      api.get<Paginated<Medicine>>(`/medicines/?page_size=50&search=${encodeURIComponent(search)}`),
+    queryKey: ["medicines", debouncedSearch, page],
+    queryFn: () => api.get<Paginated<Medicine>>(`/medicines/?${medicineParams.toString()}`),
+  });
+
+  const payloadFor = (payload: typeof emptyForm) => ({
+    ...payload,
+    generic: payload.generic || null,
+    manufacturer: payload.manufacturer || null,
+    category: payload.category || null,
+    base_unit: payload.base_unit || null,
+    shelf_life_months: payload.shelf_life_months ? Number(payload.shelf_life_months) : null,
   });
 
   const createMutation = useMutation({
-    mutationFn: (payload: typeof emptyForm) =>
-      api.post<Medicine>("/medicines/", {
-        ...payload,
-        generic: payload.generic || null,
-        manufacturer: payload.manufacturer || null,
-        category: payload.category || null,
-        base_unit: payload.base_unit || null,
-        shelf_life_months: payload.shelf_life_months ? Number(payload.shelf_life_months) : null,
-      }),
+    meta: { successMessage: "Item created" },
+    mutationFn: (payload: typeof emptyForm) => api.post<Medicine>("/medicines/", payloadFor(payload)),
     onSuccess: () => {
       setForm(emptyForm);
       setShowForm(false);
@@ -207,7 +221,45 @@ export default function ItemsPage() {
     },
   });
 
+  const updateMutation = useMutation({
+    meta: { successMessage: "Item updated" },
+    mutationFn: (payload: typeof emptyForm) =>
+      api.patch<Medicine>(`/medicines/${editing?.id}/`, payloadFor(payload)),
+    onSuccess: () => {
+      setForm(emptyForm);
+      setEditing(null);
+      setShowForm(false);
+      queryClient.invalidateQueries({ queryKey: ["medicines"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+  });
+
+  const openEdit = (medicine: Medicine) => {
+    setEditing(medicine);
+    setForm({
+      code: medicine.code,
+      name: medicine.name,
+      generic: medicine.generic ?? "",
+      manufacturer: medicine.manufacturer ?? "",
+      category: medicine.category ?? "",
+      base_unit: medicine.base_unit ?? "",
+      strength: medicine.strength,
+      dosage_form: medicine.dosage_form,
+      barcode: medicine.barcode,
+      purchase_price: medicine.purchase_price,
+      selling_price: medicine.selling_price,
+      mrp: medicine.mrp,
+      reorder_level: medicine.reorder_level,
+      shelf_life_months: medicine.shelf_life_months ? String(medicine.shelf_life_months) : "",
+      no_batch: medicine.no_batch,
+      rx_required: medicine.rx_required,
+      cold_chain: medicine.cold_chain,
+    });
+    setShowForm(true);
+  };
+
   const toggleMutation = useMutation({
+    meta: { successMessage: "Item status updated" },
     mutationFn: (medicine: Medicine) =>
       api.patch<Medicine>(`/medicines/${medicine.id}/`, { is_active: !medicine.is_active }),
     onSuccess: () => {
@@ -218,11 +270,15 @@ export default function ItemsPage() {
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    createMutation.mutate(form);
+    if (editing) {
+      updateMutation.mutate(form);
+    } else {
+      createMutation.mutate(form);
+    }
   };
 
   const fieldError = (name: string): string | null => {
-    const err = createMutation.error;
+    const err = updateMutation.error ?? createMutation.error;
     if (err instanceof ApiError && err.fieldErrors?.[name]) return err.fieldErrors[name][0];
     return null;
   };
@@ -239,7 +295,20 @@ export default function ItemsPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold text-slate-800">Items</h1>
-        <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+        <Button
+          size="sm"
+          onClick={() => {
+            if (showForm) {
+              setShowForm(false);
+              setEditing(null);
+              setForm(emptyForm);
+            } else {
+              setEditing(null);
+              setForm(emptyForm);
+              setShowForm(true);
+            }
+          }}
+        >
           {showForm ? "Close" : "Add item"}
         </Button>
       </div>
@@ -254,7 +323,10 @@ export default function ItemsPage() {
 
       {showForm ? (
         <Card>
-          <CardHeader title="New item" subtitle="Catalog masters keep generics, manufacturers and units consistent." />
+          <CardHeader
+            title={editing ? `Edit ${editing.name}` : "New item"}
+            subtitle="Catalog masters keep generics, manufacturers and units consistent."
+          />
           <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
             <div className="col-span-2 lg:col-span-4">
               <ErrorBanner error={createMutation.error} />
@@ -397,8 +469,12 @@ export default function ItemsPage() {
               </label>
             </div>
             <div className="col-span-2 lg:col-span-4">
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Saving…" : "Save item"}
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                {createMutation.isPending || updateMutation.isPending
+                  ? "Saving…"
+                  : editing
+                    ? "Save changes"
+                    : "Save item"}
               </Button>
             </div>
           </form>
@@ -412,8 +488,12 @@ export default function ItemsPage() {
           action={
             <Input
               placeholder="Search name, generic, code, barcode…"
+              aria-label="Search items"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="w-56"
             />
           }
@@ -447,24 +527,39 @@ export default function ItemsPage() {
                       <td className="px-4 py-2 font-medium">{medicine.name}</td>
                       <td className="px-4 py-2 text-slate-500">{medicine.generic_name || "—"}</td>
                       <td className="px-4 py-2">{medicine.base_unit_name || "—"}</td>
-                      <td className="px-4 py-2 text-right">{medicine.purchase_price}</td>
-                      <td className="px-4 py-2 text-right">{medicine.selling_price}</td>
+                      <td className="px-4 py-2 text-right">{formatMoney(medicine.purchase_price)}</td>
+                      <td className="px-4 py-2 text-right">{formatMoney(medicine.selling_price)}</td>
                       <td className="space-x-1 px-4 py-2">{flags(medicine)}</td>
                       <td className="px-4 py-2">
                         {medicine.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
                       </td>
                       <td className="space-x-1 px-4 py-2 text-right">
+                        <Button size="sm" variant="secondary" onClick={() => openEdit(medicine)}>
+                          Edit
+                        </Button>
                         <Button size="sm" variant="ghost" onClick={() => setConversionsFor(medicine)}>
                           Units
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => toggleMutation.mutate(medicine)}
-                          disabled={toggleMutation.isPending}
-                        >
-                          {medicine.is_active ? "Deactivate" : "Activate"}
-                        </Button>
+                        {medicine.is_active ? (
+                          <ConfirmButton
+                            size="sm"
+                            variant="secondary"
+                            confirmLabel="Deactivate?"
+                            onConfirm={() => toggleMutation.mutate(medicine)}
+                            disabled={toggleMutation.isPending}
+                          >
+                            Deactivate
+                          </ConfirmButton>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => toggleMutation.mutate(medicine)}
+                            disabled={toggleMutation.isPending}
+                          >
+                            Activate
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -484,25 +579,48 @@ export default function ItemsPage() {
                     {medicine.base_unit_name || "no unit"}
                   </p>
                   <p className="text-sm">
-                    Purchase {medicine.purchase_price} · Selling {medicine.selling_price}
+                    Purchase {formatMoney(medicine.purchase_price)} · Selling {formatMoney(medicine.selling_price)}
                   </p>
                   <div className="flex flex-wrap gap-1">{flags(medicine)}</div>
                   <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => openEdit(medicine)}>
+                      Edit
+                    </Button>
                     <Button size="sm" variant="ghost" onClick={() => setConversionsFor(medicine)}>
                       Units
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => toggleMutation.mutate(medicine)}
-                      disabled={toggleMutation.isPending}
-                    >
-                      {medicine.is_active ? "Deactivate" : "Activate"}
-                    </Button>
+                    {medicine.is_active ? (
+                      <ConfirmButton
+                        size="sm"
+                        variant="secondary"
+                        confirmLabel="Deactivate?"
+                        onConfirm={() => toggleMutation.mutate(medicine)}
+                        disabled={toggleMutation.isPending}
+                      >
+                        Deactivate
+                      </ConfirmButton>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => toggleMutation.mutate(medicine)}
+                        disabled={toggleMutation.isPending}
+                      >
+                        Activate
+                      </Button>
+                    )}
                   </div>
                 </li>
               ))}
             </ul>
+            {data && data.count > 0 ? (
+              <Pagination
+                page={page}
+                hasPrevious={Boolean(data.previous)}
+                hasNext={Boolean(data.next)}
+                onChange={setPage}
+              />
+            ) : null}
           </>
         )}
       </Card>

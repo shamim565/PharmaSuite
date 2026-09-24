@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Select, Spinner, Tabs } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import type { Paginated } from "@/lib/types";
 
@@ -19,6 +19,7 @@ type SelectField = { name: string; label: string; options: { value: string; labe
 
 function MasterSection({
   title,
+  singular,
   subtitle,
   endpoint,
   queryKey,
@@ -26,6 +27,7 @@ function MasterSection({
   selectField,
 }: {
   title: string;
+  singular: string;
   subtitle: string;
   endpoint: string;
   queryKey: string;
@@ -43,6 +45,7 @@ function MasterSection({
   });
 
   const createMutation = useMutation({
+    meta: { successMessage: `${singular} added` },
     mutationFn: () =>
       api.post(endpoint, {
         ...form,
@@ -56,6 +59,7 @@ function MasterSection({
   });
 
   const toggleMutation = useMutation({
+    meta: { successMessage: `${singular} status updated` },
     mutationFn: (row: MasterRow) => api.patch(`${endpoint}/${row.id}/`, { is_active: !row.is_active }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [queryKey] });
@@ -107,7 +111,7 @@ function MasterSection({
         ) : null}
         <div className="col-span-2 flex items-end lg:col-span-4">
           <Button type="submit" size="sm" disabled={createMutation.isPending}>
-            {createMutation.isPending ? "Saving…" : `Add ${title.slice(0, -1).toLowerCase()}`}
+            {createMutation.isPending ? "Saving…" : `Add ${singular.toLowerCase()}`}
           </Button>
         </div>
       </form>
@@ -140,14 +144,26 @@ function MasterSection({
               </div>
               <div className="flex items-center gap-2">
                 {row.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => toggleMutation.mutate(row)}
-                  disabled={toggleMutation.isPending}
-                >
-                  {row.is_active ? "Deactivate" : "Activate"}
-                </Button>
+                {row.is_active ? (
+                  <ConfirmButton
+                    size="sm"
+                    variant="secondary"
+                    confirmLabel="Deactivate?"
+                    onConfirm={() => toggleMutation.mutate(row)}
+                    disabled={toggleMutation.isPending}
+                  >
+                    Deactivate
+                  </ConfirmButton>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => toggleMutation.mutate(row)}
+                    disabled={toggleMutation.isPending}
+                  >
+                    Activate
+                  </Button>
+                )}
               </div>
             </li>
           ))}
@@ -167,23 +183,12 @@ export default function CatalogPage() {
     <div className="space-y-4">
       <h1 className="text-lg font-semibold text-slate-800">Catalog masters</h1>
 
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((item) => (
-          <button
-            key={item}
-            onClick={() => setTab(item)}
-            className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-              tab === item ? "bg-emerald-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
       {tab === "Generics" ? (
         <MasterSection
           title="Generics"
+          singular="Generic"
           subtitle="Active pharmaceutical ingredient groups."
           endpoint="/generics/"
           queryKey="generics"
@@ -197,6 +202,7 @@ export default function CatalogPage() {
       {tab === "Manufacturers" ? (
         <MasterSection
           title="Manufacturers"
+          singular="Manufacturer"
           subtitle="Companies supplying or producing medicines."
           endpoint="/manufacturers/"
           queryKey="manufacturers"
@@ -210,6 +216,7 @@ export default function CatalogPage() {
       {tab === "Categories" ? (
         <MasterSection
           title="Categories"
+          singular="Category"
           subtitle="Therapeutic or commercial groupings."
           endpoint="/medicine-categories/"
           queryKey="categories"
@@ -223,6 +230,7 @@ export default function CatalogPage() {
       {tab === "Units" ? (
         <MasterSection
           title="Units"
+          singular="Unit"
           subtitle="Base and pack units used by stock movements."
           endpoint="/units/"
           queryKey="units"

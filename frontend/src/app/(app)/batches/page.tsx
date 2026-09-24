@@ -3,9 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import { MedicineCombobox } from "@/components/medicine-combobox";
 import { ApiError, api } from "@/lib/api";
-import type { BatchStatus, Branch, Medicine, MedicineBatch, Paginated } from "@/lib/types";
+import { formatDate, formatMoney, formatQty } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
+import type { BatchStatus, Branch, MedicineBatch, Paginated } from "@/lib/types";
 
 const emptyForm = {
   branch: "",
@@ -36,11 +39,11 @@ function statusTone(status: BatchStatus): "green" | "slate" | "rose" | "amber" |
 }
 
 function ExpiryCell({ batch }: { batch: MedicineBatch }) {
-  if (!batch.expiry_date) return <span className="text-slate-400">—</span>;
+  if (!batch.expiry_date) return <span className="text-slate-500">—</span>;
   const days = batch.days_to_expiry ?? 0;
   return (
     <span className={days < 90 ? "font-medium text-amber-700" : ""}>
-      {batch.expiry_date}
+      {formatDate(batch.expiry_date)}
       {days < 0 ? " (expired)" : ` (${days}d)`}
     </span>
   );
@@ -50,29 +53,27 @@ export default function BatchesPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
-  const [medicineFilter, setMedicineFilter] = useState("");
   const [form, setForm] = useState(emptyForm);
+  const debouncedSearch = useDebouncedValue(search);
 
   const branchesQuery = useQuery({
     queryKey: ["branches", "select"],
     queryFn: () => api.get<Paginated<Branch>>("/branches/?page_size=200&status=ACTIVE"),
   });
-  const medicinesQuery = useQuery({
-    queryKey: ["medicines", "select"],
-    queryFn: () => api.get<Paginated<Medicine>>("/medicines/?page_size=200&is_active=true"),
-  });
 
-  const params = new URLSearchParams({ page_size: "50" });
-  if (search) params.set("search", search);
+  const params = new URLSearchParams({ page_size: "50", page: String(page) });
+  if (debouncedSearch) params.set("search", debouncedSearch);
   if (status) params.set("status", status);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["batches", search, status],
+    queryKey: ["batches", debouncedSearch, status, page],
     queryFn: () => api.get<Paginated<MedicineBatch>>(`/batches/?${params.toString()}`),
   });
 
   const createMutation = useMutation({
+    meta: { successMessage: "Batch created" },
     mutationFn: (payload: typeof emptyForm) =>
       api.post<MedicineBatch>("/batches/", {
         ...payload,
@@ -98,15 +99,6 @@ export default function BatchesPage() {
     return null;
   };
 
-  const filteredMedicines = (medicinesQuery.data?.results ?? []).filter((medicine) => {
-    if (!medicineFilter) return true;
-    const needle = medicineFilter.toLowerCase();
-    return (
-      medicine.name.toLowerCase().includes(needle) ||
-      medicine.code.toLowerCase().includes(needle)
-    );
-  });
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -118,7 +110,7 @@ export default function BatchesPage() {
 
       {showForm ? (
         <Card>
-          <CardHeader title="New batch" subtitle="Opening stock until the inventory ledger sprint takes over movements." />
+          <CardHeader title="New batch" subtitle="Opening quantity posts to the inventory ledger." />
           <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
             <div className="col-span-2 lg:col-span-4">
               <ErrorBanner error={createMutation.error} />
@@ -133,28 +125,12 @@ export default function BatchesPage() {
                 ))}
               </Select>
             </Field>
-            <div className="space-y-1">
-              <span className="text-xs font-medium text-slate-600">Medicine filter</span>
-              <Input
-                placeholder="Type to narrow list…"
-                value={medicineFilter}
-                onChange={(e) => setMedicineFilter(e.target.value)}
-              />
-            </div>
             <div className="col-span-2">
               <Field label="Medicine" error={fieldError("medicine")}>
-                <Select
+                <MedicineCombobox
                   value={form.medicine}
-                  onChange={(e) => setForm({ ...form, medicine: e.target.value })}
-                  required
-                >
-                  <option value="">Select…</option>
-                  {filteredMedicines.map((medicine) => (
-                    <option key={medicine.id} value={medicine.id}>
-                      {medicine.name} ({medicine.code})
-                    </option>
-                  ))}
-                </Select>
+                  onChange={(id) => setForm((current) => ({ ...current, medicine: id }))}
+                />
               </Field>
             </div>
             <Field label="Batch number" error={fieldError("batch_number")}>
@@ -228,11 +204,22 @@ export default function BatchesPage() {
             <div className="flex gap-2">
               <Input
                 placeholder="Search batch / medicine…"
+                aria-label="Search batches"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
                 className="w-44"
               />
-              <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-36">
+              <Select
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value);
+                  setPage(1);
+                }}
+                className="w-36"
+              >
                 <option value="">All statuses</option>
                 <option value="ACTIVE">Active</option>
                 <option value="EXPIRED">Expired</option>
@@ -270,15 +257,15 @@ export default function BatchesPage() {
                     <tr key={batch.id}>
                       <td className="px-4 py-2">
                         <span className="font-medium">{batch.medicine_name}</span>{" "}
-                        <span className="font-mono text-xs text-slate-400">{batch.medicine_code}</span>
+                        <span className="font-mono text-xs text-slate-500">{batch.medicine_code}</span>
                       </td>
                       <td className="px-4 py-2 font-mono text-xs">{batch.batch_number}</td>
                       <td className="px-4 py-2">
                         <ExpiryCell batch={batch} />
                       </td>
-                      <td className="px-4 py-2 text-right">{batch.qty_on_hand}</td>
-                      <td className="px-4 py-2 text-right text-slate-500">{batch.qty_received_total}</td>
-                      <td className="px-4 py-2 text-right">{batch.unit_cost}</td>
+                      <td className="px-4 py-2 text-right">{formatQty(batch.qty_on_hand)}</td>
+                      <td className="px-4 py-2 text-right text-slate-500">{formatQty(batch.qty_received_total)}</td>
+                      <td className="px-4 py-2 text-right">{formatMoney(batch.unit_cost)}</td>
                       <td className="px-4 py-2 text-slate-500">{batch.branch_name}</td>
                       <td className="px-4 py-2">
                         <Badge tone={statusTone(batch.status)}>{batch.status}</Badge>
@@ -303,12 +290,21 @@ export default function BatchesPage() {
                     Expiry: <ExpiryCell batch={batch} />
                   </p>
                   <p className="text-sm">
-                    On hand {batch.qty_on_hand} / received {batch.qty_received_total} @ {batch.unit_cost}
+                    On hand {formatQty(batch.qty_on_hand)} / received {formatQty(batch.qty_received_total)} @{" "}
+                    {formatMoney(batch.unit_cost)}
                   </p>
-                  <p className="text-xs text-slate-400">{batch.branch_name}</p>
+                  <p className="text-xs text-slate-500">{batch.branch_name}</p>
                 </li>
               ))}
             </ul>
+            {data && data.count > 0 ? (
+              <Pagination
+                page={page}
+                hasPrevious={Boolean(data.previous)}
+                hasNext={Boolean(data.next)}
+                onChange={setPage}
+              />
+            ) : null}
           </>
         )}
       </Card>
