@@ -3,8 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { useAuth } from "@/app/providers";
+import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
+import { formatDate } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
 import type {
   DoctorChamber,
   Branch,
@@ -29,8 +32,18 @@ const emptyForm = {
   territory: "",
 };
 
+const VISIT_STATUS_LABEL: Record<string, string> = {
+  PLANNED: "Planned",
+  COMPLETED: "Completed",
+  MISSED: "Missed",
+  CANCELLED: "Cancelled",
+};
+
 function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { user, hasPerm } = useAuth();
+  const canManageDoctors = hasPerm("DOCTOR_MANAGE");
+  const canManageVisits = hasPerm("VISIT_MANAGE");
   const [mappingMedicine, setMappingMedicine] = useState("");
   const [mappingPriority, setMappingPriority] = useState("HIGH");
   const [visitRep, setVisitRep] = useState("");
@@ -38,6 +51,13 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
   const [visitOutcome, setVisitOutcome] = useState("INTERESTED");
   const [visitNotes, setVisitNotes] = useState("");
   const [visitNext, setVisitNext] = useState("");
+  const [planDate, setPlanDate] = useState("");
+  const [logTarget, setLogTarget] = useState("");
+  const [visitActionFor, setVisitActionFor] = useState<{
+    visit: DoctorVisit;
+    kind: "miss" | "cancel" | "reverse";
+  } | null>(null);
+  const [visitReason, setVisitReason] = useState("");
   const [sampleMedicine, setSampleMedicine] = useState("");
   const [sampleBatch, setSampleBatch] = useState("");
   const [sampleQty, setSampleQty] = useState("");
@@ -58,10 +78,19 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
     queryKey: ["reps", "medical"],
     queryFn: () => api.get<Paginated<Representative>>("/representatives/?page_size=100&is_active=true&rep_type=MEDICAL"),
   });
+  const branchesQuery = useQuery({
+    queryKey: ["branches", "visit-fallback"],
+    queryFn: () => api.get<Paginated<Branch>>("/branches/?page_size=1&status=ACTIVE"),
+    enabled: !user?.default_branch_id,
+  });
+  const visitBranchId = user?.default_branch_id ?? branchesQuery.data?.results[0]?.id ?? "";
   const batchesQuery = useQuery({
-    queryKey: ["batches", "sample", sampleMedicine],
-    queryFn: () => api.get<Paginated<MedicineBatch>>(`/batches/?page_size=100&medicine=${sampleMedicine}`),
-    enabled: Boolean(sampleMedicine),
+    queryKey: ["batches", "sample", sampleMedicine, visitBranchId],
+    queryFn: () =>
+      api.get<Paginated<MedicineBatch>>(
+        `/batches/?page_size=100&medicine=${sampleMedicine}&branch=${visitBranchId}`,
+      ),
+    enabled: Boolean(sampleMedicine && visitBranchId),
   });
 
   const [chamberForm, setChamberForm] = useState({ name: "", address: "", visiting_hours: "" });
@@ -72,6 +101,7 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
   });
 
   const chamberMutation = useMutation({
+    meta: { successMessage: "Chamber added" },
     mutationFn: () => api.post(`/doctors/${doctor.id}/chambers/`, chamberForm),
     onSuccess: () => {
       setChamberForm({ name: "", address: "", visiting_hours: "" });
@@ -80,6 +110,7 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
   });
 
   const deleteChamberMutation = useMutation({
+    meta: { successMessage: "Chamber removed" },
     mutationFn: (chamber: DoctorChamber) => api.delete(`/doctors/${doctor.id}/chambers/${chamber.id}/`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["doctor-chambers", doctor.id] }),
   });
@@ -93,6 +124,7 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
   };
 
   const mappingMutation = useMutation({
+    meta: { successMessage: "Mapping added" },
     mutationFn: () => api.post(`/doctors/${doctor.id}/medicines/`, { medicine: mappingMedicine, priority: mappingPriority }),
     onSuccess: () => {
       setMappingMedicine("");
@@ -100,39 +132,103 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
     },
   });
   const endMappingMutation = useMutation({
+    meta: { successMessage: "Mapping ended" },
     mutationFn: (mapping: DoctorMedicine) => api.post(`/doctor-medicines/${mapping.id}/end/`),
     onSuccess: () => invalidate(),
   });
 
-  const visitMutation = useMutation({
-    mutationFn: async () => {
-      const now = new Date();
-      const isoDate = now.toISOString().slice(0, 10);
-      const created = await api.post<DoctorVisit>("/doctor-visits/", {
+  const resetLogForm = () => {
+    setLogTarget("");
+    setVisitPurpose("");
+    setVisitNotes("");
+    setVisitNext("");
+    setSampleMedicine("");
+    setSampleBatch("");
+    setSampleQty("");
+  };
+
+  const planMutation = useMutation({
+    meta: { successMessage: "Visit planned" },
+    mutationFn: () =>
+      api.post<DoctorVisit>("/doctor-visits/", {
         doctor: doctor.id,
         representative: visitRep,
-        branch: (await api.get<Paginated<Branch>>("/branches/?page_size=1")).results[0]?.id,
-        planned_date: isoDate,
+        branch: visitBranchId,
+        planned_date: planDate,
         purpose: visitPurpose,
-      });
+      }),
+    onSuccess: () => {
+      setVisitRep("");
+      setVisitPurpose("");
+      setPlanDate("");
+      invalidate();
+    },
+  });
+
+  const logMutation = useMutation({
+    meta: { successMessage: "Visit completed" },
+    mutationFn: async () => {
+      let visitId = logTarget;
+      if (!visitId) {
+        const today = new Date();
+        const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        const created = await api.post<DoctorVisit>("/doctor-visits/", {
+          doctor: doctor.id,
+          representative: visitRep,
+          branch: visitBranchId,
+          planned_date: todayIso,
+          purpose: visitPurpose,
+        });
+        visitId = created.id;
+      }
       const payload: Record<string, unknown> = {
         outcome: visitOutcome,
-        products_discussed: mappingsQuery.data?.map((m) => m.medicine) ?? [],
+        products_discussed: mappingsQuery.data?.map((mapping) => mapping.medicine) ?? [],
         notes: visitNotes,
         next_visit_date: visitNext || null,
       };
       if (sampleMedicine && sampleBatch && sampleQty) {
         payload.samples = [{ medicine: sampleMedicine, batch: sampleBatch, qty: sampleQty }];
       }
-      return api.post(`/doctor-visits/${created.id}/complete/`, payload);
+      return api.post(`/doctor-visits/${visitId}/complete/`, payload);
     },
     onSuccess: () => {
-      setVisitPurpose("");
-      setVisitNotes("");
-      setVisitNext("");
-      setSampleMedicine("");
-      setSampleBatch("");
-      setSampleQty("");
+      resetLogForm();
+      invalidate();
+    },
+  });
+
+  const missMutation = useMutation({
+    meta: { successMessage: "Visit marked missed" },
+    mutationFn: () =>
+      api.post(`/doctor-visits/${visitActionFor?.visit.id}/miss/`, { reason: visitReason }),
+    onSuccess: () => {
+      setVisitActionFor(null);
+      setVisitReason("");
+      invalidate();
+    },
+  });
+
+  const cancelMutation = useMutation({
+    meta: { successMessage: "Visit cancelled" },
+    mutationFn: () =>
+      api.post(`/doctor-visits/${visitActionFor?.visit.id}/cancel/`, { reason: visitReason }),
+    onSuccess: () => {
+      setVisitActionFor(null);
+      setVisitReason("");
+      invalidate();
+    },
+  });
+
+  const reverseSamplesMutation = useMutation({
+    meta: { successMessage: "Samples reversed" },
+    mutationFn: () =>
+      api.post(`/doctor-visits/${visitActionFor?.visit.id}/reverse-samples/`, {
+        reason: visitReason,
+      }),
+    onSuccess: () => {
+      setVisitActionFor(null);
+      setVisitReason("");
       invalidate();
     },
   });
@@ -163,42 +259,51 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
                   <div>
                     <p className="font-medium">{mapping.medicine_name}</p>
                     <p className="text-xs text-slate-500">
-                      {mapping.medicine_code} · {mapping.priority || "—"} · since {mapping.effective_from}
+                      {mapping.medicine_code} · {mapping.priority || "—"} · since {formatDate(mapping.effective_from)}
                     </p>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => endMappingMutation.mutate(mapping)}>
-                    End
-                  </Button>
+                  {canManageDoctors ? (
+                    <ConfirmButton
+                      size="sm"
+                      variant="ghost"
+                      confirmLabel="End mapping?"
+                      onConfirm={() => endMappingMutation.mutate(mapping)}
+                    >
+                      End
+                    </ConfirmButton>
+                  ) : null}
                 </li>
               ))}
             </ul>
           )}
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="w-48">
-              <Field label="Medicine">
-                <Select value={mappingMedicine} onChange={(e) => setMappingMedicine(e.target.value)}>
-                  <option value="">Select…</option>
-                  {medicinesQuery.data?.results.map((medicine) => (
-                    <option key={medicine.id} value={medicine.id}>
-                      {medicine.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
+          {canManageDoctors ? (
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-48">
+                <Field label="Medicine">
+                  <Select value={mappingMedicine} onChange={(e) => setMappingMedicine(e.target.value)}>
+                    <option value="">Select…</option>
+                    {medicinesQuery.data?.results.map((medicine) => (
+                      <option key={medicine.id} value={medicine.id}>
+                        {medicine.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+              <div className="w-32">
+                <Field label="Priority">
+                  <Select value={mappingPriority} onChange={(e) => setMappingPriority(e.target.value)}>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                  </Select>
+                </Field>
+              </div>
+              <Button size="sm" onClick={() => mappingMutation.mutate()} disabled={!mappingMedicine || mappingMutation.isPending}>
+                Add mapping
+              </Button>
             </div>
-            <div className="w-32">
-              <Field label="Priority">
-                <Select value={mappingPriority} onChange={(e) => setMappingPriority(e.target.value)}>
-                  <option value="HIGH">High</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="LOW">Low</option>
-                </Select>
-              </Field>
-            </div>
-            <Button size="sm" onClick={() => mappingMutation.mutate()} disabled={!mappingMedicine || mappingMutation.isPending}>
-              Add mapping
-            </Button>
-          </div>
+          ) : null}
         </div>
 
         <div className="space-y-3">
@@ -219,37 +324,94 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
                       {chamber.visiting_hours ? ` · ${chamber.visiting_hours}` : ""}
                     </p>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => deleteChamberMutation.mutate(chamber)}>
-                    Remove
-                  </Button>
+                  {canManageDoctors ? (
+                    <ConfirmButton
+                      size="sm"
+                      variant="ghost"
+                      confirmLabel="Remove?"
+                      onConfirm={() => deleteChamberMutation.mutate(chamber)}
+                    >
+                      Remove
+                    </ConfirmButton>
+                  ) : null}
                 </li>
               ))}
             </ul>
           )}
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="w-40">
-              <Field label="Chamber name">
-                <Input value={chamberForm.name} onChange={(e) => setChamberForm({ ...chamberForm, name: e.target.value })} />
-              </Field>
+          {canManageDoctors ? (
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-40">
+                <Field label="Chamber name">
+                  <Input value={chamberForm.name} onChange={(e) => setChamberForm({ ...chamberForm, name: e.target.value })} />
+                </Field>
+              </div>
+              <div className="w-48">
+                <Field label="Address">
+                  <Input value={chamberForm.address} onChange={(e) => setChamberForm({ ...chamberForm, address: e.target.value })} />
+                </Field>
+              </div>
+              <div className="w-36">
+                <Field label="Visiting hours">
+                  <Input value={chamberForm.visiting_hours} onChange={(e) => setChamberForm({ ...chamberForm, visiting_hours: e.target.value })} />
+                </Field>
+              </div>
+              <Button size="sm" onClick={() => chamberMutation.mutate()} disabled={!chamberForm.name || chamberMutation.isPending}>
+                Add chamber
+              </Button>
             </div>
-            <div className="w-48">
-              <Field label="Address">
-                <Input value={chamberForm.address} onChange={(e) => setChamberForm({ ...chamberForm, address: e.target.value })} />
-              </Field>
-            </div>
-            <div className="w-36">
-              <Field label="Visiting hours">
-                <Input value={chamberForm.visiting_hours} onChange={(e) => setChamberForm({ ...chamberForm, visiting_hours: e.target.value })} />
-              </Field>
-            </div>
-            <Button size="sm" onClick={() => chamberMutation.mutate()} disabled={!chamberForm.name || chamberMutation.isPending}>
-              Add chamber
-            </Button>
-          </div>
+          ) : null}
         </div>
 
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase text-slate-500">Visit history</p>
+          <ErrorBanner
+            error={missMutation.error ?? cancelMutation.error ?? reverseSamplesMutation.error}
+          />
+          {visitActionFor ? (
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-medium text-amber-800">
+                {visitActionFor.kind === "miss"
+                  ? "Mark visit missed"
+                  : visitActionFor.kind === "cancel"
+                    ? "Cancel visit"
+                    : "Reverse issued samples"}{" "}
+                — {visitActionFor.visit.representative_name} (
+                {visitActionFor.visit.planned_date ? formatDate(visitActionFor.visit.planned_date) : "no date"})
+              </p>
+              <Input
+                placeholder="Reason"
+                aria-label="Reason"
+                value={visitReason}
+                onChange={(event) => setVisitReason(event.target.value)}
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={
+                    !visitReason ||
+                    missMutation.isPending ||
+                    cancelMutation.isPending ||
+                    reverseSamplesMutation.isPending
+                  }
+                  onClick={() => {
+                    if (visitActionFor.kind === "miss") missMutation.mutate();
+                    else if (visitActionFor.kind === "cancel") cancelMutation.mutate();
+                    else reverseSamplesMutation.mutate();
+                  }}
+                >
+                  {visitActionFor.kind === "miss"
+                    ? "Mark missed"
+                    : visitActionFor.kind === "cancel"
+                      ? "Cancel visit"
+                      : "Reverse samples"}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setVisitActionFor(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {visitsQuery.isLoading ? (
             <Spinner />
           ) : !visitsQuery.data || visitsQuery.data.results.length === 0 ? (
@@ -260,18 +422,85 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
                 <li key={visit.id} className="px-3 py-2 text-sm">
                   <div className="flex items-center justify-between">
                     <p className="font-medium">{visit.representative_name}</p>
-                    <Badge tone={visit.status === "COMPLETED" ? "green" : visit.status === "MISSED" ? "rose" : "amber"}>
-                      {visit.status}
+                    <Badge
+                      tone={
+                        visit.status === "COMPLETED"
+                          ? "green"
+                          : visit.status === "MISSED"
+                            ? "rose"
+                            : visit.status === "CANCELLED"
+                              ? "slate"
+                              : "amber"
+                      }
+                    >
+                      {VISIT_STATUS_LABEL[visit.status] ?? visit.status}
                     </Badge>
                   </div>
                   <p className="text-xs text-slate-500">
-                    {visit.visited_at?.slice(0, 10) ?? visit.planned_date} · {visit.outcome || visit.missed_reason || "—"}
-                    {visit.next_visit_date ? ` · next ${visit.next_visit_date}` : ""}
+                    {formatDate(visit.visited_at ?? visit.planned_date)} ·{" "}
+                    {visit.outcome || visit.missed_reason || visit.cancel_reason || "—"}
+                    {visit.next_visit_date ? ` · next ${formatDate(visit.next_visit_date)}` : ""}
                   </p>
                   {visit.samples.length > 0 ? (
-                    <p className="text-xs text-emerald-700">
-                      Samples: {visit.samples.map((sample) => `${sample.medicine_name} ×${sample.qty}`).join(", ")}
+                    <p className="text-xs text-primary-700">
+                      Samples:{" "}
+                      {visit.samples
+                        .map(
+                          (sample) =>
+                            `${sample.medicine_name} ×${sample.qty}${sample.reversed ? " (reversed)" : ""}`,
+                        )
+                        .join(", ")}
                     </p>
+                  ) : null}
+                  {canManageVisits &&
+                  visit.status === "COMPLETED" &&
+                  visit.samples.some((sample) => !sample.reversed) ? (
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setVisitActionFor({ visit, kind: "reverse" });
+                          setVisitReason("");
+                        }}
+                      >
+                        Reverse samples
+                      </Button>
+                    </div>
+                  ) : null}
+                  {canManageVisits && visit.status === "PLANNED" ? (
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setLogTarget(visit.id);
+                          setVisitRep(visit.representative);
+                        }}
+                      >
+                        Log visit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setVisitActionFor({ visit, kind: "miss" });
+                          setVisitReason("");
+                        }}
+                      >
+                        Mark missed
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setVisitActionFor({ visit, kind: "cancel" });
+                          setVisitReason("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
                   ) : null}
                 </li>
               ))}
@@ -279,78 +508,153 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
           )}
         </div>
 
-        <div className="space-y-3 rounded-lg border border-slate-200 p-3 lg:col-span-2">
-          <p className="text-xs font-semibold uppercase text-slate-500">Log a completed visit</p>
-          <ErrorBanner error={visitMutation.error} />
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Field label="Representative (MR)">
-              <Select value={visitRep} onChange={(e) => setVisitRep(e.target.value)}>
-                <option value="">Select…</option>
-                {repsQuery.data?.results.map((rep) => (
-                  <option key={rep.id} value={rep.id}>
-                    {rep.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Purpose">
-              <Input value={visitPurpose} onChange={(e) => setVisitPurpose(e.target.value)} />
-            </Field>
-            <Field label="Outcome">
-              <Select value={visitOutcome} onChange={(e) => setVisitOutcome(e.target.value)}>
-                <option value="INTERESTED">Interested</option>
-                <option value="NEUTRAL">Neutral</option>
-                <option value="NOT_INTERESTED">Not interested</option>
-                <option value="PRESCRIBING">Prescribing</option>
-              </Select>
-            </Field>
-            <Field label="Next visit">
-              <Input type="date" value={visitNext} onChange={(e) => setVisitNext(e.target.value)} />
-            </Field>
-            <div className="col-span-2">
-              <Field label="Notes">
-                <Input value={visitNotes} onChange={(e) => setVisitNotes(e.target.value)} />
-              </Field>
+        {canManageVisits ? (
+          <div className="grid gap-4 lg:col-span-2 lg:grid-cols-2">
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+              <p className="text-xs font-semibold uppercase text-slate-500">Plan a visit</p>
+              <ErrorBanner error={planMutation.error} />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Representative (MR)">
+                  <Select value={visitRep} onChange={(e) => setVisitRep(e.target.value)}>
+                    <option value="">Select…</option>
+                    {repsQuery.data?.results.map((rep) => (
+                      <option key={rep.id} value={rep.id}>
+                        {rep.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Planned date">
+                  <Input type="date" value={planDate} onChange={(e) => setPlanDate(e.target.value)} />
+                </Field>
+                <div className="col-span-2">
+                  <Field label="Purpose">
+                    <Input value={visitPurpose} onChange={(e) => setVisitPurpose(e.target.value)} />
+                  </Field>
+                </div>
+                <div className="col-span-2">
+                  <Button
+                    onClick={() => planMutation.mutate()}
+                    disabled={planMutation.isPending || !visitRep || !planDate || !visitBranchId}
+                  >
+                    {planMutation.isPending ? "Saving…" : "Plan visit"}
+                  </Button>
+                </div>
+              </div>
             </div>
-            <Field label="Sample medicine">
-              <Select
-                value={sampleMedicine}
-                onChange={(e) => {
-                  setSampleMedicine(e.target.value);
-                  setSampleBatch("");
-                }}
-              >
-                <option value="">—</option>
-                {mappingsQuery.data?.map((mapping) => (
-                  <option key={mapping.id} value={mapping.medicine}>
-                    {mapping.medicine_name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Sample batch (promo stock)">
-              <Select value={sampleBatch} onChange={(e) => setSampleBatch(e.target.value)} disabled={!sampleMedicine}>
-                <option value="">—</option>
-                {batchesQuery.data?.results.map((batch) => (
-                  <option key={batch.id} value={batch.id}>
-                    {batch.batch_number} · promo via balance
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Sample qty">
-              <Input type="number" step="1" min="1" value={sampleQty} onChange={(e) => setSampleQty(e.target.value)} />
-            </Field>
-            <div className="col-span-2 flex items-end lg:col-span-4">
-              <Button
-                onClick={() => visitMutation.mutate()}
-                disabled={visitMutation.isPending || !visitRep}
-              >
-                {visitMutation.isPending ? "Saving…" : "Log visit"}
-              </Button>
+
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+              <p className="text-xs font-semibold uppercase text-slate-500">Log a completed visit</p>
+              <ErrorBanner error={logMutation.error} />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Visit">
+                  <Select
+                    value={logTarget}
+                    onChange={(e) => {
+                      setLogTarget(e.target.value);
+                      if (!e.target.value) setVisitRep("");
+                      else {
+                        const target = visitsQuery.data?.results.find((item) => item.id === e.target.value);
+                        if (target) setVisitRep(target.representative);
+                      }
+                    }}
+                  >
+                    <option value="">Ad-hoc visit (today)</option>
+                    {(visitsQuery.data?.results ?? [])
+                      .filter((visit) => visit.status === "PLANNED")
+                      .map((visit) => (
+                        <option key={visit.id} value={visit.id}>
+                          {visit.representative_name} · planned{" "}
+                          {visit.planned_date ? formatDate(visit.planned_date) : "—"}
+                        </option>
+                      ))}
+                  </Select>
+                </Field>
+                <Field label="Representative (MR)">
+                  <Select
+                    value={visitRep}
+                    onChange={(e) => setVisitRep(e.target.value)}
+                    disabled={Boolean(logTarget)}
+                  >
+                    <option value="">Select…</option>
+                    {repsQuery.data?.results.map((rep) => (
+                      <option key={rep.id} value={rep.id}>
+                        {rep.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Outcome">
+                  <Select value={visitOutcome} onChange={(e) => setVisitOutcome(e.target.value)}>
+                    <option value="INTERESTED">Interested</option>
+                    <option value="NEUTRAL">Neutral</option>
+                    <option value="NOT_INTERESTED">Not interested</option>
+                    <option value="PRESCRIBING">Prescribing</option>
+                  </Select>
+                </Field>
+                <Field label="Next visit">
+                  <Input type="date" value={visitNext} onChange={(e) => setVisitNext(e.target.value)} />
+                </Field>
+                <div className="col-span-2">
+                  <Field label="Notes">
+                    <Input value={visitNotes} onChange={(e) => setVisitNotes(e.target.value)} />
+                  </Field>
+                </div>
+                <Field label="Sample medicine">
+                  <Select
+                    value={sampleMedicine}
+                    onChange={(e) => {
+                      setSampleMedicine(e.target.value);
+                      setSampleBatch("");
+                    }}
+                  >
+                    <option value="">—</option>
+                    {mappingsQuery.data?.map((mapping) => (
+                      <option key={mapping.id} value={mapping.medicine}>
+                        {mapping.medicine_name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Sample batch (promo stock at branch)">
+                  <Select
+                    value={sampleBatch}
+                    onChange={(e) => setSampleBatch(e.target.value)}
+                    disabled={!sampleMedicine}
+                  >
+                    <option value="">—</option>
+                    {batchesQuery.data?.results.map((batch) => (
+                      <option key={batch.id} value={batch.id}>
+                        {batch.batch_number} · exp {batch.expiry_date ? formatDate(batch.expiry_date) : "—"}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Sample qty">
+                  <Input
+                    type="number"
+                    step="0.001"
+                    min="0.001"
+                    value={sampleQty}
+                    onChange={(e) => setSampleQty(e.target.value)}
+                  />
+                </Field>
+                <div className="col-span-2">
+                  <Button
+                    onClick={() => logMutation.mutate()}
+                    disabled={
+                      logMutation.isPending ||
+                      !visitBranchId ||
+                      (!logTarget && !visitRep)
+                    }
+                  >
+                    {logMutation.isPending ? "Saving…" : "Log visit"}
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        ) : null}
       </div>
     </Card>
   );
@@ -358,28 +662,37 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
 
 export default function DoctorsPage() {
   const queryClient = useQueryClient();
+  const { hasPerm } = useAuth();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [editing, setEditing] = useState<Doctor | null>(null);
   const [selected, setSelected] = useState<Doctor | null>(null);
+  const debouncedSearch = useDebouncedValue(search);
+
+  const doctorParams = new URLSearchParams({ page_size: "50", page: String(page) });
+  if (debouncedSearch) doctorParams.set("search", debouncedSearch);
 
   const doctorsQuery = useQuery({
-    queryKey: ["doctors", search],
-    queryFn: () => api.get<Paginated<Doctor>>(`/doctors/?page_size=50&search=${encodeURIComponent(search)}`),
+    queryKey: ["doctors", debouncedSearch, page],
+    queryFn: () => api.get<Paginated<Doctor>>(`/doctors/?${doctorParams.toString()}`),
   });
   const territoriesQuery = useQuery({
     queryKey: ["territories", "select"],
     queryFn: () => api.get<Paginated<Territory>>("/territories/?page_size=100&is_active=true"),
   });
 
+  const payloadFor = (payload: typeof emptyForm) => ({
+    ...payload,
+    phones: payload.phone ? [payload.phone] : [],
+    territory: payload.territory || null,
+    registration_no: payload.registration_no || null,
+  });
+
   const createMutation = useMutation({
-    mutationFn: (payload: typeof emptyForm) =>
-      api.post<Doctor>("/doctors/", {
-        ...payload,
-        phones: payload.phone ? [payload.phone] : [],
-        territory: payload.territory || null,
-        registration_no: payload.registration_no || null,
-      }),
+    meta: { successMessage: "Doctor created" },
+    mutationFn: (payload: typeof emptyForm) => api.post<Doctor>("/doctors/", payloadFor(payload)),
     onSuccess: () => {
       setForm(emptyForm);
       setShowForm(false);
@@ -387,13 +700,44 @@ export default function DoctorsPage() {
     },
   });
 
+  const updateMutation = useMutation({
+    meta: { successMessage: "Doctor updated" },
+    mutationFn: (payload: typeof emptyForm) =>
+      api.patch<Doctor>(`/doctors/${editing?.id}/`, payloadFor(payload)),
+    onSuccess: () => {
+      setForm(emptyForm);
+      setEditing(null);
+      setShowForm(false);
+      queryClient.invalidateQueries({ queryKey: ["doctors"] });
+    },
+  });
+
+  const openEdit = (doctor: Doctor) => {
+    setEditing(doctor);
+    setForm({
+      code: doctor.code,
+      name: doctor.name,
+      specialty: doctor.specialty,
+      category: doctor.category,
+      doctor_type: doctor.doctor_type,
+      phone: doctor.phones[0] ?? "",
+      registration_no: doctor.registration_no ?? "",
+      territory: doctor.territory ?? "",
+    });
+    setShowForm(true);
+  };
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    createMutation.mutate(form);
+    if (editing) {
+      updateMutation.mutate(form);
+    } else {
+      createMutation.mutate(form);
+    }
   };
 
   const fieldError = (name: string): string | null => {
-    const err = createMutation.error;
+    const err = updateMutation.error ?? createMutation.error;
     if (err instanceof ApiError && err.fieldErrors?.[name]) return err.fieldErrors[name][0];
     return null;
   };
@@ -402,19 +746,34 @@ export default function DoctorsPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold text-slate-800">Doctors</h1>
-        <Button size="sm" onClick={() => setShowForm((v) => !v)}>
-          {showForm ? "Close" : "Add doctor"}
-        </Button>
+        {hasPerm("DOCTOR_MANAGE") ? (
+          <Button
+            size="sm"
+            onClick={() => {
+              if (showForm) {
+                setShowForm(false);
+                setEditing(null);
+                setForm(emptyForm);
+              } else {
+                setEditing(null);
+                setForm(emptyForm);
+                setShowForm(true);
+              }
+            }}
+          >
+            {showForm ? "Close" : "Add doctor"}
+          </Button>
+        ) : null}
       </div>
 
       {selected ? <DoctorPanel doctor={selected} onClose={() => setSelected(null)} /> : null}
 
-      {showForm ? (
+      {showForm && hasPerm("DOCTOR_MANAGE") ? (
         <Card>
-          <CardHeader title="New doctor" subtitle="Promotions are mapped medicine-by-medicine." />
+          <CardHeader title={editing ? `Edit ${editing.name}` : "New doctor"} subtitle="Promotions are mapped medicine-by-medicine." />
           <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
             <div className="col-span-2 lg:col-span-4">
-              <ErrorBanner error={createMutation.error} />
+              <ErrorBanner error={createMutation.error ?? updateMutation.error} />
             </div>
             <Field label="Code" error={fieldError("code")}>
               <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
@@ -459,8 +818,12 @@ export default function DoctorsPage() {
               </Select>
             </Field>
             <div className="col-span-2 lg:col-span-4">
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Saving…" : "Create doctor"}
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                {createMutation.isPending || updateMutation.isPending
+                  ? "Saving…"
+                  : editing
+                    ? "Save changes"
+                    : "Create doctor"}
               </Button>
             </div>
           </form>
@@ -474,8 +837,12 @@ export default function DoctorsPage() {
           action={
             <Input
               placeholder="Search name, specialty…"
+              aria-label="Search doctors"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="w-52"
             />
           }
@@ -491,7 +858,7 @@ export default function DoctorsPage() {
               <li key={doctor.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
                   <p className="font-medium">
-                    {doctor.name} <span className="font-mono text-xs text-slate-400">{doctor.code}</span>
+                    {doctor.name} <span className="font-mono text-xs text-slate-500">{doctor.code}</span>
                   </p>
                   <p className="text-xs text-slate-500">
                     {doctor.specialty || "—"} · category {doctor.category} · {doctor.territory_name || "no territory"} ·{" "}
@@ -500,6 +867,11 @@ export default function DoctorsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {doctor.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
+                  {hasPerm("DOCTOR_MANAGE") ? (
+                    <Button size="sm" variant="secondary" onClick={() => openEdit(doctor)}>
+                      Edit
+                    </Button>
+                  ) : null}
                   <Button size="sm" variant="secondary" onClick={() => setSelected(doctor)}>
                     Mappings & visits
                   </Button>
@@ -508,6 +880,14 @@ export default function DoctorsPage() {
             ))}
           </ul>
         )}
+        {doctorsQuery.data && doctorsQuery.data.count > 0 ? (
+          <Pagination
+            page={page}
+            hasPrevious={Boolean(doctorsQuery.data.previous)}
+            hasNext={Boolean(doctorsQuery.data.next)}
+            onChange={setPage}
+          />
+        ) : null}
       </Card>
     </div>
   );

@@ -3,8 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner, Tabs } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
+import { formatDate } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
 import type {
   Branch,
   Customer,
@@ -63,6 +65,7 @@ function RepPanel({ rep, onClose }: { rep: Representative; onClose: () => void }
   };
 
   const assignMutation = useMutation({
+    meta: { successMessage: "Assignment added" },
     mutationFn: () => api.post(`/representatives/${rep.id}/assign/`, { entity_type: entityType, entity_id: entityId }),
     onSuccess: () => {
       setEntityId("");
@@ -70,6 +73,7 @@ function RepPanel({ rep, onClose }: { rep: Representative; onClose: () => void }
     },
   });
   const unassignMutation = useMutation({
+    meta: { successMessage: "Assignment removed" },
     mutationFn: (assignment: RepresentativeAssignment) =>
       api.post(`/representatives/${rep.id}/unassign/`, {
         entity_type: assignment.entity_type,
@@ -109,7 +113,7 @@ function RepPanel({ rep, onClose }: { rep: Representative; onClose: () => void }
                 <div>
                   <p className="font-medium">{assignment.entity_label}</p>
                   <p className="text-xs text-slate-500">
-                    {assignment.entity_type} · since {assignment.effective_from}
+                    {assignment.entity_type} · since {formatDate(assignment.effective_from)}
                   </p>
                 </div>
                 <Button size="sm" variant="ghost" onClick={() => unassignMutation.mutate(assignment)}>
@@ -160,15 +164,20 @@ export default function RepsPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("Representatives");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showRepForm, setShowRepForm] = useState(false);
   const [showTerritoryForm, setShowTerritoryForm] = useState(false);
   const [repForm, setRepForm] = useState(emptyRep);
   const [territoryForm, setTerritoryForm] = useState(emptyTerritory);
   const [selected, setSelected] = useState<Representative | null>(null);
+  const debouncedSearch = useDebouncedValue(search);
+
+  const repParams = new URLSearchParams({ page_size: "50", page: String(page) });
+  if (debouncedSearch) repParams.set("search", debouncedSearch);
 
   const repsQuery = useQuery({
-    queryKey: ["representatives", search],
-    queryFn: () => api.get<Paginated<Representative>>(`/representatives/?page_size=50&search=${encodeURIComponent(search)}`),
+    queryKey: ["representatives", debouncedSearch, page],
+    queryFn: () => api.get<Paginated<Representative>>(`/representatives/?${repParams.toString()}`),
   });
   const territoriesQuery = useQuery({
     queryKey: ["territories", "list"],
@@ -180,6 +189,7 @@ export default function RepsPage() {
   });
 
   const repMutation = useMutation({
+    meta: { successMessage: "Representative created" },
     mutationFn: (payload: typeof emptyRep) =>
       api.post<Representative>("/representatives/", { ...payload, branch: payload.branch || null }),
     onSuccess: () => {
@@ -189,6 +199,7 @@ export default function RepsPage() {
     },
   });
   const territoryMutation = useMutation({
+    meta: { successMessage: "Territory created" },
     mutationFn: (payload: typeof emptyTerritory) =>
       api.post<Territory>("/territories/", { ...payload, parent: payload.parent || null }),
     onSuccess: () => {
@@ -208,7 +219,16 @@ export default function RepsPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold text-slate-800">Field team</h1>
         <div className="flex flex-wrap gap-2">
-          <Input placeholder="Search name, phone…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-48" />
+          <Input
+            placeholder="Search name, phone…"
+            aria-label="Search representatives"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="w-48"
+          />
           {tab === "Representatives" ? (
             <Button size="sm" onClick={() => setShowRepForm((v) => !v)}>
               {showRepForm ? "Close" : "Add representative"}
@@ -221,19 +241,7 @@ export default function RepsPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((item) => (
-          <button
-            key={item}
-            onClick={() => setTab(item)}
-            className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-              tab === item ? "bg-emerald-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
       {tab === "Representatives" ? (
         <>
@@ -297,7 +305,7 @@ export default function RepsPage() {
                   <li key={rep.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
                     <div>
                       <p className="font-medium">
-                        {rep.name} <span className="font-mono text-xs text-slate-400">{rep.code}</span>
+                        {rep.name} <span className="font-mono text-xs text-slate-500">{rep.code}</span>
                       </p>
                       <p className="text-xs text-slate-500">
                         {rep.rep_type} · {rep.phone || "no phone"}
@@ -314,6 +322,14 @@ export default function RepsPage() {
                 ))}
               </ul>
             )}
+            {repsQuery.data && repsQuery.data.count > 0 ? (
+              <Pagination
+                page={page}
+                hasPrevious={Boolean(repsQuery.data.previous)}
+                hasNext={Boolean(repsQuery.data.next)}
+                onChange={setPage}
+              />
+            ) : null}
           </Card>
         </>
       ) : (
