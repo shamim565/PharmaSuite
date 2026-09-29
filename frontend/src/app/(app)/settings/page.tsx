@@ -4,8 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner, Tabs } from "@/components/ui";
 import { api } from "@/lib/api";
+import { formatDate } from "@/lib/format";
 import type { FiscalPeriod, SettingGroups } from "@/lib/types";
 
 const TABS = ["Company", "Approvals", "Credit & Expiry", "Features", "Numbering", "Fiscal periods"] as const;
@@ -14,7 +15,8 @@ type Tab = (typeof TABS)[number];
 const COMPANY_KEYS = ["COMPANY_NAME", "COMPANY_ADDRESS", "COMPANY_PHONE", "COMPANY_EMAIL", "COMPANY_BIN", "COMPANY_VAT_REG"];
 const APPROVAL_KEYS = ["EXPENSE_APPROVAL_THRESHOLD", "STOCK_ADJUSTMENT_APPROVAL_THRESHOLD"];
 const CREDIT_KEYS = ["CUSTOMER_OVERDUE_BLOCK_DAYS", "NEAR_EXPIRY_DAYS"];
-const FEATURE_KEYS = ["AUTO_APPLY_ADVANCE"];
+const FEATURE_KEYS = ["AUTO_APPLY_ADVANCE", "SALES_VAT_ENABLED", "PURCHASE_VAT_ENABLED"];
+const BOOLEAN_KEYS = new Set(FEATURE_KEYS);
 const NUMBERING_KEYS = [
   "INVOICE_PREFIX",
   "RECEIPT_PREFIX",
@@ -42,9 +44,23 @@ function SettingsSection({
   setForm: (value: Record<string, string>) => void;
 }) {
   const queryClient = useQueryClient();
+  const [baseline, setBaseline] = useState<Record<string, string> | null>(null);
+
+  useEffect(() => {
+    if (baseline === null && keys.every((key) => key in form)) {
+      setBaseline(Object.fromEntries(keys.map((key) => [key, form[key] ?? ""])));
+    }
+  }, [form, keys, baseline]);
+
+  const dirty = baseline !== null && keys.some((key) => (form[key] ?? "") !== (baseline[key] ?? ""));
+
   const saveMutation = useMutation({
+    meta: { successMessage: "Settings saved" },
     mutationFn: () => api.put<SettingGroups>("/settings/", form),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
+    onSuccess: () => {
+      setBaseline(Object.fromEntries(keys.map((key) => [key, form[key] ?? ""])));
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+    },
   });
 
   const labels: Record<string, string> = {
@@ -59,6 +75,8 @@ function SettingsSection({
     CUSTOMER_OVERDUE_BLOCK_DAYS: "Customer overdue block days",
     NEAR_EXPIRY_DAYS: "Near-expiry warning days",
     AUTO_APPLY_ADVANCE: "Auto-apply customer advance at sale confirmation",
+    SALES_VAT_ENABLED: "Charge VAT on sales invoices",
+    PURCHASE_VAT_ENABLED: "Charge VAT on purchases",
     DOCUMENT_NUMBER_WIDTH: "Document number width",
   };
 
@@ -68,7 +86,7 @@ function SettingsSection({
       <div className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
         <ErrorBanner error={saveMutation.error} />
         {keys.map((key) =>
-          key === "AUTO_APPLY_ADVANCE" ? (
+          BOOLEAN_KEYS.has(key) ? (
             <label key={key} className="col-span-2 flex items-center gap-2 text-sm text-slate-700">
               <input
                 type="checkbox"
@@ -86,14 +104,15 @@ function SettingsSection({
             </Field>
           ),
         )}
-        <div className="col-span-2 lg:col-span-4">
+        <div className="col-span-2 flex items-center gap-3 lg:col-span-4">
           <Button
             size="sm"
             onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
+            disabled={saveMutation.isPending || !dirty}
           >
             {saveMutation.isPending ? "Saving…" : "Save"}
           </Button>
+          {dirty ? <span className="text-xs text-amber-700">Unsaved changes</span> : null}
         </div>
       </div>
     </Card>
@@ -130,6 +149,10 @@ export default function SettingsPage() {
   }, [settingsQuery.data]);
 
   const periodMutation = useMutation({
+    meta: {
+      successMessage: (variables: { action: string }) =>
+        variables.action === "lock" ? "Period locked" : "Period unlocked",
+    },
     mutationFn: ({ period, action }: { period: FiscalPeriod; action: "lock" | "unlock" }) =>
       api.post(`/periods/${period.id}/${action}/`, { reason }),
     onSuccess: () => {
@@ -139,25 +162,19 @@ export default function SettingsPage() {
     },
   });
 
-  if (!hasPerm("SETTINGS_VIEW")) return null;
+  if (!hasPerm("SETTINGS_VIEW")) {
+    return (
+      <Card>
+        <EmptyState message="You need SETTINGS_VIEW to open this page." />
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-semibold text-slate-800">Settings</h1>
 
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((item) => (
-          <button
-            key={item}
-            onClick={() => setTab(item)}
-            className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-              tab === item ? "bg-emerald-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
       {settingsQuery.isLoading ? <Spinner /> : null}
       {settingsQuery.error ? <ErrorBanner error={settingsQuery.error} /> : null}
@@ -183,7 +200,7 @@ export default function SettingsPage() {
           {periodFor ? (
             <Card>
               <CardHeader
-                title={`${periodFor.status === "LOCKED" ? "Unlock" : "Lock"} ${periodFor.start_date} → ${periodFor.end_date}`}
+                title={`${periodFor.status === "LOCKED" ? "Unlock" : "Lock"} ${formatDate(periodFor.start_date)} → ${formatDate(periodFor.end_date)}`}
                 action={
                   <Button size="sm" variant="secondary" onClick={() => setPeriodFor(null)}>
                     Cancel
@@ -227,7 +244,7 @@ export default function SettingsPage() {
                   <li key={period.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
                     <div>
                       <p className="font-medium">
-                        {period.start_date} → {period.end_date}
+                        {formatDate(period.start_date)} → {formatDate(period.end_date)}
                       </p>
                       <p className="text-xs text-slate-500">
                         FY {period.fiscal_year}-{period.fiscal_year + 1} · month {period.period_month}

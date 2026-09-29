@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import type { Branch, Paginated } from "@/lib/types";
 
@@ -27,6 +27,7 @@ export default function BranchesPage() {
   });
 
   const createMutation = useMutation({
+    meta: { successMessage: "Branch created" },
     mutationFn: (payload: typeof emptyForm) => api.post<Branch>("/branches/", payload),
     onSuccess: () => {
       setForm(emptyForm);
@@ -37,6 +38,7 @@ export default function BranchesPage() {
   });
 
   const updateMutation = useMutation({
+    meta: { successMessage: "Branch updated" },
     mutationFn: (payload: typeof emptyForm) =>
       api.patch<Branch>(`/branches/${editing?.id}/`, payload),
     onSuccess: () => {
@@ -49,6 +51,7 @@ export default function BranchesPage() {
   });
 
   const statusMutation = useMutation({
+    meta: { successMessage: "Branch status updated" },
     mutationFn: ({ branch, active }: { branch: Branch; active: boolean }) =>
       api.patch(`/branches/${branch.id}/`, { status: active ? "ACTIVE" : "INACTIVE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["branches"] }),
@@ -162,7 +165,7 @@ export default function BranchesPage() {
               <li key={branch.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
                   <p className="font-medium">
-                    {branch.name} <span className="font-mono text-xs text-slate-400">{branch.code}</span>
+                    {branch.name} <span className="font-mono text-xs text-slate-500">{branch.code}</span>
                   </p>
                   <p className="text-xs text-slate-500">
                     {branch.type === "HEAD_OFFICE" ? "Head office" : "Branch"}
@@ -175,14 +178,26 @@ export default function BranchesPage() {
                   <Button size="sm" variant="secondary" onClick={() => openEdit(branch)}>
                     Edit
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => statusMutation.mutate({ branch, active: branch.status !== "ACTIVE" })}
-                    disabled={statusMutation.isPending}
-                  >
-                    {branch.status === "ACTIVE" ? "Deactivate" : "Activate"}
-                  </Button>
+                  {branch.status === "ACTIVE" ? (
+                    <ConfirmButton
+                      size="sm"
+                      variant="ghost"
+                      confirmLabel="Deactivate?"
+                      onConfirm={() => statusMutation.mutate({ branch, active: false })}
+                      disabled={statusMutation.isPending}
+                    >
+                      Deactivate
+                    </ConfirmButton>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => statusMutation.mutate({ branch, active: true })}
+                      disabled={statusMutation.isPending}
+                    >
+                      Activate
+                    </Button>
+                  )}
                 </div>
               </li>
             ))}
