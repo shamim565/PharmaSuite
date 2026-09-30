@@ -4,9 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
 import { AttachmentPanel } from "@/components/attachments";
 import { ApiError, api } from "@/lib/api";
+import { formatDate, formatMoney } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
 import type { Branch, Expense, ExpenseCategory, FinancialAccount, Paginated } from "@/lib/types";
 
 const emptyForm = {
@@ -31,18 +33,22 @@ export default function ExpensesPage() {
   const { user, hasPerm } = useAuth();
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [rejectFor, setRejectFor] = useState<Expense | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [reverseFor, setReverseFor] = useState<Expense | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
   const [filesFor, setFilesFor] = useState<Expense | null>(null);
+  const debouncedSearch = useDebouncedValue(search);
 
-  const params = new URLSearchParams({ page_size: "50" });
+  const params = new URLSearchParams({ page_size: "50", page: String(page) });
   if (status) params.set("status", status);
-  if (search) params.set("search", search);
+  if (debouncedSearch) params.set("search", debouncedSearch);
 
   const expensesQuery = useQuery({
-    queryKey: ["expenses", status, search],
+    queryKey: ["expenses", status, debouncedSearch, page],
     queryFn: () => api.get<Paginated<Expense>>(`/expenses/?${params.toString()}`),
   });
   const summaryQuery = useQuery({
@@ -73,6 +79,7 @@ export default function ExpensesPage() {
   };
 
   const createMutation = useMutation({
+    meta: { successMessage: "Expense recorded" },
     mutationFn: (payload: typeof emptyForm) => api.post<Expense>("/expenses/", payload),
     onSuccess: () => {
       setForm(emptyForm);
@@ -81,11 +88,27 @@ export default function ExpensesPage() {
     },
   });
   const actionMutation = useMutation({
+    meta: {
+      successMessage: (variables: { action: string }) => {
+        switch (variables.action) {
+          case "approve":
+            return "Expense approved";
+          case "reject":
+            return "Expense rejected";
+          case "reverse":
+            return "Expense reversed";
+          default:
+            return "Expense updated";
+        }
+      },
+    },
     mutationFn: ({ id, action, reason }: { id: string; action: string; reason?: string }) =>
       api.post(`/expenses/${id}/${action}/`, reason ? { reason } : {}),
     onSuccess: () => {
       setRejectFor(null);
       setRejectReason("");
+      setReverseFor(null);
+      setReverseReason("");
       invalidate();
     },
   });
@@ -106,8 +129,24 @@ export default function ExpensesPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold text-slate-800">Expenses</h1>
         <div className="flex flex-wrap gap-2">
-          <Input placeholder="Search payee, voucher…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-48" />
-          <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-36">
+          <Input
+            placeholder="Search payee, voucher…"
+            aria-label="Search expenses"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="w-48"
+          />
+          <Select
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value);
+              setPage(1);
+            }}
+            className="w-36"
+          >
             <option value="">All statuses</option>
             <option value="POSTED">Posted</option>
             <option value="PENDING_APPROVAL">Pending</option>
@@ -125,11 +164,11 @@ export default function ExpensesPage() {
       {summaryQuery.data ? (
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Posted expenses</p>
-          <p className="text-2xl font-bold text-slate-800">{summaryQuery.data.total}</p>
+          <p className="text-2xl font-bold text-slate-800">{formatMoney(summaryQuery.data.total)}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {summaryQuery.data.results.map((row) => (
               <span key={row.category_name} className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                {row.category_name}: <strong>{row.total}</strong> ({row.count})
+                {row.category_name}: <strong>{formatMoney(row.total)}</strong> ({row.count})
               </span>
             ))}
           </div>
@@ -178,7 +217,7 @@ export default function ExpensesPage() {
                 <option value="">Select…</option>
                 {accountsQuery.data?.results.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.name} ({account.balance_cache})
+                    {account.name} ({formatMoney(account.balance_cache)})
                   </option>
                 ))}
               </Select>
@@ -229,6 +268,35 @@ export default function ExpensesPage() {
         </Card>
       ) : null}
 
+      {reverseFor ? (
+        <Card>
+          <CardHeader
+            title={`Reverse expense ${reverseFor.number ?? ""}`}
+            subtitle="Posts an opposite entry; the account balance is restored."
+            action={
+              <Button size="sm" variant="secondary" onClick={() => setReverseFor(null)}>
+                Cancel
+              </Button>
+            }
+          />
+          <div className="space-y-3 p-4">
+            <ErrorBanner error={actionMutation.error} />
+            <Field label="Reason">
+              <Input value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} />
+            </Field>
+            <Button
+              variant="danger"
+              disabled={actionMutation.isPending || !reverseReason}
+              onClick={() =>
+                actionMutation.mutate({ id: reverseFor.id, action: "reverse", reason: reverseReason })
+              }
+            >
+              Reverse expense
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       {filesFor ? (
         <Card>
           <CardHeader
@@ -264,16 +332,16 @@ export default function ExpensesPage() {
                   <div>
                     <p className="font-medium">
                       {expense.number ?? "Pending"}{" "}
-                      <span className="text-xs text-slate-400">{expense.category_name}</span>
+                      <span className="text-xs text-slate-500">{expense.category_name}</span>
                     </p>
                     <p className="text-xs text-slate-500">
-                      {expense.business_date} · {expense.account_name} · {expense.payee || "—"}
+                      {formatDate(expense.business_date)} · {expense.account_name} · {expense.payee || "—"}
                       {expense.requested_by_name ? ` · by ${expense.requested_by_name}` : ""}
                       {expense.rejection_reason ? ` · rejected: ${expense.rejection_reason}` : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono font-semibold">{expense.amount}</span>
+                    <span className="font-mono font-semibold">{formatMoney(expense.amount)}</span>
                     <Badge tone={statusTone(expense.status)}>{expense.status.replace("_", " ")}</Badge>
                     {canApprove ? (
                       <>
@@ -294,7 +362,10 @@ export default function ExpensesPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => actionMutation.mutate({ id: expense.id, action: "reverse", reason: "reversed from register" })}
+                        onClick={() => {
+                          setReverseFor(expense);
+                          setReverseReason("");
+                        }}
                         disabled={actionMutation.isPending}
                       >
                         Reverse
@@ -306,6 +377,14 @@ export default function ExpensesPage() {
             })}
           </ul>
         )}
+        {expensesQuery.data && expensesQuery.data.count > 0 ? (
+          <Pagination
+            page={page}
+            hasPrevious={Boolean(expensesQuery.data.previous)}
+            hasNext={Boolean(expensesQuery.data.next)}
+            onChange={setPage}
+          />
+        ) : null}
       </Card>
     </div>
   );

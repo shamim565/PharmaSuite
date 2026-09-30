@@ -6,6 +6,7 @@ import { FormEvent, useState } from "react";
 import { useAuth } from "@/app/providers";
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
+import { formatDate, formatMoney } from "@/lib/format";
 import type {
   AccountLedgerResponse,
   Branch,
@@ -47,6 +48,7 @@ function AccountPanel({ account, onClose }: { account: FinancialAccount; onClose
   };
 
   const depositMutation = useMutation({
+    meta: { successMessage: "Deposit posted" },
     mutationFn: () => api.post(`/accounts/${account.id}/deposit/`, { amount, reference }),
     onSuccess: () => {
       setAmount("");
@@ -55,6 +57,7 @@ function AccountPanel({ account, onClose }: { account: FinancialAccount; onClose
     },
   });
   const withdrawMutation = useMutation({
+    meta: { successMessage: "Withdrawal posted" },
     mutationFn: () => api.post(`/accounts/${account.id}/withdraw/`, { amount, reference }),
     onSuccess: () => {
       setAmount("");
@@ -63,6 +66,7 @@ function AccountPanel({ account, onClose }: { account: FinancialAccount; onClose
     },
   });
   const transferMutation = useMutation({
+    meta: { successMessage: "Transfer completed" },
     mutationFn: () =>
       api.post("/accounts/transfer/", {
         from_account: account.id,
@@ -81,7 +85,7 @@ function AccountPanel({ account, onClose }: { account: FinancialAccount; onClose
     <Card>
       <CardHeader
         title={`${account.name} (${account.code})`}
-        subtitle={`${account.account_type} · balance ${account.balance_cache}`}
+        subtitle={`${account.account_type} · balance ${formatMoney(account.balance_cache)}`}
         action={
           <Button size="sm" variant="secondary" onClick={onClose}>
             Close
@@ -129,7 +133,7 @@ function AccountPanel({ account, onClose }: { account: FinancialAccount; onClose
                     .filter((item) => item.id !== account.id)
                     .map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name} ({item.balance_cache})
+                        {item.name} ({formatMoney(item.balance_cache)})
                       </option>
                     ))}
                 </Select>
@@ -182,17 +186,17 @@ function AccountPanel({ account, onClose }: { account: FinancialAccount; onClose
                     <div>
                       <p className="font-medium">{entry.entry_type.replace(/_/g, " ")}</p>
                       <p className="text-xs text-slate-500">
-                        {entry.business_date} · {entry.source_type}
+                        {formatDate(entry.business_date)} · {entry.source_type}
                         {entry.source_number ? ` #${entry.source_number}` : ""}
                         {entry.reference ? ` · ${entry.reference}` : ""}
                       </p>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className={`font-mono font-semibold ${positive ? "text-emerald-700" : "text-rose-700"}`}>
-                        {positive ? "+" : ""}
-                        {entry.amount_delta}
+                      <span className={`font-mono font-semibold ${positive ? "text-primary-700" : "text-danger-700"}`}>
+                        {positive ? "+" : "−"}
+                        {formatMoney(Math.abs(Number(entry.amount_delta)))}
                       </span>
-                      <span className="text-xs text-slate-500">bal {entry.running_balance}</span>
+                      <span className="text-xs text-slate-500">bal {formatMoney(entry.running_balance)}</span>
                     </div>
                   </li>
                 );
@@ -222,6 +226,7 @@ export default function AccountsPage() {
   });
 
   const createMutation = useMutation({
+    meta: { successMessage: "Account created" },
     mutationFn: (payload: typeof emptyAccount) =>
       api.post<FinancialAccount>("/accounts/", { ...payload, branch: payload.branch || null }),
     onSuccess: () => {
@@ -260,7 +265,7 @@ export default function AccountsPage() {
 
       <Card className="p-4">
         <p className="text-xs uppercase text-slate-500">Total balance</p>
-        <p className="text-2xl font-bold text-emerald-700">{total.toFixed(2)}</p>
+        <p className="text-2xl font-bold text-primary-700">{formatMoney(total)}</p>
       </Card>
 
       {selected ? <AccountPanel account={selected} onClose={() => setSelected(null)} /> : null}
@@ -326,7 +331,7 @@ export default function AccountsPage() {
               <li key={account.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
                   <p className="font-medium">
-                    {account.name} <span className="font-mono text-xs text-slate-400">{account.code}</span>
+                    {account.name} <span className="font-mono text-xs text-slate-500">{account.code}</span>
                   </p>
                   <p className="text-xs text-slate-500">
                     {account.account_type}
@@ -335,8 +340,8 @@ export default function AccountsPage() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className={`font-mono font-semibold ${Number(account.balance_cache) < 0 ? "text-rose-700" : "text-slate-800"}`}>
-                    {account.balance_cache}
+                  <span className={`font-mono font-semibold ${Number(account.balance_cache) < 0 ? "text-danger-700" : "text-slate-800"}`}>
+                    {formatMoney(account.balance_cache)}
                   </span>
                   {account.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
                   <Button size="sm" variant="secondary" onClick={() => setSelected(account)}>

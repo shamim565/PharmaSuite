@@ -4,8 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
+import { formatDate, formatMoney } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
 import type { Branch, FinancialAccount, Income, IncomeCategory, Paginated } from "@/lib/types";
 
 const emptyForm = {
@@ -23,15 +25,19 @@ export default function IncomePage() {
   const { hasPerm } = useAuth();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [reverseFor, setReverseFor] = useState<Income | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
 
-  const params = new URLSearchParams({ page_size: "50" });
-  if (search) params.set("search", search);
+  const params = new URLSearchParams({ page_size: "50", page: String(page) });
+  if (debouncedSearch) params.set("search", debouncedSearch);
   if (status) params.set("status", status);
 
   const incomesQuery = useQuery({
-    queryKey: ["incomes", search, status],
+    queryKey: ["incomes", debouncedSearch, status, page],
     queryFn: () => api.get<Paginated<Income>>(`/incomes/?${params.toString()}`),
   });
   const summaryQuery = useQuery({
@@ -62,6 +68,7 @@ export default function IncomePage() {
   };
 
   const createMutation = useMutation({
+    meta: { successMessage: "Income recorded" },
     mutationFn: (payload: typeof emptyForm) => api.post<Income>("/incomes/", payload),
     onSuccess: () => {
       setForm(emptyForm);
@@ -70,8 +77,13 @@ export default function IncomePage() {
     },
   });
   const reverseMutation = useMutation({
-    mutationFn: (income: Income) => api.post(`/incomes/${income.id}/reverse/`, { reason: "reversed from register" }),
-    onSuccess: () => invalidate(),
+    meta: { successMessage: "Income reversed" },
+    mutationFn: (income: Income) => api.post(`/incomes/${income.id}/reverse/`, { reason: reverseReason }),
+    onSuccess: () => {
+      setReverseFor(null);
+      setReverseReason("");
+      invalidate();
+    },
   });
 
   const onSubmit = (event: FormEvent) => {
@@ -90,8 +102,24 @@ export default function IncomePage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold text-slate-800">Other income</h1>
         <div className="flex flex-wrap gap-2">
-          <Input placeholder="Search source, voucher…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-48" />
-          <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-32">
+          <Input
+            placeholder="Search source, voucher…"
+            aria-label="Search income"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="w-48"
+          />
+          <Select
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value);
+              setPage(1);
+            }}
+            className="w-32"
+          >
             <option value="">All statuses</option>
             <option value="POSTED">Posted</option>
             <option value="REVERSED">Reversed</option>
@@ -107,11 +135,11 @@ export default function IncomePage() {
       {summaryQuery.data ? (
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Posted income</p>
-          <p className="text-2xl font-bold text-emerald-700">{summaryQuery.data.total}</p>
+          <p className="text-2xl font-bold text-primary-700">{formatMoney(summaryQuery.data.total)}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {summaryQuery.data.results.map((row) => (
               <span key={row.category_name} className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-                {row.category_name}: <strong>{row.total}</strong>
+                {row.category_name}: <strong>{formatMoney(row.total)}</strong>
               </span>
             ))}
           </div>
@@ -160,7 +188,7 @@ export default function IncomePage() {
                 <option value="">Select…</option>
                 {accountsQuery.data?.results.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.name} ({account.balance_cache})
+                    {account.name} ({formatMoney(account.balance_cache)})
                   </option>
                 ))}
               </Select>
@@ -185,6 +213,33 @@ export default function IncomePage() {
         </Card>
       ) : null}
 
+      {reverseFor ? (
+        <Card>
+          <CardHeader
+            title={`Reverse income ${reverseFor.number ?? ""}`}
+            subtitle="Posts an opposite entry; the account balance is restored."
+            action={
+              <Button size="sm" variant="secondary" onClick={() => setReverseFor(null)}>
+                Cancel
+              </Button>
+            }
+          />
+          <div className="space-y-3 p-4">
+            <ErrorBanner error={reverseMutation.error} />
+            <Field label="Reason">
+              <Input value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} />
+            </Field>
+            <Button
+              variant="danger"
+              disabled={reverseMutation.isPending || !reverseReason}
+              onClick={() => reverseMutation.mutate(reverseFor)}
+            >
+              Reverse income
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader title="Income register" subtitle={incomesQuery.data ? `${incomesQuery.data.count} entry(ies)` : undefined} />
         <ErrorBanner error={incomesQuery.error} />
@@ -199,21 +254,24 @@ export default function IncomePage() {
                 <div>
                   <p className="font-medium">
                     {income.number}{" "}
-                    <span className="text-xs text-slate-400">{income.category_name}</span>
+                    <span className="text-xs text-slate-500">{income.category_name}</span>
                   </p>
                   <p className="text-xs text-slate-500">
-                    {income.business_date} · {income.account_name} · {income.source || "—"}
+                    {formatDate(income.business_date)} · {income.account_name} · {income.source || "—"}
                     {income.posted_by_name ? ` · by ${income.posted_by_name}` : ""}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono font-semibold">{income.amount}</span>
+                  <span className="font-mono font-semibold">{formatMoney(income.amount)}</span>
                   {income.status === "POSTED" ? <Badge tone="green">Posted</Badge> : <Badge tone="rose">Reversed</Badge>}
                   {income.status === "POSTED" && hasPerm("INCOME_POST") ? (
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => reverseMutation.mutate(income)}
+                      onClick={() => {
+                        setReverseFor(income);
+                        setReverseReason("");
+                      }}
                       disabled={reverseMutation.isPending}
                     >
                       Reverse
@@ -224,6 +282,14 @@ export default function IncomePage() {
             ))}
           </ul>
         )}
+        {incomesQuery.data && incomesQuery.data.count > 0 ? (
+          <Pagination
+            page={page}
+            hasPrevious={Boolean(incomesQuery.data.previous)}
+            hasNext={Boolean(incomesQuery.data.next)}
+            onChange={setPage}
+          />
+        ) : null}
       </Card>
     </div>
   );
