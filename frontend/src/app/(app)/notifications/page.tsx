@@ -6,7 +6,8 @@ import { useState } from "react";
 
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { NotificationList } from "@/lib/types";
+import { formatDateTime } from "@/lib/format";
+import type { NotificationList, NotificationPreferenceList } from "@/lib/types";
 
 function severityTone(severity: string): "green" | "amber" | "rose" | "slate" {
   if (severity === "CRITICAL") return "rose";
@@ -29,6 +30,7 @@ export default function NotificationsPage() {
   });
 
   const readAllMutation = useMutation({
+    meta: { successMessage: "All notifications marked read" },
     mutationFn: () => api.post("/notifications/read-all/", {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -42,6 +44,17 @@ export default function NotificationsPage() {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       queryClient.invalidateQueries({ queryKey: ["unread-count"] });
     },
+  });
+
+  const preferencesQuery = useQuery({
+    queryKey: ["notification-preferences"],
+    queryFn: () => api.get<NotificationPreferenceList>("/notifications/preferences/"),
+  });
+
+  const preferenceMutation = useMutation({
+    mutationFn: (preferences: Record<string, boolean>) =>
+      api.put<NotificationPreferenceList>("/notifications/preferences/", { preferences }),
+    onSuccess: (data) => queryClient.setQueryData(["notification-preferences"], data),
   });
 
   return (
@@ -66,6 +79,36 @@ export default function NotificationsPage() {
 
       <Card>
         <CardHeader
+          title="Alert preferences"
+          subtitle="Choose which automated alerts you receive."
+        />
+        <ErrorBanner error={preferencesQuery.error ?? preferenceMutation.error} />
+        {preferencesQuery.isLoading ? (
+          <Spinner />
+        ) : (
+          <div className="grid grid-cols-2 gap-2 p-4 lg:grid-cols-3">
+            {preferencesQuery.data?.results.map((preference) => (
+              <label
+                key={preference.category}
+                className="flex items-center gap-2 text-sm text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  checked={preference.enabled}
+                  disabled={preferenceMutation.isPending}
+                  onChange={(event) =>
+                    preferenceMutation.mutate({ [preference.category]: event.target.checked })
+                  }
+                />
+                {preference.label}
+              </label>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
           title="All notifications"
           subtitle={notificationsQuery.data ? `${notificationsQuery.data.unread_count} unread` : undefined}
         />
@@ -84,7 +127,7 @@ export default function NotificationsPage() {
                       <Badge tone={severityTone(item.severity)}>{item.type}</Badge> {item.title}
                     </p>
                     {item.body ? <p className="text-xs text-slate-500">{item.body}</p> : null}
-                    <p className="text-[10px] text-slate-400">{new Date(item.created_at).toLocaleString()}</p>
+                    <p className="text-xs text-slate-500">{formatDateTime(item.created_at)}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     {!item.is_read ? (

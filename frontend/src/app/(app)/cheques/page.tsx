@@ -4,8 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
-import { api } from "@/lib/api";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import { ApiError, api } from "@/lib/api";
+import { formatDate, formatMoney } from "@/lib/format";
 import type { Cheque, Paginated } from "@/lib/types";
 
 const STATUS_TONE: Record<string, "green" | "amber" | "rose" | "slate" | "blue"> = {
@@ -45,12 +46,13 @@ export default function ChequesPage() {
   const [actionFor, setActionFor] = useState<{ cheque: Cheque; action: string } | null>(null);
   const [actionNotes, setActionNotes] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [page, setPage] = useState(1);
 
-  const params = new URLSearchParams({ page_size: "100" });
+  const params = new URLSearchParams({ page_size: "50", page: String(page) });
   if (filterStatus) params.set("status", filterStatus);
 
   const chequesQuery = useQuery({
-    queryKey: ["cheques", filterStatus],
+    queryKey: ["cheques", filterStatus, page],
     queryFn: () => api.get<Paginated<Cheque>>(`/cheques/?${params.toString()}`),
   });
   const customersQuery = useQuery({
@@ -63,6 +65,7 @@ export default function ChequesPage() {
   });
 
   const createMutation = useMutation({
+    meta: { successMessage: "Cheque registered" },
     mutationFn: () => api.post("/cheques/", { direction, ...form }),
     onSuccess: () => {
       setForm({ number: "", bank_name: "", bank_branch: "", amount: "", date_issued: "", customer: "", supplier: "", notes: "" });
@@ -70,13 +73,38 @@ export default function ChequesPage() {
     },
   });
   const actionMutation = useMutation({
-    mutationFn: () => api.post(`/cheques/${actionFor?.cheque.id}/${actionFor?.action}/`, { notes: actionNotes }),
+    meta: {
+      successMessage: (action: string) => {
+        switch (action) {
+          case "deposit":
+            return "Cheque deposited";
+          case "clear":
+            return "Cheque cleared";
+          case "bounce":
+            return "Cheque bounced";
+          case "stop":
+            return "Cheque stopped";
+          case "mark-paid":
+            return "Cheque marked paid";
+          default:
+            return "Cheque updated";
+        }
+      },
+    },
+    mutationFn: (action: string) =>
+      api.post(`/cheques/${actionFor?.cheque.id}/${action}/`, { notes: actionNotes }),
     onSuccess: () => {
       setActionFor(null);
       setActionNotes("");
       queryClient.invalidateQueries({ queryKey: ["cheques"] });
     },
   });
+
+  const fieldError = (name: string): string | null => {
+    const err = createMutation.error;
+    if (err instanceof ApiError && err.fieldErrors?.[name]) return err.fieldErrors[name][0];
+    return null;
+  };
 
   const actionsFor = (cheque: Cheque): Array<{ action: string; label: string }> => {
     if (cheque.direction === "RECEIVED") {
@@ -95,35 +123,47 @@ export default function ChequesPage() {
       {hasPerm("CHEQUE_MANAGE") ? (
         <Card>
           <CardHeader title={direction === "RECEIVED" ? "Register received cheque" : "Register issued cheque"} />
-          <div className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
-            <ErrorBanner error={createMutation.error} />
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              createMutation.mutate();
+            }}
+            className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4"
+          >
+            <div className="col-span-2 lg:col-span-4">
+              <ErrorBanner error={createMutation.error} />
+            </div>
             <div className="col-span-2 flex gap-2 lg:col-span-4">
               <button
+                type="button"
                 onClick={() => setDirection("RECEIVED")}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium ${direction === "RECEIVED" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}
+                aria-pressed={direction === "RECEIVED"}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium ${direction === "RECEIVED" ? "bg-primary-600 text-white" : "bg-slate-100 text-slate-600"}`}
               >
                 Received from customer
               </button>
               <button
+                type="button"
                 onClick={() => setDirection("ISSUED")}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium ${direction === "ISSUED" ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600"}`}
+                aria-pressed={direction === "ISSUED"}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium ${direction === "ISSUED" ? "bg-primary-600 text-white" : "bg-slate-100 text-slate-600"}`}
               >
                 Issued to supplier
               </button>
             </div>
-            <Field label="Cheque number">
+            <Field label="Cheque number" error={fieldError("number")}>
               <Input value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} />
             </Field>
-            <Field label="Bank">
+            <Field label="Bank" error={fieldError("bank_name")}>
               <Input value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} />
             </Field>
-            <Field label="Bank branch">
+            <Field label="Bank branch" error={fieldError("bank_branch")}>
               <Input value={form.bank_branch} onChange={(e) => setForm({ ...form, bank_branch: e.target.value })} />
             </Field>
-            <Field label="Amount (BDT)">
-              <Input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            <Field label="Amount (BDT)" error={fieldError("amount")}>
+              <Input type="number" step="0.01" min="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
             </Field>
-            <Field label="Date issued">
+            <Field label="Date issued" error={fieldError("date_issued")}>
               <Input type="date" value={form.date_issued} onChange={(e) => setForm({ ...form, date_issued: e.target.value })} />
             </Field>
             {direction === "RECEIVED" ? (
@@ -147,13 +187,13 @@ export default function ChequesPage() {
             )}
             <div className="col-span-2 lg:col-span-4">
               <Button
-                onClick={() => createMutation.mutate()}
+                type="submit"
                 disabled={createMutation.isPending || !form.number || !form.bank_name || !form.amount || !form.date_issued || (direction === "RECEIVED" ? !form.customer : !form.supplier)}
               >
                 {createMutation.isPending ? "Saving…" : "Register cheque"}
               </Button>
             </div>
-          </div>
+          </form>
         </Card>
       ) : null}
 
@@ -173,7 +213,7 @@ export default function ChequesPage() {
               <Input value={actionNotes} onChange={(e) => setActionNotes(e.target.value)} />
             </Field>
             <Button
-              onClick={() => actionMutation.mutate()}
+              onClick={() => actionMutation.mutate(actionFor.action)}
               disabled={actionMutation.isPending}
               variant={actionFor.action === "bounce" || actionFor.action === "stop" ? "danger" : "secondary"}
             >
@@ -188,7 +228,13 @@ export default function ChequesPage() {
           title="Cheque register"
           subtitle={chequesQuery.data ? `${chequesQuery.data.count} cheque(s)` : undefined}
           action={
-            <Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <Select
+              value={filterStatus}
+              onChange={(e) => {
+                setFilterStatus(e.target.value);
+                setPage(1);
+              }}
+            >
               <option value="">All statuses</option>
               {Object.entries(STATUS_LABEL).map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
@@ -210,7 +256,7 @@ export default function ChequesPage() {
                     {cheque.direction === "RECEIVED" ? cheque.customer_name || "customer" : cheque.supplier_name || "supplier"} · {cheque.number}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {cheque.bank_name}{cheque.bank_branch ? `, ${cheque.bank_branch}` : ""} · issued {cheque.date_issued} · {Number(cheque.amount).toFixed(2)}
+                    {cheque.bank_name}{cheque.bank_branch ? `, ${cheque.bank_branch}` : ""} · issued {formatDate(cheque.date_issued)} · {formatMoney(cheque.amount)}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -235,6 +281,14 @@ export default function ChequesPage() {
             ))}
           </ul>
         )}
+        {chequesQuery.data && chequesQuery.data.count > 0 ? (
+          <Pagination
+            page={page}
+            hasPrevious={Boolean(chequesQuery.data.previous)}
+            hasNext={Boolean(chequesQuery.data.next)}
+            onChange={setPage}
+          />
+        ) : null}
       </Card>
     </div>
   );
