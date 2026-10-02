@@ -5,8 +5,10 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
-import { ApiError, api, newIdempotencyKey } from "@/lib/api";
+import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import { ApiError, api, apiDownload, newIdempotencyKey } from "@/lib/api";
+import { formatDate, formatMoney, formatQty } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
 import type {
   Branch,
   Customer,
@@ -25,6 +27,7 @@ type DraftRow = {
   qty: string;
   unit_price: string;
   line_discount: string;
+  vat_rate: string;
   is_free_goods: boolean;
   batch: string;
 };
@@ -35,6 +38,7 @@ const newRow = (key: number): DraftRow => ({
   qty: "",
   unit_price: "",
   line_discount: "0",
+  vat_rate: "",
   is_free_goods: false,
   batch: "",
 });
@@ -82,6 +86,19 @@ function BatchSelect({
   );
 }
 
+function tierPrice(customer: Customer, medicine: Medicine): number {
+  if (customer.price_tier === "WHOLESALE" && medicine.wholesale_price) {
+    return Number(medicine.wholesale_price);
+  }
+  if (customer.price_tier === "CUSTOM" && medicine.custom_price) {
+    return Number(medicine.custom_price);
+  }
+  if (customer.price_tier === "RETAIL" && medicine.retail_price) {
+    return Number(medicine.retail_price);
+  }
+  return Number(medicine.selling_price);
+}
+
 function lifecycleTone(status: SalesInvoice["lifecycle"]): "green" | "slate" | "rose" {
   return status === "CONFIRMED" ? "green" : status === "CANCELLED" ? "rose" : "slate";
 }
@@ -94,6 +111,9 @@ export default function SalesPage() {
   const queryClient = useQueryClient();
   const { hasPerm, user } = useAuth();
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [rows, setRows] = useState<DraftRow[]>([newRow(1)]);
@@ -121,10 +141,16 @@ export default function SalesPage() {
   const [returnKey, setReturnKey] = useState(newIdempotencyKey());
   const [cancelKey, setCancelKey] = useState(newIdempotencyKey());
 
+  const debouncedSearch = useDebouncedValue(search);
+
+  const salesParams = new URLSearchParams({ page_size: "25", page: String(page) });
+  if (debouncedSearch) salesParams.set("search", debouncedSearch);
+  if (dateFrom) salesParams.set("date_from", dateFrom);
+  if (dateTo) salesParams.set("date_to", dateTo);
+
   const salesQuery = useQuery({
-    queryKey: ["sales", search],
-    queryFn: () =>
-      api.get<Paginated<SalesInvoice>>(`/sales/?page_size=50&search=${encodeURIComponent(search)}`),
+    queryKey: ["sales", debouncedSearch, dateFrom, dateTo, page],
+    queryFn: () => api.get<Paginated<SalesInvoice>>(`/sales/?${salesParams.toString()}`),
   });
   const customersQuery = useQuery({
     queryKey: ["customers", "select"],
@@ -164,6 +190,11 @@ export default function SalesPage() {
     queryKey: ["reps", "select"],
     queryFn: () => api.get<Paginated<Representative>>("/representatives/?page_size=100&is_active=true"),
   });
+  const configQuery = useQuery({
+    queryKey: ["sales-config"],
+    queryFn: () => api.get<{ vat_enabled: boolean }>("/sales/config/"),
+  });
+  const vatEnabled = configQuery.data?.vat_enabled ?? false;
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["sales"] });
@@ -175,6 +206,7 @@ export default function SalesPage() {
   };
 
   const createMutation = useMutation({
+    meta: { successMessage: "Invoice saved as draft" },
     mutationFn: () =>
       api.post<SalesInvoice>("/sales/", {
         ...form,
@@ -186,6 +218,7 @@ export default function SalesPage() {
           qty: row.qty,
           unit_price: row.unit_price || null,
           line_discount: row.line_discount === "" ? null : row.line_discount,
+          vat_rate: row.is_free_goods || row.vat_rate === "" ? null : row.vat_rate,
           is_free_goods: row.is_free_goods,
           batch: row.batch || null,
           fefo_override_reason: row.batch ? form.fefo_override_reason : "",
@@ -200,6 +233,7 @@ export default function SalesPage() {
   });
 
   const confirmMutation = useMutation({
+    meta: { successMessage: "Invoice confirmed" },
     mutationFn: () =>
       api.postWithKey<SalesInvoice>(
         `/sales/${confirmFor?.id}/confirm/`,
@@ -225,6 +259,7 @@ export default function SalesPage() {
   });
 
   const payMutation = useMutation({
+    meta: { successMessage: "Payment posted" },
     mutationFn: () =>
       api.postWithKey(
         "/payments/",
@@ -249,6 +284,7 @@ export default function SalesPage() {
   });
 
   const cancelMutation = useMutation({
+    meta: { successMessage: "Invoice cancelled" },
     mutationFn: () =>
       api.postWithKey(
         `/sales/${cancelFor?.id}/cancel/`,
@@ -264,11 +300,19 @@ export default function SalesPage() {
   });
 
   const deliveredMutation = useMutation({
+    meta: { successMessage: "Marked as delivered" },
     mutationFn: (invoice: SalesInvoice) => api.post(`/sales/${invoice.id}/mark-delivered/`, {}),
     onSuccess: () => invalidateAll(),
   });
 
+  const deleteDraftMutation = useMutation({
+    meta: { successMessage: "Draft deleted" },
+    mutationFn: (invoice: SalesInvoice) => api.delete(`/sales/${invoice.id}/`),
+    onSuccess: () => invalidateAll(),
+  });
+
   const returnMutation = useMutation({
+    meta: { successMessage: "Return created and confirmed" },
     mutationFn: async () => {
       const draft = await api.postWithKey<{ id: string }>(
         "/sales-returns/",
@@ -349,7 +393,41 @@ export default function SalesPage() {
   };
 
   const confirmError = confirmMutation.error;
-  const creditBlocked = confirmError instanceof ApiError && confirmError.code === "CREDIT_LIMIT_EXCEEDED";
+  const creditBlocked =
+    confirmError instanceof ApiError &&
+    (confirmError.code === "CREDIT_LIMIT_EXCEEDED" || confirmError.code === "CUSTOMER_PAST_DUE");
+
+  const preview = rows.reduce(
+    (totals, row) => {
+      const qty = Number(row.qty || 0);
+      if (!row.medicine || qty <= 0) return totals;
+      const medicine = medicinesQuery.data?.results.find((item) => item.id === row.medicine);
+      const customer = customersQuery.data?.results.find((item) => item.id === form.customer);
+      const unitPrice = row.is_free_goods
+        ? 0
+        : row.unit_price === ""
+          ? medicine && customer
+            ? tierPrice(customer, medicine)
+            : 0
+          : Number(row.unit_price);
+      const gross = qty * unitPrice;
+      let discount = row.line_discount === "" ? 0 : Number(row.line_discount);
+      if (row.line_discount === "" && !row.is_free_goods && customer) {
+        discount = (gross * Number(customer.default_discount_pct)) / 100;
+      }
+      const taxable = gross - discount;
+      const rate =
+        vatEnabled && medicine && !row.is_free_goods
+          ? Number(row.vat_rate || medicine.vat_rate)
+          : 0;
+      totals.subtotal += gross;
+      totals.discount += discount;
+      totals.vat += (taxable * rate) / 100;
+      return totals;
+    },
+    { subtotal: 0, discount: 0, vat: 0 },
+  );
+  const previewGrand = Math.round(preview.subtotal - preview.discount + preview.vat);
 
   return (
     <div className="space-y-4">
@@ -377,7 +455,7 @@ export default function SalesPage() {
                   <option value="">Select…</option>
                   {customersQuery.data?.results.map((customer) => (
                     <option key={customer.id} value={customer.id}>
-                      {customer.name} ({customer.balance_cache})
+                      {customer.name} ({formatMoney(customer.balance_cache)})
                     </option>
                   ))}
                 </Select>
@@ -503,9 +581,9 @@ export default function SalesPage() {
                         );
                       })()}
                       {row.medicine === selectedMedicine && availability.length > 0 ? (
-                        <p className="mt-1 text-[10px] text-slate-400">
-                          Available {availableQty.toFixed(3)}
-                          {nearestExpiry ? ` · nearest expiry ${nearestExpiry}` : ""}
+                        <p className="mt-1 text-xs text-slate-500">
+                          Available {formatQty(availableQty)}
+                          {nearestExpiry ? ` · nearest expiry ${formatDate(nearestExpiry)}` : ""}
                         </p>
                       ) : null}
                     </Field>
@@ -544,6 +622,20 @@ export default function SalesPage() {
                       value={row.line_discount}
                       onChange={(e) => updateRow(row.key, { line_discount: e.target.value })}
                       disabled={row.is_free_goods}
+                    />
+                  </Field>
+                  <Field label="VAT %">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={row.vat_rate}
+                      onChange={(e) => updateRow(row.key, { vat_rate: e.target.value })}
+                      disabled={!vatEnabled || row.is_free_goods}
+                      placeholder={
+                        medicinesQuery.data?.results.find((item) => item.id === row.medicine)
+                          ?.vat_rate ?? "—"
+                      }
                     />
                   </Field>
                   <label className="flex items-end gap-2 pb-2 text-xs text-slate-600">
@@ -589,7 +681,20 @@ export default function SalesPage() {
               </Button>
             </div>
 
-            <Button type="submit" disabled={createMutation.isPending}>
+            <div className="flex flex-wrap items-center justify-end gap-4 rounded-lg bg-slate-50 px-4 py-3 text-sm">
+              <span className="text-slate-500">Subtotal {formatMoney(preview.subtotal)}</span>
+              {preview.discount > 0 ? (
+                <span className="text-slate-500">Discount −{formatMoney(preview.discount)}</span>
+              ) : null}
+              <span className="text-slate-500">
+                VAT {vatEnabled ? formatMoney(preview.vat) : "0.00 (disabled)"}
+              </span>
+              <span className="font-semibold text-slate-800">
+                Estimated total {formatMoney(previewGrand)}
+              </span>
+            </div>
+
+            <Button type="submit" className="w-full lg:w-auto" disabled={createMutation.isPending}>
               {createMutation.isPending ? "Saving…" : "Save draft"}
             </Button>
           </form>
@@ -600,7 +705,7 @@ export default function SalesPage() {
         <Card>
           <CardHeader
             title={`Confirm invoice — ${confirmFor.customer_name}`}
-            subtitle={`Total ${confirmFor.grand_total}`}
+            subtitle={`Total ${formatMoney(confirmFor.grand_total)}`}
             action={
               <Button size="sm" variant="secondary" onClick={() => setConfirmFor(null)}>
                 Cancel
@@ -626,7 +731,7 @@ export default function SalesPage() {
                   <option value="">Select…</option>
                   {accountsQuery.data?.results.map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name} ({account.balance_cache})
+                      {account.name} ({formatMoney(account.balance_cache)})
                     </option>
                   ))}
                 </Select>
@@ -662,7 +767,7 @@ export default function SalesPage() {
         <Card>
           <CardHeader
             title={`Receive payment — ${payFor.customer_name}`}
-            subtitle={`Outstanding ${payFor.outstanding} on ${payFor.number}`}
+            subtitle={`Outstanding ${formatMoney(payFor.outstanding)} on ${payFor.number}`}
             action={
               <Button size="sm" variant="secondary" onClick={() => setPayFor(null)}>
                 Cancel
@@ -688,7 +793,7 @@ export default function SalesPage() {
                   <option value="">Select…</option>
                   {accountsQuery.data?.results.map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name} ({account.balance_cache})
+                      {account.name} ({formatMoney(account.balance_cache)})
                     </option>
                   ))}
                 </Select>
@@ -732,7 +837,7 @@ export default function SalesPage() {
                       const returnable = Number(item.qty) - Number(item.returned_qty ?? 0);
                       return (
                         <option key={item.id} value={item.id} disabled={returnable <= 0}>
-                          {item.medicine_name} · {item.batch_number} · returnable {returnable.toFixed(3)}
+                          {item.medicine_name} · {item.batch_number} · returnable {formatQty(returnable)}
                         </option>
                       );
                     })}
@@ -778,7 +883,7 @@ export default function SalesPage() {
                     <option value="">Select…</option>
                     {accountsQuery.data?.results.map((account) => (
                       <option key={account.id} value={account.id}>
-                        {account.name} ({account.balance_cache})
+                        {account.name} ({formatMoney(account.balance_cache)})
                       </option>
                     ))}
                   </Select>
@@ -788,8 +893,8 @@ export default function SalesPage() {
             {selectedReturnItem ? (
               <p className="text-xs text-slate-500">
                 Returnable now:{" "}
-                {(Number(selectedReturnItem.qty) - Number(selectedReturnItem.returned_qty ?? 0)).toFixed(3)} · unit
-                price {selectedReturnItem.unit_price}
+                {formatQty(Number(selectedReturnItem.qty) - Number(selectedReturnItem.returned_qty ?? 0))} · unit
+                price {formatMoney(selectedReturnItem.unit_price)}
               </p>
             ) : null}
             <Button
@@ -839,34 +944,59 @@ export default function SalesPage() {
           title="Sales register"
           subtitle={salesQuery.data ? `${salesQuery.data.count} invoice(s)` : undefined}
           action={
-            <Input
-              placeholder="Search number, customer…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-56"
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  setPage(1);
+                }}
+                className="w-36"
+              />
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  setPage(1);
+                }}
+                className="w-36"
+              />
+              <Input
+                placeholder="Search number, customer…"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                className="w-56"
+              />
+            </div>
           }
         />
         <ErrorBanner error={salesQuery.error} />
+        <ErrorBanner error={deleteDraftMutation.error} />
         {salesQuery.isLoading ? (
           <Spinner />
         ) : !salesQuery.data || salesQuery.data.results.length === 0 ? (
           <EmptyState message="No invoices yet." />
         ) : (
+          <>
           <ul className="divide-y divide-slate-100">
             {salesQuery.data.results.map((invoice) => (
               <li key={invoice.id} className="space-y-2 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="font-medium">
-                      <Link href={`/sales/${invoice.id}`} className="text-emerald-700 hover:underline">
+                      <Link href={`/sales/${invoice.id}`} className="text-primary-700 hover:underline">
                         {invoice.number ?? "Draft"}
                       </Link>{" "}
-                      <span className="text-xs text-slate-400">{invoice.customer_name}</span>
+                      <span className="text-xs text-slate-500">{invoice.customer_name}</span>
                     </p>
                     <p className="text-xs text-slate-500">
-                      {invoice.business_date} · {invoice.items.length} line(s)
-                      {invoice.due_date ? ` · due ${invoice.due_date}` : ""}
+                      {formatDate(invoice.business_date)} · {invoice.items.length} line(s)
+                      {invoice.due_date ? ` · due ${formatDate(invoice.due_date)}` : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -881,23 +1011,38 @@ export default function SalesPage() {
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm">
-                    Total <strong>{invoice.grand_total}</strong> · Paid {invoice.paid_total} ·{" "}
-                    <span className={Number(invoice.outstanding) > 0 ? "text-rose-700" : "text-emerald-700"}>
-                      Outstanding {invoice.outstanding}
+                    Total <strong>{formatMoney(invoice.grand_total)}</strong> · Paid{" "}
+                    {formatMoney(invoice.paid_total)} ·{" "}
+                    <span className={Number(invoice.outstanding) > 0 ? "text-danger-700" : "text-primary-700"}>
+                      Outstanding {formatMoney(invoice.outstanding)}
                     </span>
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {invoice.lifecycle === "DRAFT" ? (
-                      <Button size="sm" onClick={() => openConfirm(invoice)} disabled={!accountsQuery.data}>
-                        Confirm
-                      </Button>
+                      <>
+                        <Button size="sm" onClick={() => openConfirm(invoice)} disabled={!accountsQuery.data}>
+                          Confirm
+                        </Button>
+                        <ConfirmButton
+                          size="sm"
+                          variant="ghost"
+                          confirmLabel="Delete draft?"
+                          onConfirm={() => deleteDraftMutation.mutate(invoice)}
+                          disabled={deleteDraftMutation.isPending}
+                        >
+                          Delete
+                        </ConfirmButton>
+                      </>
                     ) : null}
                     {invoice.lifecycle === "CONFIRMED" && Number(invoice.outstanding) > 0 ? (
                       <Button size="sm" variant="secondary" onClick={() => openPay(invoice)}>
                         Receive payment
                       </Button>
                     ) : null}
-                    {invoice.lifecycle === "CONFIRMED" && Number(invoice.paid_total) === 0 && hasPerm("SALE_CANCEL") ? (
+                    {invoice.lifecycle === "CONFIRMED" &&
+                    Number(invoice.paid_total) === 0 &&
+                    invoice.return_status === "NONE" &&
+                    hasPerm("SALE_CANCEL") ? (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -927,11 +1072,30 @@ export default function SalesPage() {
                         View / Print
                       </Button>
                     </Link>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        apiDownload(
+                          `/sales/${invoice.id}/print/`,
+                          `${invoice.number ?? "invoice"}.pdf`,
+                        )
+                      }
+                    >
+                      PDF
+                    </Button>
                   </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <Pagination
+              page={page}
+              hasPrevious={page > 1}
+              hasNext={Boolean(salesQuery.data?.next)}
+              onChange={setPage}
+            />
+          </>
         )}
       </Card>
     </div>
