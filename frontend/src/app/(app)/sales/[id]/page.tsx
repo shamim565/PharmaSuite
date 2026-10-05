@@ -1,11 +1,13 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import { Badge, Button, ErrorBanner, Spinner } from "@/components/ui";
-import { api } from "@/lib/api";
+import { api, apiDownload } from "@/lib/api";
+import { formatDate, formatDateTime, formatMoney, formatQty } from "@/lib/format";
 import type { SalesInvoice } from "@/lib/types";
 
 export default function InvoiceDetailPage() {
@@ -22,12 +24,26 @@ export default function InvoiceDetailPage() {
       <div className="no-print flex flex-wrap items-center justify-between gap-2">
         <Link href="/sales">
           <Button size="sm" variant="secondary">
-            ← Back to sales
+            <ArrowLeft aria-hidden size={14} />
+            Back to sales
           </Button>
         </Link>
-        <Button size="sm" onClick={() => window.print()} disabled={!data}>
-          Print (A4)
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!data}
+            onClick={() =>
+              data &&
+              apiDownload(`/sales/${data.id}/print/`, `${data.number ?? "invoice"}.pdf`)
+            }
+          >
+            Download PDF
+          </Button>
+          <Button size="sm" onClick={() => window.print()} disabled={!data}>
+            Print (A4)
+          </Button>
+        </div>
       </div>
 
       <ErrorBanner error={error} />
@@ -46,9 +62,9 @@ export default function InvoiceDetailPage() {
             <div className="text-right">
               <h2 className="text-lg font-semibold uppercase tracking-wide text-slate-700">Invoice</h2>
               <p className="font-mono text-sm">{data.number ?? "DRAFT"}</p>
-              <p className="text-xs text-slate-500">Date: {data.business_date}</p>
-              {data.due_date ? <p className="text-xs text-slate-500">Due: {data.due_date}</p> : null}
-              <div className="no-print mt-1 flex justify-end gap-1">
+              <p className="text-xs text-slate-500">Date: {formatDate(data.business_date)}</p>
+              {data.due_date ? <p className="text-xs text-slate-500">Due: {formatDate(data.due_date)}</p> : null}
+              <div className="mt-1 flex justify-end gap-1">
                 <Badge tone={data.payment_status === "PAID" ? "green" : data.payment_status === "PARTIALLY_PAID" ? "amber" : "slate"}>
                   {data.payment_status}
                 </Badge>
@@ -59,7 +75,7 @@ export default function InvoiceDetailPage() {
 
           <div className="grid grid-cols-2 gap-4 py-4">
             <div>
-              <p className="text-xs font-semibold uppercase text-slate-400">Billed to</p>
+              <p className="text-xs font-semibold uppercase text-slate-500">Billed to</p>
               <p className="font-medium text-slate-800">{data.customer_name}</p>
               <p className="text-xs text-slate-500">
                 {data.customer_code}
@@ -68,7 +84,10 @@ export default function InvoiceDetailPage() {
               {data.customer_address ? <p className="text-xs text-slate-500">{data.customer_address}</p> : null}
             </div>
             <div className="text-right text-xs text-slate-500">
-              <p>Prepared by: {data.confirmed_at ? "Counter" : "—"}</p>
+              <p>
+                {data.confirmed_by_name ? `Prepared by: ${data.confirmed_by_name} · ` : ""}
+                {data.confirmed_at ? formatDateTime(data.confirmed_at) : "—"}
+              </p>
               <p>{data.notes ? `Notes: ${data.notes}` : ""}</p>
             </div>
           </div>
@@ -92,15 +111,15 @@ export default function InvoiceDetailPage() {
                   <td className="py-2 text-slate-500">{item.line_no}</td>
                   <td className="py-2">
                     {item.medicine_name}
-                    {item.is_free_goods ? <span className="ml-1 text-xs text-emerald-700">(free)</span> : null}
-                    <span className="block font-mono text-[10px] text-slate-400">{item.medicine_code}</span>
+                    {item.is_free_goods ? <span className="ml-1 text-xs text-primary-700">(free)</span> : null}
+                    <span className="block font-mono text-xs text-slate-500">{item.medicine_code}</span>
                   </td>
                   <td className="py-2 font-mono text-xs">{item.batch_number}</td>
-                  <td className="py-2 text-right">{item.qty}</td>
-                  <td className="py-2 text-right">{item.unit_price}</td>
-                  <td className="py-2 text-right">{item.line_discount}</td>
-                  <td className="py-2 text-right">{item.vat_amount}</td>
-                  <td className="py-2 text-right font-medium">{item.line_total}</td>
+                  <td className="py-2 text-right">{formatQty(item.qty)}</td>
+                  <td className="py-2 text-right">{formatMoney(item.unit_price)}</td>
+                  <td className="py-2 text-right">{formatMoney(item.line_discount)}</td>
+                  <td className="py-2 text-right">{formatMoney(item.vat_amount)}</td>
+                  <td className="py-2 text-right font-medium">{formatMoney(item.line_total)}</td>
                 </tr>
               ))}
             </tbody>
@@ -110,31 +129,33 @@ export default function InvoiceDetailPage() {
             <dl className="w-full max-w-xs space-y-1 text-sm">
               <div className="flex justify-between">
                 <dt className="text-slate-500">Subtotal</dt>
-                <dd>{data.subtotal}</dd>
+                <dd>{formatMoney(data.subtotal)}</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-slate-500">Discount</dt>
-                <dd>{data.discount_total}</dd>
+                <dd>{formatMoney(data.discount_total)}</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-slate-500">VAT</dt>
-                <dd>{data.vat_total}</dd>
+                <dd>{formatMoney(data.vat_total)}</dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-500">Round off</dt>
-                <dd>{data.round_off}</dd>
-              </div>
+              {Number(data.round_off) !== 0 ? (
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Round off</dt>
+                  <dd>{formatMoney(data.round_off)}</dd>
+                </div>
+              ) : null}
               <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-semibold">
                 <dt>Grand total</dt>
-                <dd>{data.grand_total}</dd>
+                <dd>{formatMoney(data.grand_total)}</dd>
               </div>
               <div className="flex justify-between text-xs">
                 <dt className="text-slate-500">Paid</dt>
-                <dd>{data.paid_total}</dd>
+                <dd>{formatMoney(data.paid_total)}</dd>
               </div>
               <div className="flex justify-between text-xs">
                 <dt className="text-slate-500">Outstanding</dt>
-                <dd>{data.outstanding}</dd>
+                <dd>{formatMoney(data.outstanding)}</dd>
               </div>
             </dl>
           </div>
@@ -148,7 +169,7 @@ export default function InvoiceDetailPage() {
             </div>
           </div>
 
-          <p className="mt-4 text-center text-[10px] text-slate-400">
+          <p className="mt-4 text-center text-xs text-slate-500">
             This is a computer-generated invoice. {data.credit_override ? "Credit limit override applied. " : ""}
           </p>
         </div>
