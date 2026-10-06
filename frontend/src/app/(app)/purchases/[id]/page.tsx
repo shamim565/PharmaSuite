@@ -1,12 +1,63 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { Badge, Button, ErrorBanner, Spinner } from "@/components/ui";
-import { api } from "@/lib/api";
-import type { Purchase } from "@/lib/types";
+import { useAuth } from "@/app/providers";
+import { AttachmentPanel } from "@/components/attachments";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Spinner, pushToast } from "@/components/ui";
+import { ApiError, api, apiDownload } from "@/lib/api";
+import { formatDate, formatDateTime, formatMoney, formatQty } from "@/lib/format";
+import type { Paginated, Purchase, SupplierPayment } from "@/lib/types";
+
+function PaymentHistory({ purchaseId }: { purchaseId: string }) {
+  const { hasPerm } = useAuth();
+  const canView = hasPerm("PURCHASE_PAY");
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["supplier-payments", "purchase", purchaseId],
+    queryFn: () =>
+      api.get<Paginated<SupplierPayment>>(`/supplier-payments/?purchase=${purchaseId}&page_size=50`),
+    enabled: canView,
+  });
+
+  if (!canView) return null;
+
+  return (
+    <Card>
+      <CardHeader title="Payments" subtitle={data ? `${data.count} payment(s) allocated` : undefined} />
+      <ErrorBanner error={error} />
+      {isLoading ? (
+        <Spinner />
+      ) : !data || data.results.length === 0 ? (
+        <EmptyState message="No payments recorded for this purchase." />
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {data.results.map((payment) => (
+            <li key={payment.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+              <div>
+                <p className="font-medium">{payment.number}</p>
+                <p className="text-xs text-slate-500">
+                  {formatDate(payment.business_date)} · {payment.method} · {payment.account_name}
+                  {payment.reference ? ` · ref ${payment.reference}` : ""}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-semibold">{formatMoney(payment.amount)}</span>
+                {payment.status === "ACTIVE" ? (
+                  <Badge tone="green">Active</Badge>
+                ) : (
+                  <Badge tone="rose">Reversed</Badge>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
 
 export default function PurchaseDetailPage() {
   const params = useParams<{ id: string }>();
@@ -22,12 +73,33 @@ export default function PurchaseDetailPage() {
       <div className="no-print flex flex-wrap items-center justify-between gap-2">
         <Link href="/purchases">
           <Button size="sm" variant="secondary">
-            ← Back to purchases
+            <ArrowLeft aria-hidden size={14} />
+            Back to purchases
           </Button>
         </Link>
-        <Button size="sm" onClick={() => window.print()} disabled={!data}>
-          Print (A4)
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!data}
+            onClick={async () => {
+              if (!data) return;
+              try {
+                await apiDownload(
+                  `/purchases/${data.id}/print/`,
+                  `${data.number ?? "purchase"}.pdf`,
+                );
+              } catch (err) {
+                pushToast(err instanceof ApiError ? err.message : "Download failed", "error");
+              }
+            }}
+          >
+            Download PDF
+          </Button>
+          <Button size="sm" onClick={() => window.print()} disabled={!data}>
+            Print (A4)
+          </Button>
+        </div>
       </div>
 
       <ErrorBanner error={error} />
@@ -42,11 +114,12 @@ export default function PurchaseDetailPage() {
             <div className="text-right">
               <h2 className="text-lg font-semibold uppercase tracking-wide text-slate-700">Purchase Record</h2>
               <p className="font-mono text-sm">{data.number ?? "DRAFT"}</p>
-              <p className="text-xs text-slate-500">Business date: {data.business_date}</p>
+              <p className="text-xs text-slate-500">Business date: {formatDate(data.business_date)}</p>
               <p className="text-xs text-slate-500">
-                Supplier invoice: {data.supplier_invoice_number || "—"} ({data.supplier_invoice_date || "—"})
+                Supplier invoice: {data.supplier_invoice_number || "—"} (
+                {data.supplier_invoice_date ? formatDate(data.supplier_invoice_date) : "—"})
               </p>
-              <div className="no-print mt-1 flex justify-end gap-1">
+              <div className="mt-1 flex justify-end gap-1">
                 <Badge tone={data.payment_status === "PAID" ? "green" : data.payment_status === "PARTIALLY_PAID" ? "amber" : "slate"}>
                   {data.payment_status}
                 </Badge>
@@ -58,23 +131,31 @@ export default function PurchaseDetailPage() {
 
           <div className="grid grid-cols-2 gap-4 py-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Supplier</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supplier</p>
               <p className="text-sm font-medium">{data.supplier_name}</p>
+              {data.confirmed_at ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  Confirmed{data.confirmed_by_name ? ` by ${data.confirmed_by_name}` : ""} ·{" "}
+                  {formatDateTime(data.confirmed_at)}
+                </p>
+              ) : null}
             </div>
             <div className="text-right">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Amounts (BDT)</p>
-              <p className="text-sm">Subtotal {Number(data.subtotal).toFixed(2)}</p>
-              <p className="text-sm">Discount −{Number(data.discount_total).toFixed(2)}</p>
-              <p className="text-sm">Freight +{Number(data.freight_total).toFixed(2)}</p>
-              <p className="text-sm">VAT {Number(data.vat_total).toFixed(2)}</p>
-              <p className="text-base font-bold">Grand total {Number(data.grand_total).toFixed(2)}</p>
-              <p className="text-sm text-slate-500">Paid {Number(data.paid_total).toFixed(2)} · Outstanding {Number(data.outstanding).toFixed(2)}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Amounts (BDT)</p>
+              <p className="text-sm">Subtotal {formatMoney(data.subtotal)}</p>
+              <p className="text-sm">Discount −{formatMoney(data.discount_total)}</p>
+              <p className="text-sm">Freight +{formatMoney(data.freight_total)}</p>
+              <p className="text-sm">VAT {formatMoney(data.vat_total)}</p>
+              <p className="text-base font-bold">Grand total {formatMoney(data.grand_total)}</p>
+              <p className="text-sm text-slate-500">
+                Paid {formatMoney(data.paid_total)} · Outstanding {formatMoney(data.outstanding)}
+              </p>
             </div>
           </div>
 
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="py-2">#</th>
                 <th className="py-2">Medicine</th>
                 <th className="py-2">Batch</th>
@@ -93,16 +174,16 @@ export default function PurchaseDetailPage() {
                   <td className="py-2">{index + 1}</td>
                   <td className="py-2">
                     {item.medicine_name}
-                    <span className="block text-xs text-slate-400">{item.medicine_code}</span>
+                    <span className="block text-xs text-slate-500">{item.medicine_code}</span>
                   </td>
                   <td className="py-2 font-mono text-xs">{item.batch_number}</td>
-                  <td className="py-2 text-right">{item.expiry_date ?? "—"}</td>
-                  <td className="py-2 text-right">{item.qty_base}</td>
-                  <td className="py-2 text-right">{item.bonus_qty_base || 0}</td>
-                  <td className="py-2 text-right">{Number(item.unit_cost).toFixed(2)}</td>
-                  <td className="py-2 text-right">{Number(item.line_discount).toFixed(2)}</td>
-                  <td className="py-2 text-right">{Number(item.vat_amount).toFixed(2)}</td>
-                  <td className="py-2 text-right font-medium">{Number(item.line_net).toFixed(2)}</td>
+                  <td className="py-2 text-right">{item.expiry_date ? formatDate(item.expiry_date) : "—"}</td>
+                  <td className="py-2 text-right">{formatQty(item.qty_base)}</td>
+                  <td className="py-2 text-right">{formatQty(item.bonus_qty_base || "0")}</td>
+                  <td className="py-2 text-right">{formatMoney(item.unit_cost)}</td>
+                  <td className="py-2 text-right">{formatMoney(item.line_discount)}</td>
+                  <td className="py-2 text-right">{formatMoney(item.vat_amount)}</td>
+                  <td className="py-2 text-right font-medium">{formatMoney(item.line_net)}</td>
                 </tr>
               ))}
             </tbody>
@@ -114,11 +195,28 @@ export default function PurchaseDetailPage() {
             </p>
           ) : null}
           {data.cancel_reason ? (
-            <p className="mt-2 text-xs text-rose-600">
+            <p className="mt-2 text-xs text-danger-600">
               <span className="font-semibold">Cancelled:</span> {data.cancel_reason}
             </p>
           ) : null}
         </div>
+      ) : null}
+
+      {data ? (
+        <>
+          <div className="no-print">
+            <PaymentHistory purchaseId={data.id} />
+          </div>
+          <Card className="no-print">
+            <div className="p-4">
+              <AttachmentPanel
+                ownerType="PURCHASE"
+                ownerId={data.id}
+                title="Supplier invoice & documents"
+              />
+            </div>
+          </Card>
+        </>
       ) : null}
     </div>
   );

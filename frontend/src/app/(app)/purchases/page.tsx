@@ -4,9 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
 import { AttachmentPanel } from "@/components/attachments";
 import { ApiError, api } from "@/lib/api";
+import { formatDate, formatMoney, formatQty } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
 import type {
   Branch,
   FinancialAccount,
@@ -60,10 +62,12 @@ function paymentTone(status: Purchase["payment_status"]): "green" | "amber" | "s
 export default function PurchasesPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [rows, setRows] = useState<DraftRow[]>([newRow(1)]);
   const [rowSeq, setRowSeq] = useState(2);
+  const debouncedSearch = useDebouncedValue(search);
 
   // action panels
   const [confirmFor, setConfirmFor] = useState<Purchase | null>(null);
@@ -80,10 +84,12 @@ export default function PurchasesPage() {
   const [returnQty, setReturnQty] = useState("");
   const [returnReason, setReturnReason] = useState("DAMAGED");
 
+  const purchaseParams = new URLSearchParams({ page_size: "50", page: String(page) });
+  if (debouncedSearch) purchaseParams.set("search", debouncedSearch);
+
   const purchasesQuery = useQuery({
-    queryKey: ["purchases", search],
-    queryFn: () =>
-      api.get<Paginated<Purchase>>(`/purchases/?page_size=50&search=${encodeURIComponent(search)}`),
+    queryKey: ["purchases", debouncedSearch, page],
+    queryFn: () => api.get<Paginated<Purchase>>(`/purchases/?${purchaseParams.toString()}`),
   });
   const suppliersQuery = useQuery({
     queryKey: ["suppliers", "select"],
@@ -111,6 +117,7 @@ export default function PurchasesPage() {
   };
 
   const createMutation = useMutation({
+    meta: { successMessage: "Purchase saved as draft" },
     mutationFn: () =>
       api.post<Purchase>("/purchases/", {
         ...form,
@@ -135,6 +142,7 @@ export default function PurchasesPage() {
   });
 
   const confirmMutation = useMutation({
+    meta: { successMessage: "Purchase confirmed" },
     mutationFn: () =>
       api.post<Purchase>(`/purchases/${confirmFor?.id}/confirm/`, {
         payment:
@@ -151,6 +159,7 @@ export default function PurchasesPage() {
   });
 
   const payMutation = useMutation({
+    meta: { successMessage: "Payment posted" },
     mutationFn: () =>
       api.post("/supplier-payments/", {
         supplier: payFor?.supplier,
@@ -170,6 +179,7 @@ export default function PurchasesPage() {
   });
 
   const returnMutation = useMutation({
+    meta: { successMessage: "Return created and confirmed" },
     mutationFn: async () => {
       const draft = await api.post<{ id: string }>("/purchase-returns/", {
         purchase: returnFor?.id,
@@ -187,6 +197,7 @@ export default function PurchasesPage() {
   });
 
   const cancelMutation = useMutation({
+    meta: { successMessage: "Purchase cancelled" },
     mutationFn: () =>
       api.post(`/purchases/${cancelFor?.id}/cancel/`, {
         reason: cancelReason || "Cancelled from purchase register",
@@ -378,7 +389,7 @@ export default function PurchasesPage() {
               </Button>
             </div>
 
-            <Button type="submit" disabled={createMutation.isPending}>
+            <Button type="submit" className="w-full lg:w-auto" disabled={createMutation.isPending}>
               {createMutation.isPending ? "Saving…" : "Save draft"}
             </Button>
           </form>
@@ -390,7 +401,7 @@ export default function PurchasesPage() {
         <Card>
           <CardHeader
             title={`Confirm purchase ${confirmFor.supplier_invoice_number}`}
-            subtitle={`${confirmFor.supplier_name} · total ${confirmFor.grand_total}`}
+            subtitle={`${confirmFor.supplier_name} · total ${formatMoney(confirmFor.grand_total)}`}
             action={
               <Button size="sm" variant="secondary" onClick={() => setConfirmFor(null)}>
                 Cancel
@@ -419,7 +430,7 @@ export default function PurchasesPage() {
                   <option value="">Select…</option>
                   {accountsQuery.data?.results.map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name} ({account.balance_cache})
+                      {account.name} ({formatMoney(account.balance_cache)})
                     </option>
                   ))}
                 </Select>
@@ -443,7 +454,7 @@ export default function PurchasesPage() {
         <Card>
           <CardHeader
             title={`Pay supplier — ${payFor.supplier_name}`}
-            subtitle={`Outstanding ${payFor.outstanding}`}
+            subtitle={`Outstanding ${formatMoney(payFor.outstanding)}`}
             action={
               <Button size="sm" variant="secondary" onClick={() => setPayFor(null)}>
                 Cancel
@@ -469,7 +480,7 @@ export default function PurchasesPage() {
                   <option value="">Select…</option>
                   {accountsQuery.data?.results.map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name} ({account.balance_cache})
+                      {account.name} ({formatMoney(account.balance_cache)})
                     </option>
                   ))}
                 </Select>
@@ -507,7 +518,7 @@ export default function PurchasesPage() {
                     {returnFor.items.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.medicine_name} · {item.batch_number} · returnable{" "}
-                        {Number(item.qty_base) + Number(item.bonus_qty_base) - Number(item.returned_qty_base)}
+                        {formatQty(Number(item.qty_base) + Number(item.bonus_qty_base) - Number(item.returned_qty_base))}
                       </option>
                     ))}
                   </Select>
@@ -529,9 +540,11 @@ export default function PurchasesPage() {
             {selectedReturnItem ? (
               <p className="text-xs text-slate-500">
                 Returnable now:{" "}
-                {Number(selectedReturnItem.qty_base) +
-                  Number(selectedReturnItem.bonus_qty_base) -
-                  Number(selectedReturnItem.returned_qty_base)}
+                {formatQty(
+                  Number(selectedReturnItem.qty_base) +
+                    Number(selectedReturnItem.bonus_qty_base) -
+                    Number(selectedReturnItem.returned_qty_base),
+                )}
               </p>
             ) : null}
             <Button
@@ -594,8 +607,12 @@ export default function PurchasesPage() {
           action={
             <Input
               placeholder="Search number, invoice, supplier…"
+              aria-label="Search purchases"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="w-56"
             />
           }
@@ -617,10 +634,10 @@ export default function PurchasesPage() {
                       ) : (
                         "Draft"
                       )}{" "}
-                      <span className="text-xs text-slate-400">{purchase.supplier_invoice_number}</span>
+                      <span className="text-xs text-slate-500">{purchase.supplier_invoice_number}</span>
                     </p>
                     <p className="text-xs text-slate-500">
-                      {purchase.supplier_name} · {purchase.business_date} · {purchase.items.length} line(s)
+                      {purchase.supplier_name} · {formatDate(purchase.business_date)} · {purchase.items.length} line(s)
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -631,9 +648,10 @@ export default function PurchasesPage() {
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm">
-                    Total <strong>{purchase.grand_total}</strong> · Paid {purchase.paid_total} ·{" "}
-                    <span className={Number(purchase.outstanding) > 0 ? "text-rose-700" : "text-emerald-700"}>
-                      Outstanding {purchase.outstanding}
+                    Total <strong>{formatMoney(purchase.grand_total)}</strong> · Paid{" "}
+                    {formatMoney(purchase.paid_total)} ·{" "}
+                    <span className={Number(purchase.outstanding) > 0 ? "text-danger-700" : "text-primary-700"}>
+                      Outstanding {formatMoney(purchase.outstanding)}
                     </span>
                   </p>
                   <div className="flex flex-wrap gap-2">
@@ -683,6 +701,14 @@ export default function PurchasesPage() {
             ))}
           </ul>
         )}
+        {purchasesQuery.data && purchasesQuery.data.count > 0 ? (
+          <Pagination
+            page={page}
+            hasPrevious={Boolean(purchasesQuery.data.previous)}
+            hasNext={Boolean(purchasesQuery.data.next)}
+            onChange={setPage}
+          />
+        ) : null}
       </Card>
     </div>
   );
