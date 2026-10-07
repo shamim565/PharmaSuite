@@ -1,12 +1,21 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { Badge, Button, ErrorBanner, Spinner } from "@/components/ui";
-import { api } from "@/lib/api";
+import { Badge, Button, ErrorBanner, Spinner, pushToast } from "@/components/ui";
+import { ApiError, api, apiDownload } from "@/lib/api";
+import { formatDate, formatMoney } from "@/lib/format";
 import type { CustomerPayment } from "@/lib/types";
+
+const METHOD_LABEL: Record<string, string> = {
+  CASH: "Cash",
+  BANK: "Bank",
+  MFS: "MFS",
+  CHEQUE: "Cheque",
+};
 
 export default function ReceiptDetailPage() {
   const params = useParams<{ id: string }>();
@@ -22,12 +31,33 @@ export default function ReceiptDetailPage() {
       <div className="no-print flex flex-wrap items-center justify-between gap-2">
         <Link href="/payments">
           <Button size="sm" variant="secondary">
-            ← Back to payments
+            <ArrowLeft aria-hidden size={14} />
+            Back to payments
           </Button>
         </Link>
-        <Button size="sm" onClick={() => window.print()} disabled={!data}>
-          Print (A4)
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!data}
+            onClick={async () => {
+              if (!data) return;
+              try {
+                await apiDownload(
+                  `/payments/${data.id}/print/`,
+                  `${data.number ?? "receipt"}.pdf`,
+                );
+              } catch (err) {
+                pushToast(err instanceof ApiError ? err.message : "Download failed", "error");
+              }
+            }}
+          >
+            Download PDF
+          </Button>
+          <Button size="sm" onClick={() => window.print()} disabled={!data}>
+            Print (A4)
+          </Button>
+        </div>
       </div>
 
       <ErrorBanner error={error} />
@@ -42,20 +72,20 @@ export default function ReceiptDetailPage() {
             <div className="text-right">
               <h2 className="text-base font-semibold uppercase tracking-wide text-slate-700">Money Receipt</h2>
               <p className="font-mono text-sm">{data.number}</p>
-              <p className="text-xs text-slate-500">Date: {data.business_date}</p>
-              <div className="no-print mt-1">
-                {data.status === "ACTIVE" ? <Badge tone="green">Active</Badge> : <Badge tone="rose">REVERSED</Badge>}
+              <p className="text-xs text-slate-500">Date: {formatDate(data.business_date)}</p>
+              <div className="mt-1">
+                {data.status === "ACTIVE" ? <Badge tone="green">Active</Badge> : <Badge tone="rose">Reversed</Badge>}
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 py-4 text-sm">
             <div>
-              <p className="text-xs font-semibold uppercase text-slate-400">Received from</p>
+              <p className="text-xs font-semibold uppercase text-slate-500">Received from</p>
               <p className="font-medium">{data.customer_name}</p>
             </div>
             <div className="text-right text-xs text-slate-500">
-              <p>Method: {data.method}</p>
+              <p>Method: {METHOD_LABEL[data.method] ?? data.method}</p>
               <p>Account: {data.account_name}</p>
               {data.reference ? <p>Reference: {data.reference}</p> : null}
               {data.collector_name ? <p>Collected by: {data.collector_name}</p> : null}
@@ -64,7 +94,7 @@ export default function ReceiptDetailPage() {
 
           <div className="rounded-lg bg-slate-50 p-4 text-center">
             <p className="text-xs uppercase text-slate-500">Amount received</p>
-            <p className="text-2xl font-bold text-slate-900">{data.amount}</p>
+            <p className="text-2xl font-bold text-slate-900">{formatMoney(data.amount)}</p>
           </div>
 
           {data.allocations.length > 0 ? (
@@ -78,8 +108,12 @@ export default function ReceiptDetailPage() {
               <tbody className="divide-y divide-slate-100">
                 {data.allocations.map((allocation) => (
                   <tr key={allocation.id}>
-                    <td className="py-2 font-mono text-xs">{allocation.invoice_number ?? allocation.invoice}</td>
-                    <td className="py-2 text-right">{allocation.amount}</td>
+                    <td className="py-2 font-mono text-xs">
+                      <Link href={`/sales/${allocation.invoice}`} className="text-primary-700 hover:underline">
+                        {allocation.invoice_number ?? allocation.invoice}
+                      </Link>
+                    </td>
+                    <td className="py-2 text-right">{formatMoney(allocation.amount)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -3,8 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner, StickyBar } from "@/components/ui";
 import { api } from "@/lib/api";
+import { formatDate, formatMoney } from "@/lib/format";
 import type { AdvanceRow, DailyCollectionReport, DueListResponse, DueListRow, FinancialAccount, Paginated } from "@/lib/types";
 
 function bucketTone(bucket: DueListRow["bucket"]): "slate" | "amber" | "rose" {
@@ -30,6 +31,7 @@ export default function DuesPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [page, setPage] = useState(1);
 
   const [collectCustomer, setCollectCustomer] = useState<{ id: string; name: string } | null>(null);
   const [collectAmount, setCollectAmount] = useState("");
@@ -38,12 +40,12 @@ export default function DuesPage() {
   const [accountId, setAccountId] = useState("");
   const [reference, setReference] = useState("");
 
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ page_size: "25", page: String(page) });
   if (search) params.set("search", search);
   if (overdueOnly) params.set("overdue_only", "true");
 
   const duesQuery = useQuery({
-    queryKey: ["dues", search, overdueOnly],
+    queryKey: ["dues", search, overdueOnly, page],
     queryFn: () => api.get<DueListResponse>(`/sales/due-list/?${params.toString()}`),
   });
   const advancesQuery = useQuery({
@@ -60,6 +62,7 @@ export default function DuesPage() {
   });
 
   const collectMutation = useMutation({
+    meta: { successMessage: "Payment posted" },
     mutationFn: () => {
       const rows = customerRows(collectCustomer?.id ?? "");
       const positive = Object.entries(allocations)
@@ -123,13 +126,23 @@ export default function DuesPage() {
         <h1 className="text-lg font-semibold text-slate-800">Dues & collection</h1>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1 text-xs text-slate-600">
-            <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={overdueOnly}
+              onChange={(e) => {
+                setOverdueOnly(e.target.checked);
+                setPage(1);
+              }}
+            />
             Overdue only
           </label>
           <Input
             placeholder="Search customer…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="w-48"
           />
         </div>
@@ -138,19 +151,19 @@ export default function DuesPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Outstanding</p>
-          <p className="text-xl font-bold text-slate-800">{duesQuery.data?.totals.outstanding ?? "—"}</p>
+          <p className="text-xl font-bold text-slate-800">{formatMoney(duesQuery.data?.totals.outstanding)}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Overdue</p>
-          <p className="text-xl font-bold text-rose-700">{duesQuery.data?.totals.overdue ?? "—"}</p>
+          <p className="text-xl font-bold text-danger-700">{formatMoney(duesQuery.data?.totals.overdue)}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Collected today</p>
-          <p className="text-xl font-bold text-emerald-700">{dailyQuery.data?.total ?? "—"}</p>
+          <p className="text-xl font-bold text-primary-700">{formatMoney(dailyQuery.data?.total)}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Customer advances</p>
-          <p className="text-xl font-bold text-sky-700">{advancesQuery.data?.total ?? "—"}</p>
+          <p className="text-xl font-bold text-sky-700">{formatMoney(advancesQuery.data?.total)}</p>
         </Card>
       </div>
 
@@ -190,7 +203,7 @@ export default function DuesPage() {
                   <option value="">Select…</option>
                   {accountsQuery.data?.results.map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name} ({account.balance_cache})
+                      {account.name} ({formatMoney(account.balance_cache)})
                     </option>
                   ))}
                 </Select>
@@ -205,10 +218,10 @@ export default function DuesPage() {
                 <li key={row.invoice} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
                   <div>
                     <p className="text-sm font-medium">
-                      {row.number} <span className="text-xs text-slate-400">due {row.due_date}</span>
+                      {row.number} <span className="text-xs text-slate-500">due {formatDate(row.due_date)}</span>
                     </p>
                     <p className="text-xs text-slate-500">
-                      Outstanding {row.outstanding}
+                      Outstanding {formatMoney(row.outstanding)}
                       {row.days_overdue > 0 ? ` · ${row.days_overdue}d overdue` : ""}
                     </p>
                   </div>
@@ -218,6 +231,7 @@ export default function DuesPage() {
                       step="0.01"
                       min="0"
                       placeholder="0.00"
+                      aria-label={`Allocate amount for invoice ${row.number}`}
                       value={allocations[row.invoice] ?? ""}
                       onChange={(e) => setAllocations({ ...allocations, [row.invoice]: e.target.value })}
                     />
@@ -226,26 +240,30 @@ export default function DuesPage() {
               ))}
             </ul>
 
-            <div className="flex flex-wrap items-center gap-4 text-sm">
-              <span>
-                Allocated: <strong>{allocatedTotal.toFixed(2)}</strong>
-              </span>
-              <span className={advancePortion > 0 ? "text-sky-700" : "text-slate-400"}>
-                Advance: <strong>{advancePortion.toFixed(2)}</strong>
-              </span>
-            </div>
-
-            <Button
-              onClick={() => collectMutation.mutate()}
-              disabled={
-                collectMutation.isPending ||
-                !accountId ||
-                Number(collectAmount) <= 0 ||
-                allocatedTotal > Number(collectAmount)
-              }
-            >
-              {collectMutation.isPending ? "Posting…" : "Post receipt"}
-            </Button>
+            <StickyBar>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <span>
+                    Allocated: <strong>{formatMoney(allocatedTotal)}</strong>
+                  </span>
+                  <span className={advancePortion > 0 ? "text-sky-700" : "text-slate-500"}>
+                    Advance: <strong>{formatMoney(advancePortion)}</strong>
+                  </span>
+                </div>
+                <Button
+                  className="w-full sm:w-auto"
+                  onClick={() => collectMutation.mutate()}
+                  disabled={
+                    collectMutation.isPending ||
+                    !accountId ||
+                    Number(collectAmount) <= 0 ||
+                    allocatedTotal > Number(collectAmount)
+                  }
+                >
+                  {collectMutation.isPending ? "Posting…" : "Post receipt"}
+                </Button>
+              </div>
+            </StickyBar>
           </div>
         </Card>
       ) : null}
@@ -277,15 +295,15 @@ export default function DuesPage() {
                       <td className="px-4 py-2 font-mono text-xs">{row.number}</td>
                       <td className="px-4 py-2">
                         {row.customer_name}
-                        <span className="block text-xs text-slate-400">{row.phone}</span>
+                        <span className="block text-xs text-slate-500">{row.phone}</span>
                       </td>
-                      <td className="px-4 py-2 text-slate-500">{row.due_date}</td>
+                      <td className="px-4 py-2 text-slate-500">{formatDate(row.due_date)}</td>
                       <td className="px-4 py-2">
                         <Badge tone={bucketTone(row.bucket)}>
                           {row.days_overdue > 0 ? `${row.days_overdue}d overdue` : "Current"}
                         </Badge>
                       </td>
-                      <td className="px-4 py-2 text-right font-medium">{row.outstanding}</td>
+                      <td className="px-4 py-2 text-right font-medium">{formatMoney(row.outstanding)}</td>
                       <td className="px-4 py-2 text-right">
                         <Button size="sm" onClick={() => openCollect(row)} disabled={!accountsQuery.data}>
                           Collect
@@ -306,10 +324,10 @@ export default function DuesPage() {
                     </Badge>
                   </div>
                   <p className="text-xs text-slate-500">
-                    {row.number} · due {row.due_date} · {row.phone}
+                    {row.number} · due {formatDate(row.due_date)} · {row.phone}
                   </p>
                   <p className="text-sm">
-                    Outstanding <strong>{row.outstanding}</strong>
+                    Outstanding <strong>{formatMoney(row.outstanding)}</strong>
                   </p>
                   <Button size="sm" onClick={() => openCollect(row)} disabled={!accountsQuery.data}>
                     Collect
@@ -317,6 +335,12 @@ export default function DuesPage() {
                 </li>
               ))}
             </ul>
+            <Pagination
+              page={page}
+              hasPrevious={Boolean(duesQuery.data?.previous)}
+              hasNext={Boolean(duesQuery.data?.next)}
+              onChange={setPage}
+            />
           </>
         )}
       </Card>
@@ -334,7 +358,7 @@ export default function DuesPage() {
                     {row.phone ? ` · ${row.phone}` : ""}
                   </p>
                 </div>
-                <span className="font-mono font-semibold text-sky-700">{row.advance}</span>
+                <span className="font-mono font-semibold text-sky-700">{formatMoney(row.advance)}</span>
               </li>
             ))}
           </ul>
