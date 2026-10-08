@@ -1,10 +1,13 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
-import { Badge, Card, CardHeader, EmptyState, ErrorBanner, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Card, CardHeader, EmptyState, ErrorBanner, Input, Pagination, Select, Spinner, Tabs } from "@/components/ui";
 import { api } from "@/lib/api";
+import { formatDate, formatMoney, formatQty } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
 import type {
   ExpiryReportRow,
   InventoryEntryType,
@@ -34,13 +37,14 @@ const ENTRY_TYPES: InventoryEntryType[] = [
 function StockTab() {
   const [search, setSearch] = useState("");
   const [lowOnly, setLowOnly] = useState(false);
+  const debouncedSearch = useDebouncedValue(search);
 
   const params = new URLSearchParams();
-  if (search) params.set("search", search);
+  if (debouncedSearch) params.set("search", debouncedSearch);
   if (lowOnly) params.set("low_stock", "true");
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["stock-summary", search, lowOnly],
+    queryKey: ["stock-summary", debouncedSearch, lowOnly],
     queryFn: () =>
       api.get<{ count: number; results: StockSummaryRow[] }>(
         `/inventory/summary/?${params.toString()}`,
@@ -92,13 +96,13 @@ function StockTab() {
                   <tr key={`${row.branch}-${row.medicine}`}>
                     <td className="px-4 py-2">
                       <span className="font-medium">{row.medicine_name}</span>{" "}
-                      <span className="font-mono text-xs text-slate-400">{row.medicine_code}</span>
+                      <span className="font-mono text-xs text-slate-500">{row.medicine_code}</span>
                     </td>
                     <td className="px-4 py-2 text-slate-500">{row.branch_name}</td>
-                    <td className="px-4 py-2 text-right font-medium">{row.qty_on_hand}</td>
-                    <td className="px-4 py-2 text-right text-slate-500">{row.qty_promo}</td>
-                    <td className="px-4 py-2 text-right text-slate-500">{row.qty_quarantine}</td>
-                    <td className="px-4 py-2 text-right text-slate-500">{row.reorder_level}</td>
+                    <td className="px-4 py-2 text-right font-medium">{formatQty(row.qty_on_hand)}</td>
+                    <td className="px-4 py-2 text-right text-slate-500">{formatQty(row.qty_promo)}</td>
+                    <td className="px-4 py-2 text-right text-slate-500">{formatQty(row.qty_quarantine)}</td>
+                    <td className="px-4 py-2 text-right text-slate-500">{formatQty(row.reorder_level)}</td>
                     <td className="space-x-1 px-4 py-2">
                       {row.is_out_of_stock ? <Badge tone="rose">Out of stock</Badge> : null}
                       {!row.is_out_of_stock && row.is_low_stock ? <Badge tone="amber">Low</Badge> : null}
@@ -126,7 +130,7 @@ function StockTab() {
                   {row.medicine_code} · {row.branch_name}
                 </p>
                 <p className="text-sm">
-                  On hand <strong>{row.qty_on_hand}</strong> · reorder {row.reorder_level}
+                  On hand <strong>{formatQty(row.qty_on_hand)}</strong> · reorder {formatQty(row.reorder_level)}
                 </p>
               </li>
             ))}
@@ -141,13 +145,14 @@ function LedgerTab() {
   const [entryType, setEntryType] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const debouncedSearch = useDebouncedValue(search);
 
   const params = new URLSearchParams({ page_size: "25", page: String(page) });
   if (entryType) params.set("entry_type", entryType);
-  if (search) params.set("search", search);
+  if (debouncedSearch) params.set("search", debouncedSearch);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["inventory-ledger", entryType, search, page],
+    queryKey: ["inventory-ledger", entryType, debouncedSearch, page],
     queryFn: () => api.get<Paginated<InventoryTransaction>>(`/inventory/transactions/?${params.toString()}`),
   });
 
@@ -200,12 +205,12 @@ function LedgerTab() {
                   <div>
                     <p className="text-sm">
                       <span className="font-medium">{txn.medicine_name}</span>{" "}
-                      <span className="font-mono text-xs text-slate-400">
+                      <span className="font-mono text-xs text-slate-500">
                         {txn.medicine_code} / {txn.batch_number}
                       </span>
                     </p>
                     <p className="text-xs text-slate-500">
-                      {txn.business_date} · {txn.branch_name} · {txn.source_type || "manual"}
+                      {formatDate(txn.business_date)} · {txn.branch_name} · {txn.source_type || "manual"}
                       {txn.source_number ? ` #${txn.source_number}` : ""} · {txn.actor_name || "system"}
                     </p>
                   </div>
@@ -213,32 +218,21 @@ function LedgerTab() {
                     <Badge tone={txn.pool === "SALEABLE" ? "slate" : txn.pool === "PROMO" ? "blue" : "amber"}>
                       {txn.entry_type}
                     </Badge>
-                    <span className={`font-mono text-sm font-semibold ${positive ? "text-emerald-700" : "text-rose-700"}`}>
+                    <span className={`font-mono text-sm font-semibold ${positive ? "text-primary-700" : "text-danger-700"}`}>
                       {positive ? "+" : ""}
-                      {txn.qty_delta}
+                      {formatQty(txn.qty_delta)}
                     </span>
                   </div>
                 </li>
               );
             })}
           </ul>
-          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-sm">
-            <button
-              className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40"
-              disabled={!data.previous}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              ← Previous
-            </button>
-            <span className="text-xs text-slate-400">Page {page}</span>
-            <button
-              className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40"
-              disabled={!data.next}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next →
-            </button>
-          </div>
+          <Pagination
+            page={page}
+            hasPrevious={Boolean(data.previous)}
+            hasNext={Boolean(data.next)}
+            onChange={setPage}
+          />
         </>
       )}
     </Card>
@@ -281,11 +275,11 @@ function ExpiryList({
                 </p>
               </div>
               <div className="text-right">
-                <p className={row.days_to_expiry < 0 ? "text-rose-700" : "text-amber-700"}>
-                  {row.expiry_date} ({row.days_to_expiry}d)
+                <p className={row.days_to_expiry < 0 ? "text-danger-700" : "text-amber-700"}>
+                  {formatDate(row.expiry_date)} ({row.days_to_expiry}d)
                 </p>
                 <p className="text-xs text-slate-500">
-                  qty {row.qty_on_hand} · value {row.value_on_hand}
+                  qty {formatQty(row.qty_on_hand)} · value {formatMoney(row.value_on_hand)}
                 </p>
               </div>
             </li>
@@ -318,30 +312,38 @@ function AlertsTab() {
   );
 }
 
-export default function InventoryPage() {
-  const [tab, setTab] = useState<Tab>("Stock");
+function InventoryContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const rawTab = searchParams.get("tab");
+  const tab: Tab = TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "Stock";
+
+  const setTab = (next: Tab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "Stock") params.delete("tab");
+    else params.set("tab", next);
+    const qs = params.toString();
+    router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+  };
 
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-semibold text-slate-800">Inventory</h1>
 
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((item) => (
-          <button
-            key={item}
-            onClick={() => setTab(item)}
-            className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-              tab === item ? "bg-emerald-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
       {tab === "Stock" ? <StockTab /> : null}
       {tab === "Ledger" ? <LedgerTab /> : null}
       {tab === "Alerts" ? <AlertsTab /> : null}
     </div>
+  );
+}
+
+export default function InventoryPage() {
+  return (
+    <Suspense fallback={<Spinner />}>
+      <InventoryContent />
+    </Suspense>
   );
 }

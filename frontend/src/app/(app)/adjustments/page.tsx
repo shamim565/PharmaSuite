@@ -4,10 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
 import { AttachmentPanel } from "@/components/attachments";
+import { MedicineCombobox } from "@/components/medicine-combobox";
 import { ApiError, api } from "@/lib/api";
-import type { Branch, Medicine, MedicineBatch, Paginated, StockAdjustment } from "@/lib/types";
+import { formatDate, formatMoney, formatQty } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
+import type { Branch, MedicineBatch, Paginated, StockAdjustment } from "@/lib/types";
 
 const emptyForm = {
   branch: "",
@@ -43,29 +46,34 @@ export default function AdjustmentsPage() {
   const queryClient = useQueryClient();
   const { user, hasPerm } = useAuth();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [rejectFor, setRejectFor] = useState<StockAdjustment | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [reverseFor, setReverseFor] = useState<StockAdjustment | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
   const [filesFor, setFilesFor] = useState<StockAdjustment | null>(null);
+  const debouncedSearch = useDebouncedValue(search);
+
+  const adjustmentParams = new URLSearchParams({ page_size: "50", page: String(page) });
+  if (debouncedSearch) adjustmentParams.set("search", debouncedSearch);
 
   const adjustmentsQuery = useQuery({
-    queryKey: ["adjustments", search],
+    queryKey: ["adjustments", debouncedSearch, page],
     queryFn: () =>
-      api.get<Paginated<StockAdjustment>>(`/inventory/adjustments/?page_size=50&search=${encodeURIComponent(search)}`),
+      api.get<Paginated<StockAdjustment>>(`/inventory/adjustments/?${adjustmentParams.toString()}`),
   });
   const branchesQuery = useQuery({
     queryKey: ["branches", "select"],
     queryFn: () => api.get<Paginated<Branch>>("/branches/?page_size=50&status=ACTIVE"),
   });
-  const medicinesQuery = useQuery({
-    queryKey: ["medicines", "select"],
-    queryFn: () => api.get<Paginated<Medicine>>("/medicines/?page_size=200&is_active=true"),
-  });
   const batchesQuery = useQuery({
-    queryKey: ["batches", "select", form.medicine],
+    queryKey: ["batches", "select", form.medicine, form.branch],
     queryFn: () =>
-      api.get<Paginated<MedicineBatch>>(`/batches/?page_size=100&medicine=${form.medicine}`),
+      api.get<Paginated<MedicineBatch>>(
+        `/batches/?page_size=100&medicine=${form.medicine}${form.branch ? `&branch=${form.branch}` : ""}`,
+      ),
     enabled: Boolean(form.medicine),
   });
 
@@ -77,6 +85,7 @@ export default function AdjustmentsPage() {
   };
 
   const createMutation = useMutation({
+    meta: { successMessage: "Adjustment posted" },
     mutationFn: () =>
       api.post<StockAdjustment>("/inventory/adjustments/", {
         branch: form.branch,
@@ -102,11 +111,27 @@ export default function AdjustmentsPage() {
   });
 
   const actionMutation = useMutation({
+    meta: {
+      successMessage: (variables: { action: string }) => {
+        switch (variables.action) {
+          case "approve":
+            return "Adjustment approved";
+          case "reject":
+            return "Adjustment rejected";
+          case "reverse":
+            return "Adjustment reversed";
+          default:
+            return "Adjustment updated";
+        }
+      },
+    },
     mutationFn: ({ id, action, reason }: { id: string; action: string; reason?: string }) =>
       api.post(`/inventory/adjustments/${id}/${action}/`, reason ? { reason } : {}),
     onSuccess: () => {
       setRejectFor(null);
       setRejectReason("");
+      setReverseFor(null);
+      setReverseReason("");
       invalidate();
     },
   });
@@ -173,20 +198,14 @@ export default function AdjustmentsPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Medicine" error={fieldError("medicine")}>
-              <Select
-                value={form.medicine}
-                onChange={(e) => setForm({ ...form, medicine: e.target.value, batch: "" })}
-                required
-              >
-                <option value="">Select…</option>
-                {medicinesQuery.data?.results.map((medicine) => (
-                  <option key={medicine.id} value={medicine.id}>
-                    {medicine.name} ({medicine.code})
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <div className="col-span-2">
+              <Field label="Medicine" error={fieldError("medicine")}>
+                <MedicineCombobox
+                  value={form.medicine}
+                  onChange={(id) => setForm((current) => ({ ...current, medicine: id, batch: "" }))}
+                />
+              </Field>
+            </div>
             <div className="col-span-2">
               <Field label="Batch" error={fieldError("batch")}>
                 <Select
@@ -198,7 +217,7 @@ export default function AdjustmentsPage() {
                   <option value="">Select…</option>
                   {batchesQuery.data?.results.map((batch) => (
                     <option key={batch.id} value={batch.id}>
-                      {batch.batch_number} · qty {batch.qty_on_hand} · exp {batch.expiry_date ?? "—"}
+                      {batch.batch_number} · qty {formatQty(batch.qty_on_hand)} · exp {batch.expiry_date ? formatDate(batch.expiry_date) : "—"}
                     </option>
                   ))}
                 </Select>
@@ -284,6 +303,35 @@ export default function AdjustmentsPage() {
         </Card>
       ) : null}
 
+      {reverseFor ? (
+        <Card>
+          <CardHeader
+            title={`Reverse adjustment ${reverseFor.number ?? ""}`}
+            action={
+              <Button size="sm" variant="secondary" onClick={() => setReverseFor(null)}>
+                Cancel
+              </Button>
+            }
+          />
+          <div className="space-y-3 p-4">
+            <ErrorBanner error={actionMutation.error} />
+            <p className="text-sm text-slate-600">
+              This posts an opposite stock movement. Stock currently adjusted will be restored.
+            </p>
+            <Field label="Reason">
+              <Input value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} />
+            </Field>
+            <Button
+              variant="danger"
+              disabled={actionMutation.isPending || !reverseReason}
+              onClick={() => actionMutation.mutate({ id: reverseFor.id, action: "reverse", reason: reverseReason })}
+            >
+              Reverse adjustment
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       {filesFor ? (
         <Card>
           <CardHeader
@@ -307,8 +355,12 @@ export default function AdjustmentsPage() {
           action={
             <Input
               placeholder="Search medicine, notes…"
+              aria-label="Search adjustments"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="w-52"
             />
           }
@@ -331,15 +383,15 @@ export default function AdjustmentsPage() {
                     <div>
                       <p className="font-medium">
                         {adjustment.number ?? "Pending"}{" "}
-                        <span className="text-xs text-slate-400">
+                        <span className="text-xs text-slate-500">
                           {adjustment.items.map((item) => item.medicine_name).join(", ")}
                         </span>
                       </p>
                       <p className="text-xs text-slate-500">
-                        {adjustment.business_date} · {adjustment.adjustment_type} ·{" "}
-                        {adjustment.reason_code.replace(/_/g, " ").toLowerCase()} · value {adjustment.total_value}
+                        {formatDate(adjustment.business_date)} · {adjustment.adjustment_type} ·{" "}
+                        {adjustment.reason_code.replace(/_/g, " ").toLowerCase()} · value {formatMoney(adjustment.total_value)}
                       </p>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-slate-500">
                         Requested by {adjustment.requested_by_name || "—"}
                         {adjustment.approved_by_name ? ` · approved by ${adjustment.approved_by_name}` : ""}
                         {adjustment.rejection_reason ? ` · rejected: ${adjustment.rejection_reason}` : ""}
@@ -349,13 +401,14 @@ export default function AdjustmentsPage() {
                       <Badge tone={statusTone(adjustment.status)}>{adjustment.status.replace("_", " ")}</Badge>
                       {canApprove ? (
                         <>
-                          <Button
+                          <ConfirmButton
                             size="sm"
-                            onClick={() => actionMutation.mutate({ id: adjustment.id, action: "approve" })}
+                            confirmLabel="Confirm approve?"
                             disabled={actionMutation.isPending}
+                            onConfirm={() => actionMutation.mutate({ id: adjustment.id, action: "approve" })}
                           >
                             Approve
-                          </Button>
+                          </ConfirmButton>
                           <Button size="sm" variant="ghost" onClick={() => setRejectFor(adjustment)}>
                             Reject
                           </Button>
@@ -366,7 +419,10 @@ export default function AdjustmentsPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => actionMutation.mutate({ id: adjustment.id, action: "reverse", reason: "reversed from register" })}
+                          onClick={() => {
+                            setReverseFor(adjustment);
+                            setReverseReason("");
+                          }}
                           disabled={actionMutation.isPending}
                         >
                           Reverse
@@ -377,9 +433,9 @@ export default function AdjustmentsPage() {
                   <ul className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
                     {adjustment.items.map((item) => (
                       <li key={item.id}>
-                        {item.medicine_name} ({item.medicine_code}) · batch {item.batch_number} · qty {item.qty} ·{" "}
+                        {item.medicine_name} ({item.medicine_code}) · batch {item.batch_number} · qty {formatQty(item.qty)} ·{" "}
                         {item.pool}
-                        {item.target_pool ? ` → ${item.target_pool}` : ""} @ {item.unit_cost}
+                        {item.target_pool ? ` → ${item.target_pool}` : ""} @ {formatMoney(item.unit_cost)}
                       </li>
                     ))}
                   </ul>
@@ -388,6 +444,14 @@ export default function AdjustmentsPage() {
             })}
           </ul>
         )}
+        {adjustmentsQuery.data && adjustmentsQuery.data.count > 0 ? (
+          <Pagination
+            page={page}
+            hasPrevious={Boolean(adjustmentsQuery.data.previous)}
+            hasNext={Boolean(adjustmentsQuery.data.next)}
+            onChange={setPage}
+          />
+        ) : null}
       </Card>
     </div>
   );

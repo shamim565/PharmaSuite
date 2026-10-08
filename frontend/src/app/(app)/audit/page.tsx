@@ -3,8 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Spinner } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Spinner } from "@/components/ui";
 import { api, apiDownload } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 import type { AuditLogEntry, Paginated } from "@/lib/types";
 
 export default function AuditPage() {
@@ -63,13 +64,33 @@ export default function AuditPage() {
             />
           </Field>
           <Field label="Request id / search">
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
           </Field>
           <Field label="From">
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setPage(1);
+              }}
+            />
           </Field>
           <Field label="To">
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setPage(1);
+              }}
+            />
           </Field>
         </div>
       </Card>
@@ -94,26 +115,26 @@ export default function AuditPage() {
                       <p className="text-sm">
                         <Badge tone={entry.actor_type === "SYSTEM" ? "blue" : "slate"}>{entry.action}</Badge>{" "}
                         <span className="font-medium">{entry.entity_type}</span>{" "}
-                        <span className="font-mono text-xs text-slate-400">
+                        <span className="font-mono text-xs text-slate-500">
                           {entry.entity_id ? entry.entity_id.slice(0, 8) : ""}
                         </span>
                       </p>
                       <p className="text-xs text-slate-500">
-                        {new Date(entry.created_at).toLocaleString()} · {entry.actor_name || "system"}
+                        {formatDateTime(entry.created_at)} · {entry.actor_name || "system"}
                         {entry.branch_name ? ` · ${entry.branch_name}` : ""}
                         {entry.ip ? ` · ${entry.ip}` : ""}
                       </p>
                     </div>
-                    <span className="font-mono text-[10px] text-slate-400">req {entry.request_id || "—"}</span>
+                    <span className="font-mono text-xs text-slate-500">req {entry.request_id || "—"}</span>
                   </div>
                   {entry.before || entry.after ? (
                     <details className="text-xs">
-                      <summary className="cursor-pointer text-emerald-700">Show changes</summary>
+                      <summary className="cursor-pointer text-primary-700">Show changes</summary>
                       <div className="mt-1 grid gap-2 lg:grid-cols-2">
-                        <pre className="max-h-48 overflow-auto rounded-lg bg-rose-50 p-2 text-rose-900">
+                        <pre className="max-h-48 overflow-auto rounded-lg bg-danger-50 p-2 text-danger-900">
                           {entry.before ? JSON.stringify(entry.before, null, 2) : "—"}
                         </pre>
-                        <pre className="max-h-48 overflow-auto rounded-lg bg-emerald-50 p-2 text-emerald-900">
+                        <pre className="max-h-48 overflow-auto rounded-lg bg-primary-50 p-2 text-primary-900">
                           {entry.after ? JSON.stringify(entry.after, null, 2) : "—"}
                         </pre>
                       </div>
@@ -122,23 +143,12 @@ export default function AuditPage() {
                 </li>
               ))}
             </ul>
-            <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-sm">
-              <button
-                className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40"
-                disabled={!data.previous}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                ← Previous
-              </button>
-              <span className="text-xs text-slate-400">Page {page}</span>
-              <button
-                className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40"
-                disabled={!data.next}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next →
-              </button>
-            </div>
+            <Pagination
+              page={page}
+              hasPrevious={Boolean(data.previous)}
+              hasNext={Boolean(data.next)}
+              onChange={setPage}
+            />
           </>
         )}
       </Card>
