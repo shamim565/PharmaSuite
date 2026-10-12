@@ -152,6 +152,9 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     SECURE_SSL_REDIRECT = env.bool("SECURE_SSL_REDIRECT", default=True)
+    # SSL terminates at the reverse proxy (nginx on the VPS); trust its header
+    # so Django doesn't redirect-loop on "insecure" requests.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/5")
 CACHE_URL = env("CACHE_URL", default="redis://localhost:6379/6")
