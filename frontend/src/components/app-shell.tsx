@@ -366,7 +366,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Desktop sidebar */}
       <aside className="hidden w-60 shrink-0 border-r border-slate-200 bg-white p-4 lg:block">
         <div className="mb-6 px-2">
-          <p className="text-sm font-bold text-primary-700">Medicine Dealer ERP</p>
+          <p className="text-sm font-bold text-primary-700">PharmaSuite</p>
           <p className="text-xs text-slate-500">{user?.roles[0]?.name ?? "—"}</p>
         </div>
         {nav}
@@ -386,7 +386,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           <Menu aria-hidden size={22} />
         </button>
-        <p className="min-w-0 flex-1 truncate text-sm font-bold text-primary-700">Medicine Dealer ERP</p>
+        <p className="min-w-0 flex-1 truncate text-sm font-bold text-primary-700">PharmaSuite</p>
         <BranchSwitcher compact />
         <NotificationBell />
       </header>

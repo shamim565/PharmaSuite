@@ -1,4 +1,4 @@
-const CACHE = "mederp-v2";
+const CACHE = "pharmasuite-v1";
 const PRECACHE = [
   "/",
   "/manifest.json",

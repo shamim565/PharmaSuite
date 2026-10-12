@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Medicine Dealer ERP",
+  title: "PharmaSuite",
   description: "Multi-branch medicine distribution ERP",
   manifest: "/manifest.json",
   icons: {

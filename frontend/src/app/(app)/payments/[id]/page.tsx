@@ -66,7 +66,7 @@ export default function ReceiptDetailPage() {
         <div className="print-container mx-auto max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-start justify-between border-b border-slate-200 pb-4">
             <div>
-              <h1 className="text-lg font-bold text-slate-900">Medicine Dealer ERP</h1>
+              <h1 className="text-lg font-bold text-slate-900">PharmaSuite</h1>
               <p className="text-sm text-slate-600">{data.branch_name}</p>
             </div>
             <div className="text-right">

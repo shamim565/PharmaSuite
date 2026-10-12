@@ -1,4 +1,4 @@
-"""Django settings for the Medicine Dealer ERP backend."""
+"""Django settings for the PharmaSuite backend."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -128,7 +128,7 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Medicine Dealer ERP API",
+    "TITLE": "PharmaSuite API",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
 }
@@ -186,7 +186,7 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 AUDIT_RETENTION_MONTHS = env.int("AUDIT_RETENTION_MONTHS", default=24)
-TOTP_ISSUER = env("TOTP_ISSUER", default="Medicine Dealer ERP")
+TOTP_ISSUER = env("TOTP_ISSUER", default="PharmaSuite")
 LOGIN_MAX_FAILED_ATTEMPTS = env.int("LOGIN_MAX_FAILED_ATTEMPTS", default=5)
 LOGIN_LOCKOUT_MINUTES = env.int("LOGIN_LOCKOUT_MINUTES", default=15)
 PASSWORD_HISTORY_SIZE = env.int("PASSWORD_HISTORY_SIZE", default=5)

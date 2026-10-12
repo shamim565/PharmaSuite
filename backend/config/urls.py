@@ -5,7 +5,7 @@ from apps.common.views import DeepHealthView
 
 
 def health(request):
-    return JsonResponse({"status": "ok", "service": "medicine-dealer-erp-api"})
+    return JsonResponse({"status": "ok", "service": "pharmasuite-api"})
 
 
 urlpatterns = [

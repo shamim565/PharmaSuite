@@ -1,7 +1,7 @@
 [project]
 name = "erp-backend"
 version = "0.1.0"
-description = "Medicine Dealer ERP backend"
+description = "PharmaSuite backend"
 requires-python = ">=3.12"
 dependencies = [
     "django>=5.1",

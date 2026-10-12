@@ -1,6 +1,6 @@
 {
-  "name": "Medicine Dealer ERP",
-  "short_name": "MedERP",
+  "name": "PharmaSuite — Medicine Distribution ERP",
+  "short_name": "PharmaSuite",
   "description": "Distribution ERP for a medicine dealer: sales, purchases, stock, dues and reports.",
   "start_url": "/",
   "display": "standalone",

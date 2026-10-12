@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def health(request):
-    return JsonResponse({"status": "ok", "service": "medicine-dealer-erp-api"})
+    return JsonResponse({"status": "ok", "service": "pharmasuite-api"})
 
 
 class DeepHealthView(APIView):

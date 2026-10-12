@@ -1,4 +1,4 @@
-# Medicine Dealer ERP
+# PharmaSuite — Medicine Distribution ERP
 
 Multi-branch medicine distribution ERP.
 
