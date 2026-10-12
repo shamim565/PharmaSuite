@@ -1,0 +1,75 @@
+# PharmaSuite API — VPS stack (Docker Compose)
+#
+# Deployed at /opt/pharmasuite on the shared Contabo VPS.
+# The outer ruletheday nginx (:80/:443) routes api-pharmasuite.ruletheday.app
+# to the web container over the shared ruletheday-backend_default network —
+# see deploy/vps/ruletheday-snippet.conf and docs/deployment-vps.md.
+#
+#   docker compose -f docker-compose.vps.yml up -d --build
+#
+# .env (repo root, never committed) provides both the container environment
+# and the POSTGRES_PASSWORD substitution below.
+
+name: pharmasuite
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pharmasuite-web
+    env_file: .env
+    ports:
+      - "127.0.0.1:8013:8000"   # loopback only, for internal debugging
+    volumes:
+      - media_files:/app/media  # attachment uploads survive rebuilds
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/health/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - default
+      - shared
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    container_name: pharmasuite-db
+    environment:
+      POSTGRES_USER: pharmasuite
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: pharmasuite
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pharmasuite -d pharmasuite"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: pharmasuite-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  default:
+  shared:
+    external: true
+    name: ruletheday-backend_default
+
+volumes:
+  media_files:
+  pg_data:
