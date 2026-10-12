@@ -23,8 +23,11 @@ cd backend
 uv sync
 cp .env.example .env        # adjust if needed
 uv run python manage.py migrate
-uv run python manage.py seed_rbac
+uv run python manage.py seed_rbac   # roles are editable in the UI; add --sync-permissions to reset built-ins
 uv run python manage.py runserver 8000
+
+# backend tests (uses the same DATABASE_URL; creates a throwaway test DB)
+uv run pytest
 
 # celery (macOS dev needs the threads pool; Linux/Docker uses prefork)
 uv run celery -A config worker -l info --pool=threads
