@@ -22,11 +22,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js").catch(function () {}); }`,
-          }}
-        />
+        {/* Service worker caches assets aggressively; only enable it in
+            production builds. In development it serves stale chunks after
+            restarts (esp. behind tunnels) and breaks HMR. */}
+        {process.env.NODE_ENV === "production" ? (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js").catch(function () {}); }`,
+            }}
+          />
+        ) : null}
         <Providers>{children}</Providers>
       </body>
     </html>
