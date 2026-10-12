@@ -6,9 +6,9 @@ Wants=postgresql.service
 [Service]
 User=pharmasuite
 Group=pharmasuite
-WorkingDirectory=/srv/pharmasuite/backend
+WorkingDirectory=/opt/pharmasuite/backend
 # Django reads backend/.env itself (django-environ), so no EnvironmentFile needed.
-ExecStart=/srv/pharmasuite/backend/.venv/bin/gunicorn config.wsgi:application \
+ExecStart=/opt/pharmasuite/backend/.venv/bin/gunicorn config.wsgi:application \
     --bind 127.0.0.1:8011 \
     --workers 3 \
     --timeout 60 \

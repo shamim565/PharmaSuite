@@ -9,6 +9,9 @@ api-pharmasuite.ruletheday.app   →  VPS      (Django + gunicorn, nginx TLS)
 Both hostnames share `ruletheday.app`, so the refresh cookie is **same-site** —
 sessions persist across reloads without any SameSite hacks.
 
+Service user home is `/home/pharmasuite` (tooling caches), the application
+lives in **`/opt/pharmasuite`**.
+
 > **Note on static files:** this project has no Django admin and no
 > `django.contrib.staticfiles`, so there is **no `collectstatic` step** and no
 > separate static file serving. All attachment/media downloads go through
@@ -28,12 +31,12 @@ sessions persist across reloads without any SameSite hacks.
 ## 1. VPS preparation
 
 ```bash
-# Service user (no login shell)
-sudo adduser --system --group --home /srv/pharmasuite pharmasuite
+# Service user (no login shell); home for tool caches
+sudo adduser --system --group --home /home/pharmasuite pharmasuite
 
-# Code directory
-sudo mkdir -p /srv/pharmasuite
-sudo chown pharmasuite:pharmasuite /srv/pharmasuite
+# Directories: /home for tooling, /opt for the application
+sudo mkdir -p /home/pharmasuite /opt/pharmasuite
+sudo chown -R pharmasuite:pharmasuite /home/pharmasuite /opt/pharmasuite
 ```
 
 Check what's free before continuing:
@@ -53,21 +56,24 @@ CREATE DATABASE pharmasuite OWNER pharmasuite;
 SQL
 ```
 
-## 3. Code + dependencies
+## 3. uv, code + dependencies
 
 ```bash
-sudo -u pharmasuite -H git clone https://github.com/shamim565/PharmaSuite.git /srv/pharmasuite
-sudo -u pharmasuite -H bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
-# uv installs into ~/.local/bin for the pharmasuite user
+# uv, installed system-wide (all users get `uv` on PATH)
+curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh
 
-sudo -u pharmasuite -H bash -c 'cd /srv/pharmasuite/backend && ~/.local/bin/uv sync --frozen --no-dev'
+# Clone as the service user
+sudo -u pharmasuite -H git clone https://github.com/shamim565/PharmaSuite.git /opt/pharmasuite
+
+# Production dependencies (no dev group)
+sudo -u pharmasuite -H bash -c 'cd /opt/pharmasuite/backend && uv sync --frozen --no-dev'
 ```
 
 ## 4. Environment file
 
 ```bash
-sudo -u pharmasuite -H cp /srv/pharmasuite/deploy/env.production.example /srv/pharmasuite/backend/.env
-sudo -u pharmasuite -H nano /srv/pharmasuite/backend/.env
+sudo -u pharmasuite -H cp /opt/pharmasuite/deploy/env.production.example /opt/pharmasuite/backend/.env
+sudo -u pharmasuite -H nano /opt/pharmasuite/backend/.env
 ```
 
 Fill in:
@@ -78,10 +84,9 @@ Fill in:
 ## 5. Migrate, seed, sanity-check
 
 ```bash
-cd /srv/pharmasuite/backend
-sudo -u pharmasuite -H bash -c '~/.local/bin/uv run python manage.py migrate --noinput'
-sudo -u pharmasuite -H bash -c "OWNER_PASSWORD='CHANGE_ME_OWNER_PW' ~/.local/bin/uv run python manage.py seed_rbac"
-sudo -u pharmasuite -H bash -c '~/.local/bin/uv run python manage.py check --deploy'
+sudo -u pharmasuite -H bash -c 'cd /opt/pharmasuite/backend && uv run python manage.py migrate --noinput'
+sudo -u pharmasuite -H bash -c "cd /opt/pharmasuite/backend && OWNER_PASSWORD='CHANGE_ME_OWNER_PW' uv run python manage.py seed_rbac"
+sudo -u pharmasuite -H bash -c 'cd /opt/pharmasuite/backend && uv run python manage.py check --deploy'
 ```
 
 `check --deploy` should report no critical warnings (HSTS/SSL are already
@@ -90,7 +95,7 @@ configured and `SECURE_PROXY_SSL_HEADER` is set for the nginx proxy).
 ## 6. systemd service
 
 ```bash
-sudo cp /srv/pharmasuite/deploy/systemd/pharmasuite-api.service /etc/systemd/system/
+sudo cp /opt/pharmasuite/deploy/systemd/pharmasuite-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now pharmasuite-api
 systemctl --no-pager --lines=20 status pharmasuite-api   # should be active (running)
@@ -100,7 +105,7 @@ curl -s http://127.0.0.1:8011/api/v1/health/             # {"status": "ok", ...}
 ## 7. nginx + TLS
 
 ```bash
-sudo cp /srv/pharmasuite/deploy/nginx/api-pharmasuite.ruletheday.app.conf /etc/nginx/sites-available/
+sudo cp /opt/pharmasuite/deploy/nginx/api-pharmasuite.ruletheday.app.conf /etc/nginx/sites-available/
 sudo ln -s /etc/nginx/sites-available/api-pharmasuite.ruletheday.app.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d api-pharmasuite.ruletheday.app
@@ -141,15 +146,15 @@ curl -s https://api-pharmasuite.ruletheday.app/api/v1/health/
 # One-time: grant the service account permission to restart only this unit —
 #   sudo visudo -f /etc/sudoers.d/pharmasuite
 #   pharmasuite ALL=(root) NOPASSWD: /bin/systemctl restart pharmasuite-api, /bin/systemctl status pharmasuite-api
-sudo -u pharmasuite /srv/pharmasuite/deploy/scripts/deploy.sh
+sudo -u pharmasuite /opt/pharmasuite/deploy/scripts/deploy.sh
 
 # Logs:
 journalctl -u pharmasuite-api -f
 
 # Backups — add to the pharmasuite user's crontab (crontab -u pharmasuite -e):
-15 2 * * * /srv/pharmasuite/deploy/scripts/backup-db.sh >> /srv/pharmasuite/backups/backup.log 2>&1
+15 2 * * * /opt/pharmasuite/deploy/scripts/backup-db.sh >> /opt/pharmasuite/backups/backup.log 2>&1
 # Media (attachments) — weekly tar, same idea:
-30 2 * * 0 tar -czf /srv/pharmasuite/backups/media_$(date +%F).tar.gz -C /srv/pharmasuite/backend media
+30 2 * * 0 tar -czf /opt/pharmasuite/backups/media_$(date +%F).tar.gz -C /opt/pharmasuite/backend media
 ```
 
 ## 11. Later (optional)

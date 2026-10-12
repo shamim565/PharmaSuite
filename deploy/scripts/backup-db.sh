@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # PharmaSuite — nightly Postgres backup with rotation.
 # Cron (as the pharmasuite user):
-#   15 2 * * * /srv/pharmasuite/deploy/scripts/backup-db.sh >> /srv/pharmasuite/backups/backup.log 2>&1
+#   15 2 * * * /opt/pharmasuite/deploy/scripts/backup-db.sh >> /opt/pharmasuite/backups/backup.log 2>&1
 set -euo pipefail
 
-BACKUP_DIR="${BACKUP_DIR:-/srv/pharmasuite/backups}"
+BACKUP_DIR="${BACKUP_DIR:-/opt/pharmasuite/backups}"
 DB_NAME="${DB_NAME:-pharmasuite}"
 KEEP_DAYS="${KEEP_DAYS:-14}"
 
