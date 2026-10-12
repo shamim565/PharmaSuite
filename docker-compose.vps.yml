@@ -1,14 +1,16 @@
 # PharmaSuite API — VPS stack (Docker Compose)
 #
 # Deployed at /opt/pharmasuite on the shared Contabo VPS.
-# The outer ruletheday nginx (:80/:443) routes api-pharmasuite.ruletheday.app
-# to the web container over the shared ruletheday-backend_default network —
-# see deploy/vps/ruletheday-snippet.conf and docs/deployment-vps.md.
+#
+# Database: the HOST's PostgreSQL (same server as ruletheday-backend, own
+#   database) — reached from the container via host.docker.internal.
+# Cache:    the bundled redis container below.
+# Routing:  the outer ruletheday nginx (:80/:443) routes
+#   api-pharmasuite.ruletheday.app to the web container over the shared
+#   ruletheday-backend_default network — see deploy/vps/ruletheday-snippet.conf
+#   and docs/deployment-vps.md.
 #
 #   docker compose -f docker-compose.vps.yml up -d --build
-#
-# .env (repo root, never committed) provides both the container environment
-# and the POSTGRES_PASSWORD substitution below.
 
 name: pharmasuite
 
@@ -19,6 +21,8 @@ services:
       dockerfile: Dockerfile
     container_name: pharmasuite-web
     env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach the host's PostgreSQL
     ports:
       - "127.0.0.1:8013:8000"   # loopback only, for internal debugging
     volumes:
@@ -29,29 +33,11 @@ services:
       timeout: 5s
       retries: 5
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
       - default
       - shared
-    restart: unless-stopped
-
-  db:
-    image: postgres:17-alpine
-    container_name: pharmasuite-db
-    environment:
-      POSTGRES_USER: pharmasuite
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: pharmasuite
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pharmasuite -d pharmasuite"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     restart: unless-stopped
 
   redis:
@@ -72,4 +58,3 @@ networks:
 
 volumes:
   media_files:
-  pg_data:

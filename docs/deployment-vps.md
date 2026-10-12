@@ -13,14 +13,19 @@ Internet :80/:443
          ├── ruletheday.app / api.*      (untouched)
          ├── persona… / dishari…         (other apps, untouched)
          └── api-pharmasuite.ruletheday.app ──▶ pharmasuite-web:8000 (gunicorn)
-                                                  ├─▶ pharmasuite-db  (postgres:17, pg_data volume)
-                                                  └─▶ pharmasuite-redis (cache)
+                                                  ├─▶ host PostgreSQL   (own "pharmasuite" database)
+                                                  └─▶ pharmasuite-redis (cache container)
 
 pharmasuite.ruletheday.app ──▶ Vercel (Next.js frontend + PWA)
 ```
 
 Both hostnames share `ruletheday.app`, so the API refresh cookie is same-site —
 30-day sessions persist across reloads.
+
+> **Database:** PostgreSQL runs on the **host** (the same server your
+> ruletheday-backend stack uses, with its own `pharmasuite` database). The web
+> container reaches it via `host.docker.internal`; there is no database
+> container in this stack.
 
 > **No collectstatic:** this project has no Django admin and no
 > `django.contrib.staticfiles`. Attachment/media downloads go through
@@ -40,6 +45,18 @@ Both hostnames share `ruletheday.app`, so the API refresh cookie is same-site �
 
 ## 2. First deploy
 
+One-time: create the database + role on the **host** PostgreSQL (no `pg_hba`
+changes needed — Docker-bridge access already works for ruletheday-backend):
+
+```bash
+sudo -u postgres psql <<'SQL'
+CREATE ROLE pharmasuite LOGIN PASSWORD '<strong URL-safe password>';
+CREATE DATABASE pharmasuite OWNER pharmasuite;
+SQL
+```
+
+Then:
+
 ```bash
 ss -ltnp | grep 8013      # free? (loopback debug port; change compose if taken)
 
@@ -49,7 +66,7 @@ git clone https://github.com/shamim565/PharmaSuite.git .
 # .env (never committed)
 cp deploy/env.production.example .env
 chmod 600 .env
-nano .env                  # SECRET_KEY, POSTGRES_PASSWORD (also inside DATABASE_URL)
+nano .env                  # SECRET_KEY + the DATABASE_URL password (must match the role)
 
 docker compose -f docker-compose.vps.yml up -d --build
 docker compose -f docker-compose.vps.yml logs --tail=50 web   # migrate output
@@ -124,7 +141,10 @@ Browser checklist:
 
 ## 7. Backups + housekeeping (cron on the VPS)
 
+One-time: let cron authenticate as the `pharmasuite` role (no password prompts):
+
 ```bash
+echo "127.0.0.1:5432:pharmasuite:pharmasuite:<password>" > ~/.pgpass && chmod 600 ~/.pgpass
 mkdir -p /opt/pharmasuite/backups
 crontab -e
 ```
@@ -142,8 +162,11 @@ Restore (database):
 
 ```bash
 gunzip -c /opt/pharmasuite/backups/pharmasuite_<stamp>.sql.gz | \
-  docker compose -f docker-compose.vps.yml exec -T db psql -U pharmasuite pharmasuite
+  psql -h 127.0.0.1 -U pharmasuite pharmasuite
 ```
+
+Keep a copy **off the VPS** (rclone to S3/B2, or `scp` them to your machine
+periodically) — a backup on the same disk is not a backup.
 
 ## 8. Updates
 
@@ -174,10 +197,12 @@ ruletheday nginx.
 |---|---|
 | `502 Bad Gateway` | `web` container down → `docker compose -f docker-compose.vps.yml ps`, `logs web` |
 | `400 DisallowedHost` | `ALLOWED_HOSTS` missing the domain or `localhost` |
+| `FATAL: password authentication failed for user "pharmasuite"` | `.env` `DATABASE_URL` password doesn't match the role → `sudo -u postgres psql -c "ALTER ROLE pharmasuite PASSWORD '<new>';"` and update `.env` |
+| `connection refused` to `host.docker.internal:5432` | host PostgreSQL not accepting Docker-bridge connections — mirror the ruletheday-backend `listen_addresses`/`pg_hba` setup |
+| `could not translate host name "host.docker.internal"` | the compose `extra_hosts` line is missing (needs Docker ≥ 20.10) |
 | Session lost on reload (browser) | frontend env must point at `api-pharmasuite…`; both hosts under `ruletheday.app` |
 | CORS error in browser console | `CORS_ALLOWED_ORIGINS` must be exactly `https://pharmasuite.ruletheday.app` (with scheme) |
 | Redirect loop | `X-Forwarded-Proto` not reaching Django — settings.py sets `SECURE_PROXY_SSL_HEADER` when `DEBUG=False`; verify the snippet is applied |
 | `nginx: [emerg]` on restart | snippet references the cert before it exists — issue the cert first (step 4) |
 | certbot challenge fails | DNS not propagated, or Cloudflare proxy is orange — set DNS only |
-| `POSTGRES_PASSWORD` compose error | `.env` missing at repo root, or the variable is unset |
 | Attachment upload fails (> 25 MB) | raise `client_max_body_size` in the snippet and restart the ruletheday nginx |
