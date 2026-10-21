@@ -34,6 +34,7 @@ class CustomerSerializer(serializers.ModelSerializer):
             "price_tier",
             "default_discount_pct",
             "credit_limit",
+            "credit_unlimited",
             "credit_days",
             "credit_hold",
             "credit_hold_reason",
@@ -74,6 +75,7 @@ class CustomerLedgerEntrySerializer(serializers.ModelSerializer):
 class SalesInvoiceItemReadSerializer(serializers.ModelSerializer):
     medicine_name = serializers.CharField(source="medicine.name", read_only=True)
     medicine_code = serializers.CharField(source="medicine.code", read_only=True)
+    medicine_rx_required = serializers.BooleanField(source="medicine.rx_required", read_only=True)
     line_total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
 
     class Meta:
@@ -84,6 +86,7 @@ class SalesInvoiceItemReadSerializer(serializers.ModelSerializer):
             "medicine",
             "medicine_name",
             "medicine_code",
+            "medicine_rx_required",
             "batch",
             "batch_number",
             "qty",
@@ -154,6 +157,9 @@ class SalesInvoiceReadSerializer(serializers.ModelSerializer):
             "credit_override_reason",
             "fefo_override",
             "fefo_override_reason",
+            "prescription_number",
+            "rx_override",
+            "rx_override_reason",
             "delivered_at",
             "created_at",
             "items",

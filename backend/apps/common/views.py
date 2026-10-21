@@ -6,6 +6,8 @@ from django.http import JsonResponse
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
+from apps.common.schema import object_response
+
 logger = logging.getLogger(__name__)
 
 
@@ -13,6 +15,7 @@ def health(request):
     return JsonResponse({"status": "ok", "service": "pharmasuite-api"})
 
 
+@object_response
 class DeepHealthView(APIView):
     """Checks database, Redis and Celery worker availability."""
 

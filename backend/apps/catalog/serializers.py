@@ -178,6 +178,7 @@ class MedicineBatchSerializer(serializers.ModelSerializer):
             "qty_received_total",
             "qty_on_hand",
             "unit_cost",
+            "location",
             "status",
             "notes",
             "days_to_expiry",

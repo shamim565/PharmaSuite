@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 
 from apps.common.models import BaseModel
@@ -98,3 +100,40 @@ class RepresentativeAssignment(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.representative_id} -> {self.entity_type}:{self.entity_id}"
+
+
+class SalesTarget(BaseModel):
+    """Monthly sales and collection targets for sales and medical reps."""
+
+    representative = models.ForeignKey(
+        Representative, on_delete=models.CASCADE, related_name="targets"
+    )
+    branch = models.ForeignKey(
+        "branches.Branch", null=True, blank=True, on_delete=models.PROTECT, related_name="sales_targets"
+    )
+    fiscal_year = models.PositiveSmallIntegerField()
+    period_month = models.PositiveSmallIntegerField()  # 1 to 12
+    target_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    target_collection = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    target_visits = models.PositiveIntegerField(default=0)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-fiscal_year", "-period_month", "representative"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["representative", "fiscal_year", "period_month"],
+                name="uq_rep_period_target",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(period_month__gte=1, period_month__lte=12),
+                name="ck_target_period_month_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(target_amount__gte=0),
+                name="ck_target_amount_nonneg",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.representative.name} FY{self.fiscal_year}-M{self.period_month}: {self.target_amount}"

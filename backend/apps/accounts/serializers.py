@@ -19,6 +19,9 @@ class RoleSerializer(serializers.ModelSerializer):
 class RoleDetailSerializer(RoleSerializer):
     permissions = serializers.SerializerMethodField()
 
+    class Meta(RoleSerializer.Meta):
+        fields = RoleSerializer.Meta.fields + ["permissions"]
+
     def get_permissions(self, obj):
         return [
             {
@@ -76,13 +79,13 @@ class MeSerializer(serializers.ModelSerializer):
             "permissions",
         ]
 
-    def get_roles(self, obj):
+    def get_roles(self, obj) -> list[dict]:
         return [
             {"id": ur.role.id, "code": ur.role.code, "name": ur.role.name}
             for ur in obj.user_roles.select_related("role").all()
         ]
 
-    def get_branches(self, obj):
+    def get_branches(self, obj) -> list[dict]:
         return [
             {
                 "id": ub.branch_id,
@@ -93,7 +96,7 @@ class MeSerializer(serializers.ModelSerializer):
             for ub in obj.user_branches.select_related("branch").all()
         ]
 
-    def get_permissions(self, obj):
+    def get_permissions(self, obj) -> list[str]:
         return sorted(obj.effective_permission_codes)
 
 

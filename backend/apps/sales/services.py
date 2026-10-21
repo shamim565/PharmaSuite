@@ -250,12 +250,15 @@ def confirm_sale(
     payment: dict | None = None,
     allow_credit_override: bool = False,
     credit_override_reason: str = "",
+    prescription_number: str = "",
+    rx_override: bool = False,
+    rx_override_reason: str = "",
 ) -> SalesInvoice:
     from apps.payments.services import record_customer_payment
 
     invoice = (
-        SalesInvoice.objects.select_for_update()
-        .select_related("customer", "branch")
+        SalesInvoice.objects.select_for_update(of=("self",))
+        .select_related("customer", "branch", "doctor")
         .get(id=invoice.id)
     )
     if invoice.lifecycle == SalesInvoiceStatus.CONFIRMED:
@@ -304,7 +307,8 @@ def confirm_sale(
             )
         invoice.credit_override = True
         invoice.credit_override_reason = credit_override_reason or "past-due override"
-    if customer.credit_limit > 0:
+
+    if not customer.credit_unlimited and customer.credit_limit > 0:
         projected = customer.balance_cache + invoice.grand_total
         if projected > customer.credit_limit:
             if not allow_credit_override:
@@ -322,6 +326,24 @@ def confirm_sale(
     draft_items = list(invoice.items.select_related("medicine").order_by("line_no"))
     if not draft_items:
         raise APIError("EMPTY_INVOICE", "An invoice must have at least one line.")
+
+    if prescription_number:
+        invoice.prescription_number = prescription_number
+    if rx_override:
+        invoice.rx_override = True
+        invoice.rx_override_reason = rx_override_reason
+
+    rx_items = [
+        item.medicine.name
+        for item in draft_items
+        if getattr(item.medicine, "rx_required", False)
+    ]
+    if rx_items and not (invoice.doctor or invoice.prescription_number or invoice.rx_override):
+        raise APIError(
+            "PRESCRIPTION_REQUIRED",
+            f"Prescription number or prescribing doctor is required for Rx medicines: {', '.join(rx_items)}.",
+            status_code=400,
+        )
 
     invoice.number = allocate_number(
         branch=invoice.branch,

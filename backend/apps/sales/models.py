@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.db import models
 
 from apps.common.models import BaseModel, UUIDModel
+from apps.sales.delivery_models import DeliveryChallan, DeliveryChallanItem  # noqa: F401
 
 
 class CustomerType(models.TextChoices):
@@ -32,6 +33,7 @@ class Customer(BaseModel):
     price_tier = models.CharField(max_length=10, choices=PriceTier.choices, default=PriceTier.RETAIL)
     default_discount_pct = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0"))
     credit_limit = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    credit_unlimited = models.BooleanField(default=False, help_text="When True, no credit ceiling is enforced regardless of credit_limit.")
     credit_days = models.PositiveIntegerField(default=0)
     credit_hold = models.BooleanField(default=False)
     credit_hold_reason = models.CharField(max_length=200, blank=True)
@@ -184,6 +186,9 @@ class SalesInvoice(BaseModel):
     credit_override_reason = models.TextField(blank=True)
     fefo_override = models.BooleanField(default=False)
     fefo_override_reason = models.TextField(blank=True)
+    prescription_number = models.CharField(max_length=60, blank=True)
+    rx_override = models.BooleanField(default=False)
+    rx_override_reason = models.TextField(blank=True)
     idempotency_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
 
     class Meta:
@@ -356,4 +361,4 @@ class SalesReturnItem(BaseModel):
 
     @property
     def line_total(self) -> Decimal:
-        return self.unit_price * self.qty - self.discount_reversal + self.vat_reversal
+        return self.unit_price * self.qty - self.discount_reversal - self.vat_reversal

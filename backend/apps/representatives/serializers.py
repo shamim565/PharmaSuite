@@ -3,6 +3,7 @@ from rest_framework import serializers
 from apps.representatives.models import (
     Representative,
     RepresentativeAssignment,
+    SalesTarget,
     Territory,
 )
 
@@ -80,3 +81,54 @@ class RepresentativeAssignmentSerializer(serializers.ModelSerializer):
             return customer.name if customer else str(obj.entity_id)
         territory = Territory.objects.filter(id=obj.entity_id).first()
         return territory.name if territory else str(obj.entity_id)
+
+
+class SalesTargetSerializer(serializers.ModelSerializer):
+    representative_name = serializers.CharField(source="representative.name", read_only=True)
+    representative_code = serializers.CharField(source="representative.code", read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True, default="")
+    achieved_sales = serializers.SerializerMethodField()
+    achieved_percent = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SalesTarget
+        fields = [
+            "id",
+            "representative",
+            "representative_name",
+            "representative_code",
+            "branch",
+            "branch_name",
+            "fiscal_year",
+            "period_month",
+            "target_amount",
+            "target_collection",
+            "target_visits",
+            "achieved_sales",
+            "achieved_percent",
+            "notes",
+            "created_at",
+        ]
+
+    def get_achieved_sales(self, obj) -> str:
+        from decimal import Decimal
+
+        from django.db.models import Sum
+
+        from apps.sales.models import SalesInvoice
+
+        total = SalesInvoice.objects.filter(
+            sales_rep=obj.representative,
+            lifecycle="CONFIRMED",
+            business_date__year=obj.fiscal_year,
+            business_date__month=obj.period_month,
+        ).aggregate(total=Sum("grand_total"))["total"] or Decimal("0")
+        return str(total)
+
+    def get_achieved_percent(self, obj) -> float:
+        from decimal import Decimal
+
+        achieved = Decimal(self.get_achieved_sales(obj))
+        if obj.target_amount > 0:
+            return round(float(achieved / obj.target_amount * 100), 1)
+        return 0.0

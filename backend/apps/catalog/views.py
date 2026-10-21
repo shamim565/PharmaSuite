@@ -227,7 +227,7 @@ class MedicineBatchViewSet(
     permission_classes = [HasPermission]
     serializer_class = MedicineBatchSerializer
     queryset = MedicineBatch.objects.select_related("branch", "medicine")
-    filterset_fields = ["branch", "medicine", "status", "batch_number"]
+    filterset_fields = ["branch", "medicine", "status", "batch_number", "location"]
     search_fields = ["batch_number", "medicine__name", "medicine__code"]
     ordering_fields = ["expiry_date", "created_at", "batch_number"]
     ordering = ["expiry_date"]

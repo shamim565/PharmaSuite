@@ -5,10 +5,11 @@ from rest_framework.response import Response
 from apps.common.exceptions import ConflictError
 from apps.common.permissions import HasPermission
 from apps.common.viewsets import PermissionMappedMixin
-from apps.representatives.models import Representative, Territory
+from apps.representatives.models import Representative, SalesTarget, Territory
 from apps.representatives.serializers import (
     RepresentativeAssignmentSerializer,
     RepresentativeSerializer,
+    SalesTargetSerializer,
     TerritorySerializer,
 )
 from apps.representatives.services import assign, unassign
@@ -58,7 +59,7 @@ class RepresentativeViewSet(
     permission_classes = [HasPermission]
     serializer_class = RepresentativeSerializer
     queryset = Representative.objects.select_related("branch", "user", "reports_to")
-    filterset_fields = ["rep_type", "branch", "is_active"]
+    filterset_fields = ["rep_type", "branch", "is_active", "user"]
     search_fields = ["code", "name", "phone"]
     ordering = ["name"]
 
@@ -100,3 +101,27 @@ class RepresentativeViewSet(
             raise ConflictError("INVALID_ASSIGNMENT", "entity_type and entity_id are required.")
         updated = unassign(representative=representative, entity_type=entity_type, entity_id=entity_id)
         return Response({"closed": updated})
+
+
+class SalesTargetViewSet(
+    PermissionMappedMixin,
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_map = {
+        "list": ["REP_VIEW"],
+        "retrieve": ["REP_VIEW"],
+        "create": ["REP_MANAGE"],
+        "update": ["REP_MANAGE"],
+        "partial_update": ["REP_MANAGE"],
+        "destroy": ["REP_MANAGE"],
+    }
+    permission_classes = [HasPermission]
+    serializer_class = SalesTargetSerializer
+    queryset = SalesTarget.objects.select_related("representative", "branch")
+    filterset_fields = ["representative", "branch", "fiscal_year", "period_month"]
+    ordering = ["-fiscal_year", "-period_month"]

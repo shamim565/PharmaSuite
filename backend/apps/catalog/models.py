@@ -184,6 +184,7 @@ class MedicineBatch(BaseModel):
     qty_on_hand = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal("0"))
     unit_cost = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal("0"))
     status = models.CharField(max_length=15, choices=BatchStatus.choices, default=BatchStatus.ACTIVE)
+    location = models.CharField(max_length=60, blank=True, help_text="Bin/rack/shelf location in warehouse")
     notes = models.CharField(max_length=300, blank=True)
 
     class Meta:

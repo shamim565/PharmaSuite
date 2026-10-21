@@ -10,6 +10,8 @@ from apps.common.exceptions import APIError
 from apps.common.models import FiscalPeriod
 from apps.common.periods import lock_period, unlock_period
 from apps.common.permissions import HasPermission
+from apps.common.schema import binary_upload, download_response, json_view, object_response
+from apps.common.serializers import FiscalPeriodSerializer, NotificationSerializer
 from apps.common.settings_service import SETTINGS_KEYS, get_setting_value, set_setting_value
 
 
@@ -21,6 +23,7 @@ def _grouped_settings() -> dict:
     return grouped
 
 
+@json_view
 class SettingsView(APIView):
     permission_classes = [HasPermission]
 
@@ -53,6 +56,7 @@ class PeriodViewSet(
 ):
     permission_classes = [HasPermission]
     required_permissions = ["PERIOD_LOCK"]
+    serializer_class = FiscalPeriodSerializer
     queryset = FiscalPeriod.objects.order_by("fiscal_year", "period_month")
 
     def get_queryset(self):
@@ -63,6 +67,7 @@ class PeriodViewSet(
         return qs
 
     @action(detail=True, methods=["post"])
+    @object_response
     def lock(self, request, pk=None):
         period = self.get_object()
         from apps.accounting.models import Expense
@@ -93,6 +98,7 @@ class PeriodViewSet(
         return Response(self._serialize(period, checklist))
 
     @action(detail=True, methods=["post"])
+    @object_response
     def unlock(self, request, pk=None):
         period = unlock_period(
             period=self.get_object(),
@@ -129,6 +135,7 @@ class PeriodViewSet(
             data["checklist"] = checklist
         return data
 
+    @object_response
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
         return Response(
@@ -138,6 +145,7 @@ class PeriodViewSet(
             }
         )
 
+    @object_response
     def retrieve(self, request, *args, **kwargs):
         return Response(self._serialize(self.get_object()))
 
@@ -151,6 +159,7 @@ class NotificationViewSet(
 
     permission_classes = [HasPermission]
     required_permissions = []
+    serializer_class = NotificationSerializer
 
     def get_queryset(self):
         qs = __import__("apps.common.models", fromlist=["Notification"]).Notification.objects.filter(
@@ -161,11 +170,13 @@ class NotificationViewSet(
             qs = qs.filter(is_read=False)
         return qs
 
+    @object_response
     @action(detail=False, methods=["get"], url_path="unread-count")
     def unread_count(self, request):
         count = self.get_queryset().filter(is_read=False).count()
         return Response({"count": count})
 
+    @object_response
     @action(detail=True, methods=["post"], url_path="read")
     def mark_read(self, request, pk=None):
         from apps.common.notifications import mark_read
@@ -173,6 +184,7 @@ class NotificationViewSet(
         notification = mark_read(notification=self.get_object(), user=request.user)
         return Response(self._serialize(notification))
 
+    @object_response
     @action(detail=False, methods=["post"], url_path="read-all")
     def read_all(self, request):
         from apps.common.notifications import mark_all_read
@@ -184,7 +196,7 @@ class NotificationViewSet(
         from apps.common.models import NotificationCategory, NotificationPreference
 
         existing = {
-            row.category: row.enabled
+            row.category: row
             for row in NotificationPreference.objects.filter(user=user)
         }
         return {
@@ -192,12 +204,19 @@ class NotificationViewSet(
                 {
                     "category": value,
                     "label": label,
-                    "enabled": existing.get(value, True),
+                    "enabled": existing.get(value, NotificationPreference(category=value)).enabled,
+                    "email_enabled": existing.get(
+                        value, NotificationPreference(category=value)
+                    ).email_enabled,
+                    "sms_enabled": existing.get(
+                        value, NotificationPreference(category=value)
+                    ).sms_enabled,
                 }
                 for value, label in NotificationCategory.choices
             ]
         }
 
+    @object_response
     @action(detail=False, methods=["get", "put"], url_path="preferences")
     def preferences(self, request):
         from apps.common.models import NotificationCategory, NotificationPreference
@@ -212,9 +231,18 @@ class NotificationViewSet(
             raise APIError(
                 "UNKNOWN_CATEGORY", f"Unknown categories: {', '.join(sorted(unknown))}"
             )
-        for category, enabled in payload.items():
+        for category, value in payload.items():
+            if isinstance(value, dict):
+                defaults = {
+                    "enabled": bool(value.get("enabled", True)),
+                    "email_enabled": bool(value.get("email_enabled", False)),
+                    "sms_enabled": bool(value.get("sms_enabled", False)),
+                }
+            else:
+                # Legacy boolean shape: toggles the in-app channel only.
+                defaults = {"enabled": bool(value)}
             NotificationPreference.objects.update_or_create(
-                user=request.user, category=category, defaults={"enabled": bool(enabled)}
+                user=request.user, category=category, defaults=defaults
             )
         return Response(self._preferences_payload(request.user))
 
@@ -232,6 +260,7 @@ class NotificationViewSet(
             "created_at": notification.created_at.isoformat(),
         }
 
+    @object_response
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())[:100]
         unread = self.get_queryset().filter(is_read=False).count()
@@ -275,6 +304,7 @@ class AttachmentView(APIView):
     permission_classes = [HasPermission]
     required_permissions = []
 
+    @object_response
     def get(self, request):
         owner_type = request.query_params.get("owner_type", "")
         owner_id = request.query_params.get("owner_id", "")
@@ -301,6 +331,7 @@ class AttachmentView(APIView):
             }
         )
 
+    @binary_upload
     def post(self, request):
         owner_type = request.data.get("owner_type", "")
         owner_id = request.data.get("owner_id")
@@ -332,6 +363,7 @@ class AttachmentView(APIView):
         )
 
 
+@download_response
 class AttachmentDownloadView(APIView):
     permission_classes = [HasPermission]
     required_permissions = []
@@ -354,6 +386,7 @@ class AttachmentDownloadView(APIView):
         return response
 
 
+@object_response
 class SearchView(APIView):
     permission_classes = [HasPermission]
     required_permissions = []

@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 
 from apps.accounting.models import Expense, FinancialAccount, Income
 from apps.common.permissions import HasPermission
+from apps.common.schema import object_response
 from apps.inventory.models import EntryType, InventoryTransaction, StockBalance
 from apps.payments.models import Payment, PaymentStatus
 from apps.sales.models import (
@@ -169,6 +170,7 @@ def compute_pl(user, date_from: date, date_to: date) -> dict:
     }
 
 
+@object_response
 class ProfitLossReportView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["REPORT_VIEW_COST"]
@@ -219,66 +221,79 @@ class ProfitLossReportView(APIView):
         )
 
 
+@object_response
 class InventoryValuationView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["REPORT_VIEW_COST"]
 
     def get(self, request):
+        from django.db.models import DecimalField as DField
+        from django.db.models import ExpressionWrapper, F
+        from django.db.models import Sum as DSum
+
+        money_field = DField(max_digits=18, decimal_places=2)
         balances = branch_scoped(
             request.user,
-            StockBalance.objects.select_related("branch", "medicine", "batch"),
+            StockBalance.objects.select_related("branch", "batch"),
         )
         if request.query_params.get("branch"):
             balances = balances.filter(branch_id=request.query_params["branch"])
 
-        per_branch: dict[str, dict] = {}
-        for balance in balances:
-            value_saleable = (balance.qty_on_hand * balance.batch.unit_cost).quantize(TWO)
-            value_quarantine = (balance.qty_quarantine * balance.batch.unit_cost).quantize(TWO)
-            value_promo = (balance.qty_promo * balance.batch.unit_cost).quantize(TWO)
-            row = per_branch.setdefault(
-                str(balance.branch_id),
-                {
-                    "branch": balance.branch_id,
-                    "branch_name": balance.branch.name,
-                    "saleable_qty": Decimal("0"),
-                    "saleable_value": Decimal("0"),
-                    "quarantine_qty": Decimal("0"),
-                    "quarantine_value": Decimal("0"),
-                    "promo_qty": Decimal("0"),
-                    "promo_value": Decimal("0"),
-                },
+        rows = (
+            balances.values("branch_id", "branch__name")
+            .annotate(
+                saleable_qty=DSum("qty_on_hand"),
+                quarantine_qty=DSum("qty_quarantine"),
+                promo_qty=DSum("qty_promo"),
+                saleable_value=DSum(
+                    ExpressionWrapper(F("qty_on_hand") * F("batch__unit_cost"), output_field=money_field)
+                ),
+                quarantine_value=DSum(
+                    ExpressionWrapper(F("qty_quarantine") * F("batch__unit_cost"), output_field=money_field)
+                ),
+                promo_value=DSum(
+                    ExpressionWrapper(F("qty_promo") * F("batch__unit_cost"), output_field=money_field)
+                ),
             )
-            row["saleable_qty"] += balance.qty_on_hand
-            row["saleable_value"] += value_saleable
-            row["quarantine_qty"] += balance.qty_quarantine
-            row["quarantine_value"] += value_quarantine
-            row["promo_qty"] += balance.qty_promo
-            row["promo_value"] += value_promo
+            .order_by("branch__name")
+        )
 
-        def as_strings(row: dict) -> dict:
-            return {key: (str(value) if isinstance(value, Decimal) else value) for key, value in row.items()}
-
-        results = [as_strings(row) for row in per_branch.values()]
-        total_value = sum((Decimal(row["saleable_value"]) + Decimal(row["quarantine_value"]) + Decimal(row["promo_value"]) for row in results), Decimal("0"))
+        results = [
+            {
+                "branch": str(row["branch_id"]),
+                "branch_name": row["branch__name"],
+                "saleable_qty": str(row["saleable_qty"] or Decimal("0")),
+                "saleable_value": str(money(row["saleable_value"] or 0)),
+                "quarantine_qty": str(row["quarantine_qty"] or Decimal("0")),
+                "quarantine_value": str(money(row["quarantine_value"] or 0)),
+                "promo_qty": str(row["promo_qty"] or Decimal("0")),
+                "promo_value": str(money(row["promo_value"] or 0)),
+            }
+            for row in rows
+        ]
+        total_value = sum(
+            (Decimal(r["saleable_value"]) + Decimal(r["quarantine_value"]) + Decimal(r["promo_value"])
+             for r in results),
+            Decimal("0"),
+        )
 
         if request.query_params.get("export") == "csv":
-            sorted_rows = sorted(results, key=lambda row: row["branch_name"])
             return csv_response(
                 "inventory-valuation.csv",
                 ["branch_name", "saleable_qty", "saleable_value", "quarantine_qty", "quarantine_value", "promo_qty", "promo_value"],
-                [[row["branch_name"], row["saleable_qty"], row["saleable_value"], row["quarantine_qty"], row["quarantine_value"], row["promo_qty"], row["promo_value"]] for row in sorted_rows],
+                [[row["branch_name"], row["saleable_qty"], row["saleable_value"], row["quarantine_qty"], row["quarantine_value"], row["promo_qty"], row["promo_value"]] for row in results],
             )
 
         return Response(
             {
                 "count": len(results),
                 "total_value": str(money(total_value)),
-                "results": sorted(results, key=lambda row: row["branch_name"]),
+                "results": results,
             }
         )
 
 
+@object_response
 class FinancialPositionView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["REPORT_VIEW"]
@@ -310,15 +325,16 @@ class FinancialPositionView(APIView):
             for account in accounts.order_by("name")
         ]
 
-        balances = branch_scoped(user, StockBalance.objects.select_related("batch"))
-        stock_value = sum(
-            (balance.qty_on_hand * balance.batch.unit_cost for balance in balances),
-            Decimal("0"),
+        balances = branch_scoped(user, StockBalance.objects.all())
+        from django.db.models import DecimalField as DField
+        from django.db.models import ExpressionWrapper, F
+        mf = DField(max_digits=18, decimal_places=2)
+        stock_agg = balances.aggregate(
+            sv=Sum(ExpressionWrapper(F("qty_on_hand") * F("batch__unit_cost"), output_field=mf)),
+            qv=Sum(ExpressionWrapper(F("qty_quarantine") * F("batch__unit_cost"), output_field=mf)),
         )
-        quarantine_value = sum(
-            (balance.qty_quarantine * balance.batch.unit_cost for balance in balances),
-            Decimal("0"),
-        )
+        stock_value = stock_agg["sv"] or Decimal("0")
+        quarantine_value = stock_agg["qv"] or Decimal("0")
 
         payload = {
             "receivables": str(money(receivables)),
@@ -408,10 +424,12 @@ class SalesAttributionView(APIView):
         )
 
 
+@object_response
 class SalesByDoctorView(SalesAttributionView):
     group_field = "doctor"
 
 
+@object_response
 class SalesByRepView(SalesAttributionView):
     group_field = "sales_rep"
 
@@ -435,6 +453,7 @@ def user_has_cost_access(user) -> bool:
     return bool(user.is_superuser or "REPORT_VIEW_COST" in user.effective_permission_codes)
 
 
+@object_response
 class SalesSummaryView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["REPORT_VIEW"]
@@ -490,6 +509,7 @@ class SalesSummaryView(APIView):
         )
 
 
+@object_response
 class PurchasesSummaryView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["REPORT_VIEW"]
@@ -546,6 +566,7 @@ class PurchasesSummaryView(APIView):
         )
 
 
+@object_response
 class SalesByItemView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["REPORT_VIEW"]
@@ -629,6 +650,7 @@ class SalesByItemView(APIView):
         )
 
 
+@object_response
 class SalesByCustomerView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["REPORT_VIEW"]

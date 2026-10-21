@@ -12,6 +12,7 @@ from apps.accounting.models import FinancialAccount
 from apps.audit.services import log_action
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
+from apps.common.schema import object_response, pdf_response
 from apps.common.viewsets import PermissionMappedMixin
 from apps.purchases.models import (
     Purchase,
@@ -325,6 +326,7 @@ class PurchaseReturnViewSet(
         return Response(PurchaseReturnReadSerializer(purchase_return).data)
 
 
+@object_response
 class PayableAgingView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["PURCHASE_VIEW"]
@@ -387,6 +389,7 @@ class PayableAgingView(APIView):
         )
 
 
+@pdf_response
 class PurchasePdfView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["PURCHASE_VIEW"]

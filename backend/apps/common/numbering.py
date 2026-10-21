@@ -11,9 +11,11 @@ from apps.common.models import DocumentSequence, DocumentType
 
 PREFIXES = {
     DocumentType.PURCHASE: "PUR",
+    DocumentType.PURCHASE_ORDER: "PO",
     DocumentType.SUPPLIER_PAYMENT: "PPV",
     DocumentType.DEBIT_NOTE: "DBN",
     DocumentType.SALES_INVOICE: "INV",
+    DocumentType.DELIVERY_CHALLAN: "CHL",
     DocumentType.RECEIPT: "RCP",
     DocumentType.CREDIT_NOTE: "CRN",
     DocumentType.ADJUSTMENT: "ADJ",
@@ -24,9 +26,11 @@ PREFIXES = {
 
 PREFIX_SETTING_BY_DOC = {
     DocumentType.PURCHASE: "PURCHASE_PREFIX",
+    DocumentType.PURCHASE_ORDER: "PURCHASE_ORDER_PREFIX",
     DocumentType.SUPPLIER_PAYMENT: "SUPPLIER_PAYMENT_PREFIX",
     DocumentType.DEBIT_NOTE: "DEBIT_NOTE_PREFIX",
     DocumentType.SALES_INVOICE: "INVOICE_PREFIX",
+    DocumentType.DELIVERY_CHALLAN: "CHALLAN_PREFIX",
     DocumentType.RECEIPT: "RECEIPT_PREFIX",
     DocumentType.CREDIT_NOTE: "CREDIT_NOTE_PREFIX",
     DocumentType.ADJUSTMENT: "ADJUSTMENT_PREFIX",
@@ -34,6 +38,7 @@ PREFIX_SETTING_BY_DOC = {
     DocumentType.EXPENSE: "EXPENSE_PREFIX",
     DocumentType.INCOME: "INCOME_PREFIX",
 }
+
 
 
 def current_fiscal_year(business_date=None) -> int:

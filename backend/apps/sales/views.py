@@ -11,6 +11,7 @@ from apps.accounting.models import FinancialAccount
 from apps.audit.services import log_action
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
+from apps.common.schema import object_response, pdf_response
 from apps.common.settings_service import get_setting_bool
 from apps.common.viewsets import PermissionMappedMixin
 from apps.sales.models import Customer, SalesInvoice, SalesInvoiceStatus, SalesReturn
@@ -301,6 +302,9 @@ class SalesInvoiceViewSet(
             payment=payment,
             allow_credit_override=bool(request.data.get("allow_credit_override")),
             credit_override_reason=request.data.get("credit_override_reason", ""),
+            prescription_number=request.data.get("prescription_number", ""),
+            rx_override=bool(request.data.get("rx_override")),
+            rx_override_reason=request.data.get("rx_override_reason", ""),
         )
         log_action(
             actor=request.user,
@@ -338,6 +342,7 @@ class SalesInvoiceViewSet(
         return Response(SalesInvoiceReadSerializer(invoice).data)
 
 
+@pdf_response
 class InvoicePdfView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["SALE_VIEW"]
@@ -365,6 +370,7 @@ class InvoicePdfView(APIView):
         return response
 
 
+@object_response
 class SalesConfigView(APIView):
     """Client-safe sales config (available to any user who can view sales)."""
 
@@ -377,6 +383,7 @@ class SalesConfigView(APIView):
         )
 
 
+@object_response
 class DueListView(APIView):
     """Open invoices with aging for the collection desk."""
 
@@ -484,6 +491,7 @@ class DueListView(APIView):
         )
 
 
+@object_response
 class CustomerAdvanceView(APIView):
     """Customers holding an advance (negative ledger balance)."""
 
@@ -506,6 +514,7 @@ class CustomerAdvanceView(APIView):
         return Response({"count": len(results), "total": str(total), "results": results})
 
 
+@object_response
 class ReceivableAgingView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["CUSTOMER_VIEW"]

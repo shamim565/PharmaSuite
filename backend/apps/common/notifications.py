@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User, UserStatus
 from apps.common.exceptions import APIError
-from apps.common.models import Attachment, Notification
+from apps.common.models import Attachment, Notification, NotificationPreference
 
 ALLOWED_CONTENT_TYPES = {
     "application/pdf",
@@ -44,7 +44,7 @@ def notify(
         return None
     if category and not is_category_enabled(user, category):
         return None
-    return Notification.objects.create(
+    notification = Notification.objects.create(
         user=user,
         type=type,
         title=title,
@@ -53,6 +53,17 @@ def notify(
         payload=payload or {},
         severity=severity,
     )
+
+    # Channel fan-out (email / SMS) for categorized alerts, opt-in per category.
+    if category:
+        pref = NotificationPreference.objects.filter(user=user, category=category).first()
+        if pref and pref.email_enabled and getattr(user, "email", None):
+            send_email_notification(user.email, title, body or title)
+        if pref and pref.sms_enabled and getattr(user, "mobile", None):
+            from apps.common.tasks import send_async_sms
+
+            send_async_sms.delay(to_mobile=user.mobile, text=f"{title}: {body or title}")
+    return notification
 
 
 def notify_users(
@@ -70,6 +81,22 @@ def notify_users(
         if notify(user, type, title, body, deep_link, payload, severity, category):
             created += 1
     return created
+
+
+def send_email_notification(to_email: str | list[str], subject: str, body: str, html_body: str | None = None):
+    """Dispatch email asynchronously via Celery worker."""
+    from apps.common.tasks import send_async_email
+
+    recipients = [to_email] if isinstance(to_email, str) else list(to_email)
+    recipients = [r for r in recipients if r and "@" in r]
+    if not recipients:
+        return None
+    return send_async_email.delay(
+        subject=subject,
+        message=body,
+        recipient_list=recipients,
+        html_message=html_body,
+    )
 
 
 ROLE_GROUPS = {

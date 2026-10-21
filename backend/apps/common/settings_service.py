@@ -35,6 +35,8 @@ SETTINGS_KEYS: dict[str, tuple] = {
     "EXPENSE_PREFIX": ("numbering", "Expense prefix", "EXP"),
     "INCOME_PREFIX": ("numbering", "Income prefix", "INC"),
     "DOCUMENT_NUMBER_WIDTH": ("numbering", "Document number width", 6),
+    "SMS_GATEWAY_URL": ("notifications", "SMS gateway URL (JSON POST receives {to, text})", ""),
+    "SMS_GATEWAY_TOKEN": ("notifications", "SMS gateway bearer token", ""),
 }
 
 

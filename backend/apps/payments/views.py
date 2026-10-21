@@ -7,6 +7,7 @@ from apps.accounting.models import FinancialAccount
 from apps.audit.services import log_action
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
+from apps.common.schema import object_response, pdf_response
 from apps.common.viewsets import PermissionMappedMixin
 from apps.payments.models import Cheque, Payment, PaymentStatus
 from apps.payments.serializers import (
@@ -119,6 +120,7 @@ class CustomerPaymentViewSet(
         return Response(CustomerPaymentReadSerializer(payment).data)
 
 
+@object_response
 class DailyCollectionView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["PAYMENT_VIEW"]
@@ -283,6 +285,7 @@ class ChequeViewSet(
         return Response(ChequeReadSerializer(cheque).data)
 
 
+@pdf_response
 class PaymentReceiptPdfView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["PAYMENT_VIEW"]

@@ -3,10 +3,7 @@ import logging
 from celery import shared_task
 from django.utils import timezone
 
-logger = logging.getLogger(__name__)
-
-
-@shared_task(name="apps.common.tasks.heartbeat")
+logger = logging.getLogger(__name__)@shared_task(name="apps.common.tasks.heartbeat")
 def heartbeat() -> dict:
     """Periodic liveness task; also used to smoke-test workers."""
     timestamp = timezone.now().isoformat()
@@ -155,3 +152,68 @@ def visit_reminders() -> dict:
                 category="VISITS",
             )
     return {"created": created, "reps_notified": len(by_rep)}
+
+
+@shared_task(name="apps.common.tasks.send_async_email")
+def send_async_email(
+    subject: str,
+    message: str,
+    recipient_list: list[str],
+    html_message: str | None = None,
+    from_email: str | None = None,
+) -> dict:
+    """Asynchronous email dispatch via Celery worker."""
+    from django.conf import settings
+    from django.core.mail import send_mail
+
+    sender = from_email or getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@pharmasuite.com")
+    try:
+        sent = send_mail(
+            subject=subject,
+            message=message,
+            from_email=sender,
+            recipient_list=recipient_list,
+            html_message=html_message,
+            fail_silently=False,
+        )
+        logger.info("Sent email '%s' to %s (count: %s)", subject, recipient_list, sent)
+        return {"status": "sent", "count": sent}
+    except Exception as exc:
+        logger.error("Failed to send email '%s' to %s: %s", subject, recipient_list, exc)
+        return {"status": "error", "error": str(exc)}
+
+
+@shared_task(name="apps.common.tasks.send_async_sms")
+def send_async_sms(to_mobile: str, text: str) -> dict:
+    """Dispatch SMS via the configured gateway (JSON POST) asynchronously.
+
+    The gateway is configured through Settings → Notifications
+    (SMS_GATEWAY_URL, optional SMS_GATEWAY_TOKEN). No gateway configured =
+    skip silently; the in-app notification has already been created.
+    """
+    import json as _json
+    import urllib.request
+
+    from apps.common.settings_service import get_setting_value
+
+    gateway_url = get_setting_value("SMS_GATEWAY_URL", default="")
+    if not gateway_url:
+        return {"status": "skipped", "error": "SMS gateway not configured"}
+
+    token = get_setting_value("SMS_GATEWAY_TOKEN", default="")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        request = urllib.request.Request(
+            gateway_url,
+            data=_json.dumps({"to": to_mobile, "text": text}).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=15) as response:
+            logger.info("SMS sent to %s via gateway (HTTP %s)", to_mobile, response.status)
+            return {"status": "sent", "http": response.status}
+    except Exception as exc:
+        logger.error("Failed to send SMS to %s: %s", to_mobile, exc)
+        return {"status": "error", "error": str(exc)}

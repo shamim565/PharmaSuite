@@ -1,6 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from apps.sales.delivery_views import DeliveryChallanViewSet
 from apps.sales.views import (
     CustomerAdvanceView,
     CustomerViewSet,
@@ -16,6 +17,8 @@ router = DefaultRouter()
 router.register("customers", CustomerViewSet, basename="customer")
 router.register("sales", SalesInvoiceViewSet, basename="sales-invoice")
 router.register("sales-returns", SalesReturnViewSet, basename="sales-return")
+router.register("delivery-challans", DeliveryChallanViewSet, basename="delivery-challan")
+
 
 urlpatterns = [
     path("sales/config/", SalesConfigView.as_view(), name="sales-config"),

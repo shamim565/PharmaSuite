@@ -10,6 +10,7 @@ from apps.audit.services import log_action
 from apps.catalog.models import Medicine, MedicineBatch
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
+from apps.common.schema import object_response
 from apps.common.viewsets import PermissionMappedMixin
 from apps.doctors.models import Doctor, DoctorMedicine, DoctorVisit, VisitStatus
 from apps.doctors.serializers import (
@@ -221,6 +222,7 @@ class DoctorVisitViewSet(
         "reverse_samples": ["VISIT_MANAGE"],
     }
     permission_classes = [HasPermission]
+    serializer_class = DoctorVisitSerializer
     queryset = DoctorVisit.objects.select_related(
         "doctor", "representative", "branch"
     ).prefetch_related("samples__medicine", "samples__batch")
@@ -380,6 +382,7 @@ class DoctorVisitViewSet(
         return Response(DoctorVisitSerializer(visit).data)
 
 
+@object_response
 class VisitCoverageView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["VISIT_VIEW"]

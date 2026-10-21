@@ -5,15 +5,18 @@ from apps.common.uuid7 import uuid7
 
 class DocumentType(models.TextChoices):
     PURCHASE = "PURCHASE", "Purchase"
+    PURCHASE_ORDER = "PURCHASE_ORDER", "Purchase order"
     SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT", "Supplier payment"
     DEBIT_NOTE = "DEBIT_NOTE", "Debit note (purchase return)"
     SALES_INVOICE = "SALES_INVOICE", "Sales invoice"
+    DELIVERY_CHALLAN = "DELIVERY_CHALLAN", "Delivery challan"
     RECEIPT = "RECEIPT", "Customer receipt"
     CREDIT_NOTE = "CREDIT_NOTE", "Credit note (sales return)"
     ADJUSTMENT = "ADJUSTMENT", "Stock adjustment"
     TRANSFER = "TRANSFER", "Stock transfer"
     EXPENSE = "EXPENSE", "Expense voucher"
     INCOME = "INCOME", "Income voucher"
+
 
 
 class UUIDModel(models.Model):
@@ -138,6 +141,12 @@ class NotificationPreference(BaseModel):
     )
     category = models.CharField(max_length=20, choices=NotificationCategory.choices)
     enabled = models.BooleanField(default=True)
+    email_enabled = models.BooleanField(
+        default=False, help_text="Also send this category to the user's email address."
+    )
+    sms_enabled = models.BooleanField(
+        default=False, help_text="Also send this category to the user's mobile as SMS."
+    )
 
     class Meta:
         constraints = [

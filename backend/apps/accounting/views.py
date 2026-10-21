@@ -40,6 +40,7 @@ from apps.audit.services import log_action
 from apps.branches.models import Branch
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
+from apps.common.schema import object_response
 from apps.common.viewsets import PermissionMappedMixin
 
 
@@ -376,6 +377,7 @@ def _period_filter(qs, request):
     return qs
 
 
+@object_response
 class ExpenseSummaryView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["EXPENSE_VIEW"]
@@ -404,6 +406,7 @@ class ExpenseSummaryView(APIView):
         return Response({"count": len(results), "total": str(total), "results": results})
 
 
+@object_response
 class IncomeSummaryView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["INCOME_VIEW"]

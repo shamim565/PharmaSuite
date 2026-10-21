@@ -12,12 +12,14 @@ from apps.inventory.views import (
     StockSummaryView,
     StockTransferViewSet,
 )
+from apps.inventory.location_views import WarehouseLocationViewSet
 
 router = DefaultRouter()
 router.register("transactions", InventoryTransactionViewSet, basename="inventory-transaction")
 router.register("balances", StockBalanceViewSet, basename="stock-balance")
 router.register("adjustments", StockAdjustmentViewSet, basename="stock-adjustment")
 router.register("transfers", StockTransferViewSet, basename="stock-transfer")
+router.register("locations", WarehouseLocationViewSet, basename="warehouse-location")
 
 urlpatterns = [
     path("", include(router.urls)),

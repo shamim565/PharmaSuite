@@ -82,11 +82,10 @@ def test_receipt_pdf_requires_payment_view(branch, customer, actor):
 
 def test_supplier_payments_filterable_by_purchase(branch, supplier, medicine, actor):
     """The purchase field filter powers payment-history on the purchase detail page."""
-    from apps.accounting.models import AccountType, FinancialAccount, FinancialEntryType
-    from apps.accounting.services import post_account_transaction
+    from uuid import uuid4
+
     from apps.purchases.models import Purchase, PurchaseItem
     from apps.purchases.services import confirm_purchase, record_supplier_payment
-    from uuid import uuid4
 
     actor.is_superuser = True
     actor.save(update_fields=["is_superuser"])

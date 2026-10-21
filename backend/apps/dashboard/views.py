@@ -11,12 +11,14 @@ from apps.accounts.models import Role, User, UserStatus
 from apps.branches.models import Branch, BranchStatus
 from apps.catalog.models import Medicine
 from apps.common.permissions import HasPermission
+from apps.common.schema import object_response
 from apps.inventory.models import StockBalance
 from apps.payments.models import Payment, PaymentStatus
 from apps.sales.models import CustomerLedgerEntry, SalesInvoice, SalesInvoiceStatus
 from apps.suppliers.models import SupplierLedgerEntry
 
 
+@object_response
 class DashboardSummaryView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["DASHBOARD_VIEW"]
@@ -129,6 +131,7 @@ class DashboardSummaryView(APIView):
         )
 
 
+@object_response
 class DashboardWidgetsView(APIView):
     """Trend and top-N widgets plus alert previews for the dashboard.
 

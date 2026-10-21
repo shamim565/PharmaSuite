@@ -1,5 +1,8 @@
 from django.conf import settings
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import mixins, status, viewsets
+from rest_framework import serializers as drf_serializers
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -44,6 +47,7 @@ def _auth_response(request, user, access: str, refresh: str) -> Response:
     return response
 
 
+@extend_schema(request=LoginSerializer, responses=OpenApiTypes.OBJECT)
 class LoginView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -63,6 +67,16 @@ class LoginView(APIView):
         return _auth_response(request, user, access, refresh)
 
 
+@extend_schema(
+    request=inline_serializer(
+        "MfaLoginRequest",
+        {
+            "mfa_token": drf_serializers.CharField(),
+            "code": drf_serializers.CharField(),
+        },
+    ),
+    responses=OpenApiTypes.OBJECT,
+)
 class MfaLoginView(APIView):
     """Second login step when TOTP two-factor is enabled."""
 
@@ -87,6 +101,7 @@ class MfaLoginView(APIView):
         return _auth_response(request, user, access, refresh)
 
 
+@extend_schema(request=None, responses=OpenApiTypes.OBJECT)
 class RefreshView(APIView):
     permission_classes = [AllowAny]
 
@@ -100,6 +115,7 @@ class RefreshView(APIView):
         return _auth_response(request, user, access, new_refresh)
 
 
+@extend_schema(request=None, responses=OpenApiTypes.OBJECT)
 class MeMfaSetupView(APIView):
     required_permissions: list[str] = []
 
@@ -113,6 +129,10 @@ class MeMfaSetupView(APIView):
         )
 
 
+@extend_schema(
+    request=inline_serializer("MfaCodeRequest", {"code": drf_serializers.CharField()}),
+    responses=OpenApiTypes.OBJECT,
+)
 class MeMfaEnableView(APIView):
     required_permissions: list[str] = []
 
@@ -123,6 +143,10 @@ class MeMfaEnableView(APIView):
         return Response({"totp_enabled": True})
 
 
+@extend_schema(
+    request=inline_serializer("MfaDisableRequest", {"code": drf_serializers.CharField()}),
+    responses=OpenApiTypes.OBJECT,
+)
 class MeMfaDisableView(APIView):
     required_permissions: list[str] = []
 
@@ -133,6 +157,7 @@ class MeMfaDisableView(APIView):
         return Response({"totp_enabled": False})
 
 
+@extend_schema(request=None, responses={204: None})
 class LogoutView(APIView):
     permission_classes = [AllowAny]
 
@@ -149,9 +174,11 @@ class LogoutView(APIView):
 
 
 class MeView(APIView):
+    @extend_schema(responses=MeSerializer)
     def get(self, request):
         return Response(MeSerializer(request.user, context={"request": request}).data)
 
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=MeSerializer)
     def patch(self, request):
         from apps.common.exceptions import APIError
 
@@ -292,6 +319,7 @@ class RoleViewSet(
         return Response(RoleDetailSerializer(role).data)
 
 
+@extend_schema(responses=PermissionSerializer(many=True))
 class PermissionListView(APIView):
     permission_classes = [HasPermission]
     required_permissions = []

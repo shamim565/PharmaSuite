@@ -260,3 +260,32 @@ class StockAdjustmentItem(BaseModel):
     @property
     def line_value(self) -> Decimal:
         return self.qty * self.unit_cost
+
+
+class WarehouseLocation(UUIDModel):
+    """Physical bin/rack location inside a branch warehouse."""
+
+    branch = models.ForeignKey(
+        "branches.Branch", on_delete=models.PROTECT, related_name="warehouse_locations"
+    )
+    zone = models.CharField(max_length=60, blank=True, help_text="e.g. A, B, Cold room")
+    rack = models.CharField(max_length=60, blank=True)
+    bin = models.CharField(max_length=60)
+    is_active = models.BooleanField(default=True)
+    notes = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["branch", "zone", "rack", "bin"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "zone", "rack", "bin"], name="uq_location_branch_zone_rack_bin"
+            ),
+        ]
+
+    @property
+    def label(self) -> str:
+        parts = [p for p in (self.zone, self.rack, self.bin) if p]
+        return "-".join(parts) or "?"
+
+    def __str__(self) -> str:
+        return f"{self.branch_id}:{self.label}"

@@ -14,6 +14,7 @@ from apps.audit.services import log_action
 from apps.catalog.models import BatchStatus
 from apps.common.exceptions import APIError
 from apps.common.permissions import HasPermission
+from apps.common.schema import object_response
 from apps.common.viewsets import PermissionMappedMixin
 from apps.inventory.models import (
     InventoryTransaction,
@@ -196,6 +197,7 @@ def _rows_response(request, rows: list[dict]) -> Response:
     return Response({"count": count, "results": rows})
 
 
+@object_response
 class StockSummaryView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["STOCK_VIEW"]
@@ -204,6 +206,7 @@ class StockSummaryView(APIView):
         return _rows_response(request, _summary_rows(request))
 
 
+@object_response
 class LowStockReportView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["STOCK_VIEW"]
@@ -265,6 +268,7 @@ def _batch_report_rows(request, *, expired: bool) -> list[dict]:
     return rows
 
 
+@object_response
 class NearExpiryReportView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["STOCK_VIEW"]
@@ -274,6 +278,7 @@ class NearExpiryReportView(APIView):
         return Response({"count": len(rows), "results": rows})
 
 
+@object_response
 class ExpiredReportView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["STOCK_VIEW"]
@@ -283,6 +288,7 @@ class ExpiredReportView(APIView):
         return Response({"count": len(rows), "results": rows})
 
 
+@object_response
 class LedgerIntegrityView(APIView):
     """Ad-hoc reconciliation view: cached balances vs ledger sums."""
 

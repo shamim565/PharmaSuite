@@ -4,6 +4,9 @@ from django.db import models
 
 from apps.common.models import BaseModel
 
+# Import PO models so Django discovers them in this app
+from apps.purchases.po_models import PurchaseOrder, PurchaseOrderItem  # noqa: F401
+
 
 class PurchaseStatus(models.TextChoices):
     DRAFT = "DRAFT", "Draft"
@@ -101,7 +104,7 @@ class Purchase(BaseModel):
     def outstanding(self) -> Decimal:
         if self.lifecycle != PurchaseStatus.CONFIRMED:
             return Decimal("0")
-        return self.grand_total - self.paid_total - Decimal("0")
+        return self.grand_total - self.paid_total - self.returned_total
 
 
 class PurchaseItem(BaseModel):

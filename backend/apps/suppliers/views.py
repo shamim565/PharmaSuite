@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from apps.audit.services import log_action
 from apps.common.permissions import HasPermission
+from apps.common.schema import object_response
 from apps.common.viewsets import PermissionMappedMixin
 from apps.suppliers.models import Supplier
 from apps.suppliers.serializers import SupplierLedgerEntrySerializer, SupplierSerializer
@@ -108,6 +109,7 @@ class SupplierViewSet(
         )
 
 
+@object_response
 class PayableSummaryView(APIView):
     permission_classes = [HasPermission]
     required_permissions = ["SUPPLIER_VIEW"]
