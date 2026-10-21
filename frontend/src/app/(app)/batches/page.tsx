@@ -510,7 +510,10 @@ export default function BatchesPage() {
                     On hand {formatQty(batch.qty_on_hand)} / received{" "}
                     {formatQty(batch.qty_received_total)} @ {formatMoney(batch.unit_cost)}
                   </p>
-                  <p className="text-xs text-slate-500">{batch.branch_name}</p>
+                  <p className="text-xs text-slate-500">
+                    {batch.branch_name}
+                    {batch.location ? ` · ${batch.location}` : ""}
+                  </p>
                 </li>
               ))}
             </ul>
