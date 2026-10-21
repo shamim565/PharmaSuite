@@ -219,7 +219,6 @@ export type WarehouseLocation = {
   label: string;
   is_active: boolean;
   notes: string;
-  created_at: string;
 };
 
 export type DashboardSummary = {
@@ -404,6 +403,28 @@ export type Purchase = {
   items: PurchaseItem[];
 };
 
+export type SupplierCreditNote = {
+  id: string;
+  number: string | null;
+  branch: string;
+  branch_name: string;
+  supplier: string;
+  supplier_name: string;
+  business_date: string;
+  amount: string;
+  reason_code: "EXPIRY_RETURN" | "DAMAGED_RETURN" | "PRICE_ADJUSTMENT" | "OTHER";
+  reference: string;
+  status: "OPEN" | "SETTLED" | "CANCELLED";
+  notes: string;
+  adjustment: string | null;
+  adjustment_number: string;
+  days_open: number | null;
+  settled_at: string | null;
+  settled_by_name: string;
+  cancel_reason: string;
+  created_at: string;
+};
+
 export type SupplierPaymentAllocation = {
   id: string;
   purchase: string;
@@ -469,12 +490,7 @@ export type PurchaseOrder = {
   business_date: string;
   expected_delivery_date: string | null;
   status:
-    | "DRAFT"
-    | "SUBMITTED"
-    | "APPROVED"
-    | "PARTIALLY_RECEIVED"
-    | "FULLY_RECEIVED"
-    | "CANCELLED";
+    "DRAFT" | "SUBMITTED" | "APPROVED" | "PARTIALLY_RECEIVED" | "FULLY_RECEIVED" | "CANCELLED";
   subtotal: string;
   discount_total: string;
   vat_total: string;
@@ -664,6 +680,8 @@ export type ExceptionOverride = {
     | "FEFO_OVERRIDE"
     | "RX_OVERRIDE"
     | "PRICE_OVERRIDE"
+    | "ZERO_VALUE"
+    | "BELOW_COST"
     | "DUPLICATE_INVOICE";
   reason: string;
 };

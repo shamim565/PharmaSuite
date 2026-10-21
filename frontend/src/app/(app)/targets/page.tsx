@@ -205,86 +205,86 @@ export default function TargetsPage() {
               </Button>
             }
           />
-            <form
-              onSubmit={(event: FormEvent) => {
-                event.preventDefault();
-                saveMutation.mutate();
-              }}
-              className="space-y-3 p-4"
-            >
-              <ErrorBanner error={saveMutation.error} />
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <Field label="Representative" error={fieldError("representative")}>
-                  <Select
-                    value={form.representative}
-                    onChange={(e) => setForm({ ...form, representative: e.target.value })}
-                    required
-                  >
-                    <option value="">Select…</option>
-                    {repsQuery.data?.results.map((rep) => (
-                      <option key={rep.id} value={rep.id}>
-                        {rep.name} ({rep.code})
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Branch">
-                  <Select
-                    value={form.branch}
-                    onChange={(e) => setForm({ ...form, branch: e.target.value })}
-                  >
-                    <option value="">All branches</option>
-                    {branchesQuery.data?.results.map((branch) => (
-                      <option key={branch.id} value={branch.id}>
-                        {branch.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Sales target (৳)">
+          <form
+            onSubmit={(event: FormEvent) => {
+              event.preventDefault();
+              saveMutation.mutate();
+            }}
+            className="space-y-3 p-4"
+          >
+            <ErrorBanner error={saveMutation.error} />
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Field label="Representative" error={fieldError("representative")}>
+                <Select
+                  value={form.representative}
+                  onChange={(e) => setForm({ ...form, representative: e.target.value })}
+                  required
+                >
+                  <option value="">Select…</option>
+                  {repsQuery.data?.results.map((rep) => (
+                    <option key={rep.id} value={rep.id}>
+                      {rep.name} ({rep.code})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Branch">
+                <Select
+                  value={form.branch}
+                  onChange={(e) => setForm({ ...form, branch: e.target.value })}
+                >
+                  <option value="">All branches</option>
+                  {branchesQuery.data?.results.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Sales target (৳)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.target_amount}
+                  onChange={(e) => setForm({ ...form, target_amount: e.target.value })}
+                  required
+                />
+              </Field>
+              <Field label="Collection target (৳)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.target_collection}
+                  onChange={(e) => setForm({ ...form, target_collection: e.target.value })}
+                />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Field label="Visit target">
+                <Input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={form.target_visits}
+                  onChange={(e) => setForm({ ...form, target_visits: e.target.value })}
+                />
+              </Field>
+              <div className="col-span-2">
+                <Field label="Notes">
                   <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.target_amount}
-                    onChange={(e) => setForm({ ...form, target_amount: e.target.value })}
-                    required
-                  />
-                </Field>
-                <Field label="Collection target (৳)">
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={form.target_collection}
-                    onChange={(e) => setForm({ ...form, target_collection: e.target.value })}
+                    value={form.notes}
+                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
                   />
                 </Field>
               </div>
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <Field label="Visit target">
-                  <Input
-                    type="number"
-                    step="1"
-                    min="0"
-                    value={form.target_visits}
-                    onChange={(e) => setForm({ ...form, target_visits: e.target.value })}
-                  />
-                </Field>
-                <div className="col-span-2">
-                  <Field label="Notes">
-                    <Input
-                      value={form.notes}
-                      onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                    />
-                  </Field>
-                </div>
-              </div>
-              <Button type="submit" className="w-full lg:w-auto" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? "Saving…" : editing ? "Save changes" : "Create target"}
-              </Button>
-            </form>
-          </Card>
+            </div>
+            <Button type="submit" className="w-full lg:w-auto" disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? "Saving…" : editing ? "Save changes" : "Create target"}
+            </Button>
+          </form>
+        </Card>
       ) : null}
 
       <Card>

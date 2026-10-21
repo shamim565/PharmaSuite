@@ -12,7 +12,6 @@ import type {
   CollectionEfficiencyReport,
   DashboardSummary,
   DashboardWidgets,
-  Paginated,
   RepPerformanceReport,
   Representative,
 } from "@/lib/types";
@@ -111,11 +110,11 @@ function MyPerformanceCard() {
 
   const repQuery = useQuery({
     queryKey: ["my-rep", user?.id],
-    queryFn: () =>
-      api.get<Paginated<Representative>>(`/representatives/?user=${user?.id}&page_size=1`),
+    queryFn: () => api.get<Representative>("/representatives/me/"),
     enabled: Boolean(user?.id),
+    retry: false,
   });
-  const rep = repQuery.data?.results[0];
+  const rep = repQuery.data;
 
   const perfQuery = useQuery({
     queryKey: ["rep-performance", rep?.id, fiscalYear, periodMonth],
@@ -151,9 +150,7 @@ function MyPerformanceCard() {
           )}
         </div>
         {pct !== null ? (
-          <Badge tone={pct >= 100 ? "green" : pct >= 75 ? "amber" : "rose"}>
-            {pct}% achieved
-          </Badge>
+          <Badge tone={pct >= 100 ? "green" : pct >= 75 ? "amber" : "rose"}>{pct}% achieved</Badge>
         ) : null}
       </div>
       {row ? (
@@ -368,18 +365,24 @@ export default function DashboardPage() {
             <KpiCard label="Stock value" value={formatMoney(data.operations.stock_value)} />
             <KpiCard
               label="Low stock items"
-              value={data.operations.low_stock_count === null ? "—" : String(data.operations.low_stock_count)}
+              value={
+                data.operations.low_stock_count === null
+                  ? "—"
+                  : String(data.operations.low_stock_count)
+              }
               hint="At or below reorder level"
             />
             <KpiCard
               label="Near expiry"
-              value={data.operations.near_expiry_count === null ? "—" : String(data.operations.near_expiry_count)}
+              value={
+                data.operations.near_expiry_count === null
+                  ? "—"
+                  : String(data.operations.near_expiry_count)
+              }
               hint="Batches expiring ≤ 90 days"
             />
             <Card className="p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                System
-              </p>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">System</p>
               <p className="mt-1 text-sm text-slate-700">
                 {data.medicines.active} medicines · {data.users.active} users ·{" "}
                 {data.branches.active} branches

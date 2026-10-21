@@ -13,6 +13,7 @@ import {
   ClipboardList,
   Coins,
   Ellipsis,
+  FileBadge,
   Home,
   Hourglass,
   KeyRound,
@@ -63,18 +64,42 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Dashboard", permission: "DASHBOARD_VIEW", icon: LayoutDashboard, mobileRank: 1 },
+  {
+    href: "/",
+    label: "Dashboard",
+    permission: "DASHBOARD_VIEW",
+    icon: LayoutDashboard,
+    mobileRank: 1,
+  },
   { href: "/sales", label: "Sales", permission: "SALE_VIEW", icon: ReceiptText, mobileRank: 2 },
   { href: "/dues", label: "Dues", permission: "PAYMENT_VIEW", icon: Hourglass, mobileRank: 3 },
-  { href: "/payments", label: "Payments", permission: "PAYMENT_VIEW", icon: Banknote, mobileRank: 4 },
+  {
+    href: "/payments",
+    label: "Payments",
+    permission: "PAYMENT_VIEW",
+    icon: Banknote,
+    mobileRank: 4,
+  },
   { href: "/returns", label: "Returns", permission: "SRET_VIEW", icon: Undo2 },
   { href: "/adjustments", label: "Adjustments", permission: "STOCK_VIEW", icon: Scale },
-  { href: "/purchases", label: "Purchases", permission: "PURCHASE_VIEW", icon: ArrowLeftRight, mobileRank: 6 },
+  {
+    href: "/purchases",
+    label: "Purchases",
+    permission: "PURCHASE_VIEW",
+    icon: ArrowLeftRight,
+    mobileRank: 6,
+  },
   {
     href: "/purchases/orders",
     label: "Purchase Orders",
     permission: "PURCHASE_VIEW",
     icon: ClipboardList,
+  },
+  {
+    href: "/credit-notes",
+    label: "Credit Notes",
+    permission: "SUPPLIER_VIEW",
+    icon: FileBadge,
   },
   {
     href: "/deliveries",
@@ -86,8 +111,20 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/transfers", label: "Transfers", permission: "STOCK_TRANSFER", icon: ArrowRightLeft },
   { href: "/items", label: "Items", permission: "MEDICINE_VIEW", icon: Pill },
   { href: "/batches", label: "Batches", permission: "STOCK_VIEW", icon: Layers },
-  { href: "/customers", label: "Customers", permission: "CUSTOMER_VIEW", icon: UsersRound, mobileRank: 7 },
-  { href: "/doctors", label: "Doctors", permission: "DOCTOR_VIEW", icon: Stethoscope, mobileRank: 9 },
+  {
+    href: "/customers",
+    label: "Customers",
+    permission: "CUSTOMER_VIEW",
+    icon: UsersRound,
+    mobileRank: 7,
+  },
+  {
+    href: "/doctors",
+    label: "Doctors",
+    permission: "DOCTOR_VIEW",
+    icon: Stethoscope,
+    mobileRank: 9,
+  },
   { href: "/reps", label: "Reps", permission: "REP_VIEW", icon: BriefcaseBusiness, mobileRank: 8 },
   {
     href: "/targets",

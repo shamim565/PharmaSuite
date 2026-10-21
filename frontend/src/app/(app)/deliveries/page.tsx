@@ -47,14 +47,16 @@ const emptyForm = {
   notes: "",
 };
 
-const STATUS_TONES: Record<DeliveryChallan["status"], "slate" | "blue" | "green" | "amber" | "rose"> =
-  {
-    PREPARED: "slate",
-    DISPATCHED: "blue",
-    DELIVERED: "green",
-    UNDELIVERED: "amber",
-    CANCELLED: "rose",
-  };
+const STATUS_TONES: Record<
+  DeliveryChallan["status"],
+  "slate" | "blue" | "green" | "amber" | "rose"
+> = {
+  PREPARED: "slate",
+  DISPATCHED: "blue",
+  DELIVERED: "green",
+  UNDELIVERED: "amber",
+  CANCELLED: "rose",
+};
 
 export default function DeliveriesPage() {
   const { user, hasPerm } = useAuth();
@@ -184,7 +186,8 @@ export default function DeliveriesPage() {
 
   const undeliverMutation = useMutation({
     meta: { successMessage: "Challan marked undelivered" },
-    mutationFn: (id: string) => api.post<DeliveryChallan>(`/delivery-challans/${id}/undeliver/`, {}),
+    mutationFn: (id: string) =>
+      api.post<DeliveryChallan>(`/delivery-challans/${id}/undeliver/`, {}),
     onSuccess: invalidateAll,
   });
 
@@ -245,11 +248,7 @@ export default function DeliveriesPage() {
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <div className="col-span-2">
                 <Field label="Invoice">
-                  <Select
-                    value={invoiceId}
-                    onChange={(e) => setInvoiceId(e.target.value)}
-                    required
-                  >
+                  <Select value={invoiceId} onChange={(e) => setInvoiceId(e.target.value)} required>
                     <option value="">Select…</option>
                     {pendingInvoices.map((invoice) => (
                       <option key={invoice.id} value={invoice.id}>
@@ -303,7 +302,10 @@ export default function DeliveriesPage() {
       {/* Manual challan form */}
       {showForm ? (
         <Card>
-          <CardHeader title="New delivery challan" subtitle="Manual entry for non-invoice deliveries." />
+          <CardHeader
+            title="New delivery challan"
+            subtitle="Manual entry for non-invoice deliveries."
+          />
           <form
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
@@ -493,10 +495,7 @@ export default function DeliveriesPage() {
                 <Input value={recipientPhone} onChange={(e) => setRecipientPhone(e.target.value)} />
               </Field>
             </div>
-            <Button
-              onClick={() => deliverMutation.mutate()}
-              disabled={deliverMutation.isPending}
-            >
+            <Button onClick={() => deliverMutation.mutate()} disabled={deliverMutation.isPending}>
               {deliverMutation.isPending ? "Marking…" : "Mark delivered"}
             </Button>
           </div>
@@ -578,13 +577,16 @@ export default function DeliveriesPage() {
                     <p className="font-medium">
                       {challan.number ?? `Draft ${challan.id.slice(0, 8)}`}{" "}
                       {challan.invoice_number ? (
-                        <span className="text-xs text-slate-500">· INV {challan.invoice_number}</span>
+                        <span className="text-xs text-slate-500">
+                          · INV {challan.invoice_number}
+                        </span>
                       ) : null}
                     </p>
                     <p className="text-xs text-slate-500">
                       {challan.customer_name} ({challan.customer_code}) ·{" "}
                       {formatDate(challan.business_date)} · {challan.items.length} line(s) ·{" "}
-                      {formatQty(challan.items.reduce((sum, item) => sum + Number(item.qty), 0))} pcs
+                      {formatQty(challan.items.reduce((sum, item) => sum + Number(item.qty), 0))}{" "}
+                      pcs
                     </p>
                     {challan.delivery_person ? (
                       <p className="text-xs text-slate-500">

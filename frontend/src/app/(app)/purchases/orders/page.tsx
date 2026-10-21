@@ -402,8 +402,8 @@ export default function PurchaseOrdersPage() {
               </Field>
             </div>
             <p className="text-xs text-slate-500">
-              A GRN draft is created with the pending quantities of this order. Confirm it from
-              the Purchases register to post stock.
+              A GRN draft is created with the pending quantities of this order. Confirm it from the
+              Purchases register to post stock.
             </p>
             <Button
               onClick={() => convertMutation.mutate()}
@@ -491,7 +491,10 @@ export default function PurchaseOrdersPage() {
                     <p className="font-medium">
                       {order.number ?? `Draft ${order.id.slice(0, 8)}`}{" "}
                       {order.fulfilled_by_number ? (
-                        <Link href={`/purchases/${order.fulfilled_by}`} className="text-xs text-slate-500 hover:underline">
+                        <Link
+                          href={`/purchases/${order.fulfilled_by}`}
+                          className="text-xs text-slate-500 hover:underline"
+                        >
                           → GRN {order.fulfilled_by_number}
                         </Link>
                       ) : null}
@@ -508,12 +511,13 @@ export default function PurchaseOrdersPage() {
                 </div>
                 <p className="text-sm">
                   Total <strong>{formatMoney(order.grand_total)}</strong>
-                  {order.status === "PARTIALLY_RECEIVED" ||
-                  order.status === "FULLY_RECEIVED" ? (
+                  {order.status === "PARTIALLY_RECEIVED" || order.status === "FULLY_RECEIVED" ? (
                     <span className="text-xs text-slate-500">
                       {" "}
                       · received{" "}
-                      {formatQty(order.items.reduce((sum, item) => sum + Number(item.qty_received), 0))}{" "}
+                      {formatQty(
+                        order.items.reduce((sum, item) => sum + Number(item.qty_received), 0),
+                      )}{" "}
                       of{" "}
                       {formatQty(
                         order.items.reduce((sum, item) => sum + Number(item.qty_ordered), 0),

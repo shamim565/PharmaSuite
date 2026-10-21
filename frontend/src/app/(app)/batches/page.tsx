@@ -75,6 +75,10 @@ function WarehouseLocationsCard() {
     queryFn: () =>
       api.get<Paginated<WarehouseLocation>>("/inventory/locations/?page_size=200&is_active=true"),
   });
+  const branchesQuery = useQuery({
+    queryKey: ["branches", "select"],
+    queryFn: () => api.get<Paginated<Branch>>("/branches/?page_size=200&status=ACTIVE"),
+  });
 
   const createMutation = useMutation({
     meta: { successMessage: "Location added" },
@@ -121,8 +125,22 @@ function WarehouseLocationsCard() {
             event.preventDefault();
             createMutation.mutate();
           }}
-          className="grid grid-cols-2 gap-3 border-b border-slate-100 p-4 lg:grid-cols-5"
+          className="grid grid-cols-2 gap-3 border-b border-slate-100 p-4 lg:grid-cols-6"
         >
+          <Field label="Branch">
+            <Select
+              value={form.branch}
+              onChange={(e) => setForm({ ...form, branch: e.target.value })}
+              required
+            >
+              <option value="">Select…</option>
+              {branchesQuery.data?.results.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field label="Zone">
             <Input
               value={form.zone}

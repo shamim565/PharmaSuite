@@ -86,8 +86,7 @@ function NotificationsTab() {
           ]),
         ),
       }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["notification-preferences"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notification-preferences"] }),
   });
 
   const hasEmail = Boolean(user?.email);
@@ -121,6 +120,7 @@ function NotificationsTab() {
                   <input
                     type="checkbox"
                     checked={row.enabled}
+                    disabled={saveMutation.isPending}
                     onChange={(e) =>
                       saveMutation.mutate(
                         prefsQuery.data.results.map((item) =>
@@ -138,7 +138,7 @@ function NotificationsTab() {
                 >
                   <input
                     type="checkbox"
-                    disabled={!hasEmail}
+                    disabled={!hasEmail || saveMutation.isPending}
                     checked={row.email_enabled}
                     onChange={(e) =>
                       saveMutation.mutate(
@@ -157,7 +157,7 @@ function NotificationsTab() {
                 >
                   <input
                     type="checkbox"
-                    disabled={!hasMobile}
+                    disabled={!hasMobile || saveMutation.isPending}
                     checked={row.sms_enabled}
                     onChange={(e) =>
                       saveMutation.mutate(

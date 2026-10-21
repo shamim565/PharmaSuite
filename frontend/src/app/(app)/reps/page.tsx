@@ -67,9 +67,7 @@ function RepPerformanceCard({ repId }: { repId: string }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-semibold uppercase text-slate-500">
-          Target vs actual (sales)
-        </p>
+        <p className="text-xs font-semibold uppercase text-slate-500">Target vs actual (sales)</p>
         <div className="flex gap-2">
           <Select
             value={fiscalYear}

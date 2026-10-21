@@ -1375,8 +1375,7 @@ function InventoryDsiTab() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["report", "dsi", filterType, debouncedSearch],
-    queryFn: () =>
-      api.get<InventoryDsiReport>(`/reports/inventory-dsi/?${params.toString()}`),
+    queryFn: () => api.get<InventoryDsiReport>(`/reports/inventory-dsi/?${params.toString()}`),
   });
 
   return (
@@ -1412,7 +1411,10 @@ function InventoryDsiTab() {
                 size="sm"
                 variant="secondary"
                 onClick={() =>
-                  apiDownload(`/reports/inventory-dsi/?${params.toString()}&export=csv`, "inventory-dsi.csv")
+                  apiDownload(
+                    `/reports/inventory-dsi/?${params.toString()}&export=csv`,
+                    "inventory-dsi.csv",
+                  )
                 }
               >
                 CSV
@@ -1447,9 +1449,7 @@ function InventoryDsiTab() {
                     </td>
                     <td className="px-4 py-2 text-right">{formatQty(row.qty_on_hand)}</td>
                     <td className="px-4 py-2 text-right">{formatQty(row.avg_daily_sales)}</td>
-                    <td className="px-4 py-2 text-right">
-                      {row.dsi === null ? "—" : row.dsi}
-                    </td>
+                    <td className="px-4 py-2 text-right">{row.dsi === null ? "—" : row.dsi}</td>
                     <td className="px-4 py-2 text-right">
                       {row.days_since_sale === null ? "never" : `${row.days_since_sale}d`}
                     </td>
@@ -1867,9 +1867,7 @@ function SupplierConcentrationTab() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["report", "supplier-concentration", dateFrom, dateTo],
     queryFn: () =>
-      api.get<SupplierConcentrationReport>(
-        `/reports/supplier-concentration/?${params.toString()}`,
-      ),
+      api.get<SupplierConcentrationReport>(`/reports/supplier-concentration/?${params.toString()}`),
   });
 
   return (
@@ -1978,6 +1976,8 @@ const OVERRIDE_LABELS: Record<string, string> = {
   FEFO_OVERRIDE: "FEFO batch",
   RX_OVERRIDE: "Rx bypass",
   PRICE_OVERRIDE: "Price",
+  ZERO_VALUE: "Zero value",
+  BELOW_COST: "Below cost",
   DUPLICATE_INVOICE: "Duplicate invoice",
 };
 
@@ -2008,6 +2008,8 @@ function ExceptionsTab() {
             <option value="CREDIT_OVERRIDE">Credit limit</option>
             <option value="FEFO_OVERRIDE">FEFO batch</option>
             <option value="RX_OVERRIDE">Rx bypass</option>
+            <option value="ZERO_VALUE">Zero value</option>
+            <option value="BELOW_COST">Below cost</option>
             <option value="DUPLICATE_INVOICE">Duplicate invoice</option>
           </Select>
         </Field>
@@ -2048,7 +2050,8 @@ function ExceptionsTab() {
                       {row.customer_name ?? row.supplier_name ?? ""}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {formatDate(row.business_date)} · {row.document_type === "SALES_INVOICE" ? "Invoice" : "Purchase"} ·{" "}
+                      {formatDate(row.business_date)} ·{" "}
+                      {row.document_type === "SALES_INVOICE" ? "Invoice" : "Purchase"} ·{" "}
                       {row.branch_name} · by {row.confirmed_by || "—"}
                     </p>
                   </div>

@@ -105,9 +105,7 @@ export default function InvoiceDetailPage() {
               </p>
               <p>{data.notes ? `Notes: ${data.notes}` : ""}</p>
               <p>
-                {data.prescription_number
-                  ? `Rx: ${data.prescription_number}`
-                  : ""}
+                {data.prescription_number ? `Rx: ${data.prescription_number}` : ""}
                 {data.rx_override ? "Rx override applied. " : ""}
               </p>
             </div>
