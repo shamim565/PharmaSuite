@@ -12,7 +12,7 @@ inventory, transactional invoicing, customer and supplier ledgers, cheque lifecy
 expense approvals, field-force CRM, and a full audit trail. Django REST backend,
 Next.js 15 PWA frontend.
 
-**Verified in this repository:** 137 backend tests passing · 60+ models · 65
+**Verified in this repository:** 154 backend tests passing · 60+ models · 65
 permissions across 9 roles.
 
 ![PharmaSuite dashboard](docs/screenshots/dashboard.png)
@@ -109,7 +109,7 @@ thin.
 | Auth | SimpleJWT + pyotp | 15-min access token, rotating 30-day refresh cookie, TOTP |
 | Frontend | Next.js 15, React 19, TypeScript | App Router, TanStack Query, Tailwind 4, PWA |
 | PDFs | ReportLab | invoices, purchase orders, receipts |
-| Quality | pytest, Ruff, ESLint, Prettier, TypeScript strict, GitHub Actions | 137 tests, 74% line coverage |
+| Quality | pytest, Ruff, ESLint, Prettier, TypeScript strict, GitHub Actions | 154 tests, 76% line coverage |
 
 ## Quick start
 
@@ -174,7 +174,7 @@ Redis on `6380`). For a native PostgreSQL/Redis install, adjust those values.
 Interactive documentation is served by drf-spectacular:
 
 - Swagger UI: `http://localhost:8000/api/v1/docs/`
-- OpenAPI 3.0 schema: `http://localhost:8000/api/v1/schema/` — **188 documented paths**
+- OpenAPI 3.0 schema: `http://localhost:8000/api/v1/schema/` — **195 documented paths**
 
 ![Swagger UI](docs/screenshots/api-docs.png)
 
@@ -204,8 +204,8 @@ make test-docker   # inside the api container
 Current result:
 
 ```
-137 passed, 3 warnings in 12.07s
-coverage: 74% line coverage
+154 passed, 3 warnings in 11.21s
+coverage: 76% line coverage
 ```
 
 Coverage spans inventory posting and concurrency, sales controls, RBAC guards,
