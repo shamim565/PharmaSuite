@@ -1,6 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from apps.purchases.credit_views import SupplierCreditNoteViewSet
 from apps.purchases.po_views import PurchaseOrderViewSet
 from apps.purchases.views import (
     PayableAgingView,
@@ -15,6 +16,7 @@ router.register("purchase-orders", PurchaseOrderViewSet, basename="purchase-orde
 router.register("purchases", PurchaseViewSet, basename="purchase")
 router.register("supplier-payments", SupplierPaymentViewSet, basename="supplier-payment")
 router.register("purchase-returns", PurchaseReturnViewSet, basename="purchase-return")
+router.register("supplier-credit-notes", SupplierCreditNoteViewSet, basename="supplier-credit-note")
 
 
 urlpatterns = [

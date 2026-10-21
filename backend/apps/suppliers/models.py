@@ -33,6 +33,7 @@ class SupplierLedgerEntryType(models.TextChoices):
     RETURN_REVERSAL = "RETURN_REVERSAL", "Return reversal"
     ADVANCE_APPLIED = "ADVANCE_APPLIED", "Advance applied"
     ADJUSTMENT = "ADJUSTMENT", "Adjustment"
+    CREDIT_NOTE = "CREDIT_NOTE", "Supplier credit note"
 
 
 class Supplier(BaseModel):

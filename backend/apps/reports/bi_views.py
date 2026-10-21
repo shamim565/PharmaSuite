@@ -563,7 +563,8 @@ class ExceptionReportView(APIView):
       - credit override (credit limit bypass)
       - FEFO override (batch selection bypass)
       - Rx override (prescription bypass)
-      - Price override
+      - zero-value invoice
+      - below-cost sale line
     Also shows purchase duplicate overrides.
     """
 
@@ -578,13 +579,34 @@ class ExceptionReportView(APIView):
             SalesInvoice.objects.filter(
                 lifecycle=SalesInvoiceStatus.CONFIRMED,
                 business_date__range=(date_from, date_to),
-            ).filter(
-                Q(credit_override=True) | Q(fefo_override=True) | Q(rx_override=True)
             ).select_related("customer", "branch", "confirmed_by"),
         )
 
+        flagged_ids = set(
+            invoices_qs.filter(
+                Q(credit_override=True) | Q(fefo_override=True) | Q(rx_override=True)
+            ).values_list("id", flat=True)
+        )
+        flagged_ids |= set(
+            invoices_qs.filter(grand_total=0).values_list("id", flat=True)
+        )
+
+        below_cost_map: dict[str, list[str]] = {}
+        below_cost_items = (
+            SalesInvoiceItem.objects.filter(
+                invoice__in=invoices_qs,
+                is_free_goods=False,
+                unit_price__lt=F("unit_cost"),
+            )
+            .select_related("medicine")
+            .values("invoice_id", "medicine__name")
+        )
+        for item in below_cost_items:
+            below_cost_map.setdefault(str(item["invoice_id"]), []).append(item["medicine__name"])
+        flagged_ids |= set(below_cost_map.keys())
+
         invoice_exceptions = []
-        for inv in invoices_qs:
+        for inv in invoices_qs.filter(id__in=flagged_ids):
             overrides = []
             if inv.credit_override:
                 overrides.append({
@@ -600,6 +622,16 @@ class ExceptionReportView(APIView):
                 overrides.append({
                     "type": "RX_OVERRIDE",
                     "reason": inv.rx_override_reason,
+                })
+            if inv.grand_total == 0:
+                overrides.append({
+                    "type": "ZERO_VALUE",
+                    "reason": "Invoice grand total is zero",
+                })
+            if below_cost_map.get(str(inv.id)):
+                overrides.append({
+                    "type": "BELOW_COST",
+                    "reason": f"Below cost: {', '.join(below_cost_map[str(inv.id)])}",
                 })
             invoice_exceptions.append({
                 "document_type": "SALES_INVOICE",

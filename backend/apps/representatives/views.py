@@ -52,6 +52,7 @@ class RepresentativeViewSet(
         "create": ["REP_MANAGE"],
         "update": ["REP_MANAGE"],
         "partial_update": ["REP_MANAGE"],
+        "me": [],
         "assignments": ["REP_VIEW"],
         "assign_target": ["REP_MANAGE"],
         "unassign_target": ["REP_MANAGE"],
@@ -73,6 +74,18 @@ class RepresentativeViewSet(
                     f"Reassign or end {open_assignments} open assignment(s) before deactivating.",
                 )
         return super().update(request, *args, **kwargs)
+
+    @action(detail=False, methods=["get"], url_path="me")
+    def me(self, request):
+        """Return the representative profile linked to the signed-in user."""
+        representative = (
+            Representative.objects.select_related("branch", "user", "reports_to")
+            .filter(user=request.user)
+            .first()
+        )
+        if representative is None:
+            return Response({"detail": "No representative profile linked."}, status=404)
+        return Response(RepresentativeSerializer(representative).data)
 
     @action(detail=True, methods=["get"])
     def assignments(self, request, pk=None):

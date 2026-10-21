@@ -12,6 +12,7 @@ class DocumentType(models.TextChoices):
     DELIVERY_CHALLAN = "DELIVERY_CHALLAN", "Delivery challan"
     RECEIPT = "RECEIPT", "Customer receipt"
     CREDIT_NOTE = "CREDIT_NOTE", "Credit note (sales return)"
+    SUPPLIER_CREDIT_NOTE = "SUPPLIER_CREDIT_NOTE", "Supplier credit note"
     ADJUSTMENT = "ADJUSTMENT", "Stock adjustment"
     TRANSFER = "TRANSFER", "Stock transfer"
     EXPENSE = "EXPENSE", "Expense voucher"

@@ -199,22 +199,19 @@ class NotificationViewSet(
             row.category: row
             for row in NotificationPreference.objects.filter(user=user)
         }
-        return {
-            "results": [
+        results = []
+        for value, label in NotificationCategory.choices:
+            row = existing.get(value)
+            results.append(
                 {
                     "category": value,
                     "label": label,
-                    "enabled": existing.get(value, NotificationPreference(category=value)).enabled,
-                    "email_enabled": existing.get(
-                        value, NotificationPreference(category=value)
-                    ).email_enabled,
-                    "sms_enabled": existing.get(
-                        value, NotificationPreference(category=value)
-                    ).sms_enabled,
+                    "enabled": row.enabled if row else True,
+                    "email_enabled": row.email_enabled if row else False,
+                    "sms_enabled": row.sms_enabled if row else False,
                 }
-                for value, label in NotificationCategory.choices
-            ]
-        }
+            )
+        return {"results": results}
 
     @object_response
     @action(detail=False, methods=["get", "put"], url_path="preferences")

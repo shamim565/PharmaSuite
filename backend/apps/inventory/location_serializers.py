@@ -19,6 +19,5 @@ class WarehouseLocationSerializer(serializers.ModelSerializer):
             "label",
             "is_active",
             "notes",
-            "created_at",
         ]
-        read_only_fields = ["id", "label", "created_at"]
+        read_only_fields = ["id", "label"]

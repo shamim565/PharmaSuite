@@ -27,6 +27,7 @@ SETTINGS_KEYS: dict[str, tuple] = {
     "INVOICE_PREFIX": ("numbering", "Invoice prefix", "INV"),
     "RECEIPT_PREFIX": ("numbering", "Receipt prefix", "RCP"),
     "CREDIT_NOTE_PREFIX": ("numbering", "Credit note prefix", "CRN"),
+    "SUPPLIER_CREDIT_NOTE_PREFIX": ("numbering", "Supplier credit note prefix", "SCN"),
     "DEBIT_NOTE_PREFIX": ("numbering", "Debit note prefix", "DBN"),
     "PURCHASE_PREFIX": ("numbering", "Purchase prefix", "PUR"),
     "SUPPLIER_PAYMENT_PREFIX": ("numbering", "Supplier payment prefix", "PPV"),

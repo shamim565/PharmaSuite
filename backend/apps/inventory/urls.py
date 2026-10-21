@@ -1,6 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from apps.inventory.location_views import WarehouseLocationViewSet
 from apps.inventory.views import (
     ExpiredReportView,
     InventoryTransactionViewSet,
@@ -12,7 +13,6 @@ from apps.inventory.views import (
     StockSummaryView,
     StockTransferViewSet,
 )
-from apps.inventory.location_views import WarehouseLocationViewSet
 
 router = DefaultRouter()
 router.register("transactions", InventoryTransactionViewSet, basename="inventory-transaction")
