@@ -169,6 +169,19 @@ npm run dev
 The checked-in `.env.example` matches the Docker services (PostgreSQL on `5433`,
 Redis on `6380`). For a native PostgreSQL/Redis install, adjust those values.
 
+### Quick demo without PostgreSQL or Redis
+
+`USE_SQLITE=True` switches the backend to SQLite, an in-memory cache, and eager
+Celery tasks. It is intended for a fast local demo, not for production.
+
+```bash
+cd backend
+USE_SQLITE=True uv run python manage.py migrate
+USE_SQLITE=True uv run python manage.py seed_demo
+USE_SQLITE=True uv run python manage.py runserver 8000
+```
+
+
 ## API
 
 Interactive documentation is served by drf-spectacular:

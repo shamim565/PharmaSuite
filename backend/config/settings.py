@@ -69,13 +69,30 @@ TEMPLATES = [
     }
 ]
 
-DATABASES = {
-    "default": env.db(
-        "DATABASE_URL",
-        # Matches the published port/credentials in infra/docker-compose.yml.
-        default="postgres://erp:erp_dev_password@localhost:5433/erp_dev",
-    )
-}
+USE_SQLITE = env.bool("USE_SQLITE", default=False)
+
+if USE_SQLITE:
+    # Local development without Postgres/Redis. Not for production: SQLite is
+    # single-writer and the VPS deployment keeps host Postgres.
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+            "OPTIONS": {
+                # WAL + busy timeout avoids "database is locked" when the dev
+                # server and any inline/background work write concurrently.
+                "init_command": "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=10000;",
+            },
+        }
+    }
+else:
+    DATABASES = {
+        "default": env.db(
+            "DATABASE_URL",
+            # Matches the published port/credentials in infra/docker-compose.yml.
+            default="postgres://erp:erp_dev_password@localhost:5433/erp_dev",
+        )
+    }
 
 AUTH_USER_MODEL = "accounts.User"
 
@@ -166,14 +183,27 @@ if not DEBUG:
 
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/5")
 CACHE_URL = env("CACHE_URL", default="redis://localhost:6379/6")
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": CACHE_URL,
+if USE_SQLITE:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
     }
-}
+    # Surface notification emails in the runserver console instead of SMTP.
+    EMAIL_BACKEND = env(
+        "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
+    )
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": CACHE_URL,
+        }
+    }
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default=REDIS_URL)
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default=REDIS_URL)
+# With SQLite local dev there is no Redis worker; run tasks inline instead.
+CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=USE_SQLITE)
 CELERY_TASK_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
