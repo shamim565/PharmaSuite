@@ -15,6 +15,13 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", default="dev-insecure-change-me")
 DEBUG = env("DEBUG")
+if not DEBUG and SECRET_KEY == "dev-insecure-change-me":
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "SECRET_KEY must be set to a strong value when DEBUG=False. "
+        "Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(48))'"
+    )
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
 INSTALLED_APPS = [
@@ -65,7 +72,8 @@ TEMPLATES = [
 DATABASES = {
     "default": env.db(
         "DATABASE_URL",
-        default="postgres://mbappi@localhost:5432/erp_dev",
+        # Matches the published port/credentials in infra/docker-compose.yml.
+        default="postgres://erp:erp_dev_password@localhost:5433/erp_dev",
     )
 }
 

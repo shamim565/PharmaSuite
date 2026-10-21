@@ -35,3 +35,9 @@ frontend/.turbo/
 
 # Logs
 *.log
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Internal planning documents (never published)
+docs/planning/

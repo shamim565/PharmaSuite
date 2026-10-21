@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible defect
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include real customer data, credentials, or production database dumps.
+        Use the demo dataset (`make seed-demo`) to reproduce where possible.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Actual behaviour, including the error message or request ID.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. make up && make seed-demo
+        2. Log in as ...
+        3. Open ...
+        4. See ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sales / returns
+        - Purchases
+        - Inventory / batches
+        - Payments / cheques
+        - Accounting / reports
+        - Auth / RBAC
+        - Frontend
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or version
+      placeholder: f375d3a
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste stack traces or container logs. Remove secrets first.
+      render: shell

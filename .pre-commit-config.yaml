@@ -1,0 +1,41 @@
+# Run `pre-commit install` once, then hooks run on every commit.
+# `pre-commit run --all-files` checks the whole repository.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^frontend/tsconfig\.tsbuildinfo$
+      - id: check-added-large-files
+        args: ["--maxkb=10240"]
+      - id: detect-private-key
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier
+        entry: frontend/node_modules/.bin/prettier --write
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|json|css|md)$
+        exclude: ^frontend/(node_modules|\.next)/
+
+      - id: frontend-typecheck
+        name: frontend typecheck
+        entry: bash -c 'cd frontend && npm run typecheck'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
