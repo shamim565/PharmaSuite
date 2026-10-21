@@ -4,7 +4,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { AttachmentPanel } from "@/components/attachments";
 import { ApiError, api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
@@ -54,13 +66,16 @@ export default function ExpensesPage() {
   const summaryQuery = useQuery({
     queryKey: ["expense-summary"],
     queryFn: () =>
-      api.get<{ count: number; total: string; results: { category_name: string; total: string; count: number }[] }>(
-        "/expenses/reports/summary/",
-      ),
+      api.get<{
+        count: number;
+        total: string;
+        results: { category_name: string; total: string; count: number }[];
+      }>("/expenses/reports/summary/"),
   });
   const categoriesQuery = useQuery({
     queryKey: ["expense-categories"],
-    queryFn: () => api.get<Paginated<ExpenseCategory>>("/expense-categories/?page_size=100&is_active=true"),
+    queryFn: () =>
+      api.get<Paginated<ExpenseCategory>>("/expense-categories/?page_size=100&is_active=true"),
   });
   const branchesQuery = useQuery({
     queryKey: ["branches", "select"],
@@ -164,10 +179,15 @@ export default function ExpensesPage() {
       {summaryQuery.data ? (
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Posted expenses</p>
-          <p className="text-2xl font-bold text-slate-800">{formatMoney(summaryQuery.data.total)}</p>
+          <p className="text-2xl font-bold text-slate-800">
+            {formatMoney(summaryQuery.data.total)}
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {summaryQuery.data.results.map((row) => (
-              <span key={row.category_name} className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
+              <span
+                key={row.category_name}
+                className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700"
+              >
                 {row.category_name}: <strong>{formatMoney(row.total)}</strong> ({row.count})
               </span>
             ))}
@@ -183,7 +203,11 @@ export default function ExpensesPage() {
               <ErrorBanner error={createMutation.error} />
             </div>
             <Field label="Branch" error={fieldError("branch")}>
-              <Select value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} required>
+              <Select
+                value={form.branch}
+                onChange={(e) => setForm({ ...form, branch: e.target.value })}
+                required
+              >
                 <option value="">Select…</option>
                 {branchesQuery.data?.results.map((branch) => (
                   <option key={branch.id} value={branch.id}>
@@ -193,7 +217,11 @@ export default function ExpensesPage() {
               </Select>
             </Field>
             <Field label="Category" error={fieldError("category")}>
-              <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} required>
+              <Select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                required
+              >
                 <option value="">Select…</option>
                 {categoriesQuery.data?.results.map((category) => (
                   <option key={category.id} value={category.id}>
@@ -213,7 +241,11 @@ export default function ExpensesPage() {
               />
             </Field>
             <Field label="Paid from" error={fieldError("account")}>
-              <Select value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })} required>
+              <Select
+                value={form.account}
+                onChange={(e) => setForm({ ...form, account: e.target.value })}
+                required
+              >
                 <option value="">Select…</option>
                 {accountsQuery.data?.results.map((account) => (
                   <option key={account.id} value={account.id}>
@@ -223,14 +255,23 @@ export default function ExpensesPage() {
               </Select>
             </Field>
             <Field label="Payee" error={fieldError("payee")}>
-              <Input value={form.payee} onChange={(e) => setForm({ ...form, payee: e.target.value })} />
+              <Input
+                value={form.payee}
+                onChange={(e) => setForm({ ...form, payee: e.target.value })}
+              />
             </Field>
             <Field label="Reference" error={fieldError("reference")}>
-              <Input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} />
+              <Input
+                value={form.reference}
+                onChange={(e) => setForm({ ...form, reference: e.target.value })}
+              />
             </Field>
             <div className="col-span-2">
               <Field label="Note" error={fieldError("note")}>
-                <Input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+                <Input
+                  value={form.note}
+                  onChange={(e) => setForm({ ...form, note: e.target.value })}
+                />
               </Field>
             </div>
             <div className="col-span-2 lg:col-span-4">
@@ -260,7 +301,9 @@ export default function ExpensesPage() {
             <Button
               variant="danger"
               disabled={actionMutation.isPending || !rejectReason}
-              onClick={() => actionMutation.mutate({ id: rejectFor.id, action: "reject", reason: rejectReason })}
+              onClick={() =>
+                actionMutation.mutate({ id: rejectFor.id, action: "reject", reason: rejectReason })
+              }
             >
               Reject expense
             </Button>
@@ -288,7 +331,11 @@ export default function ExpensesPage() {
               variant="danger"
               disabled={actionMutation.isPending || !reverseReason}
               onClick={() =>
-                actionMutation.mutate({ id: reverseFor.id, action: "reverse", reason: reverseReason })
+                actionMutation.mutate({
+                  id: reverseFor.id,
+                  action: "reverse",
+                  reason: reverseReason,
+                })
               }
             >
               Reverse expense
@@ -314,7 +361,10 @@ export default function ExpensesPage() {
       ) : null}
 
       <Card>
-        <CardHeader title="Expense register" subtitle={expensesQuery.data ? `${expensesQuery.data.count} expense(s)` : undefined} />
+        <CardHeader
+          title="Expense register"
+          subtitle={expensesQuery.data ? `${expensesQuery.data.count} expense(s)` : undefined}
+        />
         <ErrorBanner error={expensesQuery.error} />
         {expensesQuery.isLoading ? (
           <Spinner />
@@ -328,26 +378,34 @@ export default function ExpensesPage() {
                 hasPerm("EXPENSE_APPROVE") &&
                 expense.requested_by_name !== user?.full_name;
               return (
-                <li key={expense.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+                <li
+                  key={expense.id}
+                  className="flex flex-wrap items-center justify-between gap-2 p-4"
+                >
                   <div>
                     <p className="font-medium">
                       {expense.number ?? "Pending"}{" "}
                       <span className="text-xs text-slate-500">{expense.category_name}</span>
                     </p>
                     <p className="text-xs text-slate-500">
-                      {formatDate(expense.business_date)} · {expense.account_name} · {expense.payee || "—"}
+                      {formatDate(expense.business_date)} · {expense.account_name} ·{" "}
+                      {expense.payee || "—"}
                       {expense.requested_by_name ? ` · by ${expense.requested_by_name}` : ""}
                       {expense.rejection_reason ? ` · rejected: ${expense.rejection_reason}` : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono font-semibold">{formatMoney(expense.amount)}</span>
-                    <Badge tone={statusTone(expense.status)}>{expense.status.replace("_", " ")}</Badge>
+                    <Badge tone={statusTone(expense.status)}>
+                      {expense.status.replace("_", " ")}
+                    </Badge>
                     {canApprove ? (
                       <>
                         <Button
                           size="sm"
-                          onClick={() => actionMutation.mutate({ id: expense.id, action: "approve" })}
+                          onClick={() =>
+                            actionMutation.mutate({ id: expense.id, action: "approve" })
+                          }
                           disabled={actionMutation.isPending}
                         >
                           Approve
@@ -357,7 +415,9 @@ export default function ExpensesPage() {
                         </Button>
                       </>
                     ) : null}
-                    <Button size="sm" variant="secondary" onClick={() => setFilesFor(expense)}>Files</Button>
+                    <Button size="sm" variant="secondary" onClick={() => setFilesFor(expense)}>
+                      Files
+                    </Button>
                     {expense.status === "POSTED" && hasPerm("EXPENSE_POST") ? (
                       <Button
                         size="sm"

@@ -4,7 +4,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmButton,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks";
@@ -68,7 +81,8 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
   });
   const visitsQuery = useQuery({
     queryKey: ["doctor-visits", doctor.id],
-    queryFn: () => api.get<Paginated<DoctorVisit>>(`/doctor-visits/?doctor=${doctor.id}&page_size=20`),
+    queryFn: () =>
+      api.get<Paginated<DoctorVisit>>(`/doctor-visits/?doctor=${doctor.id}&page_size=20`),
   });
   const medicinesQuery = useQuery({
     queryKey: ["medicines", "select"],
@@ -76,7 +90,10 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
   });
   const repsQuery = useQuery({
     queryKey: ["reps", "medical"],
-    queryFn: () => api.get<Paginated<Representative>>("/representatives/?page_size=100&is_active=true&rep_type=MEDICAL"),
+    queryFn: () =>
+      api.get<Paginated<Representative>>(
+        "/representatives/?page_size=100&is_active=true&rep_type=MEDICAL",
+      ),
   });
   const branchesQuery = useQuery({
     queryKey: ["branches", "visit-fallback"],
@@ -97,7 +114,8 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
 
   const chambersQuery = useQuery({
     queryKey: ["doctor-chambers", doctor.id],
-    queryFn: () => api.get<{ count: number; results: DoctorChamber[] }>(`/doctors/${doctor.id}/chambers/`),
+    queryFn: () =>
+      api.get<{ count: number; results: DoctorChamber[] }>(`/doctors/${doctor.id}/chambers/`),
   });
 
   const chamberMutation = useMutation({
@@ -111,7 +129,8 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
 
   const deleteChamberMutation = useMutation({
     meta: { successMessage: "Chamber removed" },
-    mutationFn: (chamber: DoctorChamber) => api.delete(`/doctors/${doctor.id}/chambers/${chamber.id}/`),
+    mutationFn: (chamber: DoctorChamber) =>
+      api.delete(`/doctors/${doctor.id}/chambers/${chamber.id}/`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["doctor-chambers", doctor.id] }),
   });
 
@@ -125,7 +144,11 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
 
   const mappingMutation = useMutation({
     meta: { successMessage: "Mapping added" },
-    mutationFn: () => api.post(`/doctors/${doctor.id}/medicines/`, { medicine: mappingMedicine, priority: mappingPriority }),
+    mutationFn: () =>
+      api.post(`/doctors/${doctor.id}/medicines/`, {
+        medicine: mappingMedicine,
+        priority: mappingPriority,
+      }),
     onSuccess: () => {
       setMappingMedicine("");
       invalidate();
@@ -255,11 +278,15 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
           ) : (
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
               {mappingsQuery.data.map((mapping) => (
-                <li key={mapping.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                <li
+                  key={mapping.id}
+                  className="flex items-center justify-between px-3 py-2 text-sm"
+                >
                   <div>
                     <p className="font-medium">{mapping.medicine_name}</p>
                     <p className="text-xs text-slate-500">
-                      {mapping.medicine_code} · {mapping.priority || "—"} · since {formatDate(mapping.effective_from)}
+                      {mapping.medicine_code} · {mapping.priority || "—"} · since{" "}
+                      {formatDate(mapping.effective_from)}
                     </p>
                   </div>
                   {canManageDoctors ? (
@@ -280,7 +307,10 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
             <div className="flex flex-wrap items-end gap-2">
               <div className="w-48">
                 <Field label="Medicine">
-                  <Select value={mappingMedicine} onChange={(e) => setMappingMedicine(e.target.value)}>
+                  <Select
+                    value={mappingMedicine}
+                    onChange={(e) => setMappingMedicine(e.target.value)}
+                  >
                     <option value="">Select…</option>
                     {medicinesQuery.data?.results.map((medicine) => (
                       <option key={medicine.id} value={medicine.id}>
@@ -292,14 +322,21 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
               </div>
               <div className="w-32">
                 <Field label="Priority">
-                  <Select value={mappingPriority} onChange={(e) => setMappingPriority(e.target.value)}>
+                  <Select
+                    value={mappingPriority}
+                    onChange={(e) => setMappingPriority(e.target.value)}
+                  >
                     <option value="HIGH">High</option>
                     <option value="MEDIUM">Medium</option>
                     <option value="LOW">Low</option>
                   </Select>
                 </Field>
               </div>
-              <Button size="sm" onClick={() => mappingMutation.mutate()} disabled={!mappingMedicine || mappingMutation.isPending}>
+              <Button
+                size="sm"
+                onClick={() => mappingMutation.mutate()}
+                disabled={!mappingMedicine || mappingMutation.isPending}
+              >
                 Add mapping
               </Button>
             </div>
@@ -316,7 +353,10 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
           ) : (
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
               {chambersQuery.data.results.map((chamber) => (
-                <li key={chamber.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                <li
+                  key={chamber.id}
+                  className="flex items-center justify-between px-3 py-2 text-sm"
+                >
                   <div>
                     <p className="font-medium">{chamber.name}</p>
                     <p className="text-xs text-slate-500">
@@ -342,20 +382,35 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
             <div className="flex flex-wrap items-end gap-2">
               <div className="w-40">
                 <Field label="Chamber name">
-                  <Input value={chamberForm.name} onChange={(e) => setChamberForm({ ...chamberForm, name: e.target.value })} />
+                  <Input
+                    value={chamberForm.name}
+                    onChange={(e) => setChamberForm({ ...chamberForm, name: e.target.value })}
+                  />
                 </Field>
               </div>
               <div className="w-48">
                 <Field label="Address">
-                  <Input value={chamberForm.address} onChange={(e) => setChamberForm({ ...chamberForm, address: e.target.value })} />
+                  <Input
+                    value={chamberForm.address}
+                    onChange={(e) => setChamberForm({ ...chamberForm, address: e.target.value })}
+                  />
                 </Field>
               </div>
               <div className="w-36">
                 <Field label="Visiting hours">
-                  <Input value={chamberForm.visiting_hours} onChange={(e) => setChamberForm({ ...chamberForm, visiting_hours: e.target.value })} />
+                  <Input
+                    value={chamberForm.visiting_hours}
+                    onChange={(e) =>
+                      setChamberForm({ ...chamberForm, visiting_hours: e.target.value })
+                    }
+                  />
                 </Field>
               </div>
-              <Button size="sm" onClick={() => chamberMutation.mutate()} disabled={!chamberForm.name || chamberMutation.isPending}>
+              <Button
+                size="sm"
+                onClick={() => chamberMutation.mutate()}
+                disabled={!chamberForm.name || chamberMutation.isPending}
+              >
                 Add chamber
               </Button>
             </div>
@@ -376,7 +431,10 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
                     ? "Cancel visit"
                     : "Reverse issued samples"}{" "}
                 — {visitActionFor.visit.representative_name} (
-                {visitActionFor.visit.planned_date ? formatDate(visitActionFor.visit.planned_date) : "no date"})
+                {visitActionFor.visit.planned_date
+                  ? formatDate(visitActionFor.visit.planned_date)
+                  : "no date"}
+                )
               </p>
               <Input
                 placeholder="Reason"
@@ -525,7 +583,11 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
                   </Select>
                 </Field>
                 <Field label="Planned date">
-                  <Input type="date" value={planDate} onChange={(e) => setPlanDate(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={planDate}
+                    onChange={(e) => setPlanDate(e.target.value)}
+                  />
                 </Field>
                 <div className="col-span-2">
                   <Field label="Purpose">
@@ -544,7 +606,9 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
             </div>
 
             <div className="space-y-3 rounded-lg border border-slate-200 p-3">
-              <p className="text-xs font-semibold uppercase text-slate-500">Log a completed visit</p>
+              <p className="text-xs font-semibold uppercase text-slate-500">
+                Log a completed visit
+              </p>
               <ErrorBanner error={logMutation.error} />
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Visit">
@@ -554,7 +618,9 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
                       setLogTarget(e.target.value);
                       if (!e.target.value) setVisitRep("");
                       else {
-                        const target = visitsQuery.data?.results.find((item) => item.id === e.target.value);
+                        const target = visitsQuery.data?.results.find(
+                          (item) => item.id === e.target.value,
+                        );
                         if (target) setVisitRep(target.representative);
                       }
                     }}
@@ -593,7 +659,11 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
                   </Select>
                 </Field>
                 <Field label="Next visit">
-                  <Input type="date" value={visitNext} onChange={(e) => setVisitNext(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={visitNext}
+                    onChange={(e) => setVisitNext(e.target.value)}
+                  />
                 </Field>
                 <div className="col-span-2">
                   <Field label="Notes">
@@ -625,7 +695,8 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
                     <option value="">—</option>
                     {batchesQuery.data?.results.map((batch) => (
                       <option key={batch.id} value={batch.id}>
-                        {batch.batch_number} · exp {batch.expiry_date ? formatDate(batch.expiry_date) : "—"}
+                        {batch.batch_number} · exp{" "}
+                        {batch.expiry_date ? formatDate(batch.expiry_date) : "—"}
                       </option>
                     ))}
                   </Select>
@@ -642,11 +713,7 @@ function DoctorPanel({ doctor, onClose }: { doctor: Doctor; onClose: () => void 
                 <div className="col-span-2">
                   <Button
                     onClick={() => logMutation.mutate()}
-                    disabled={
-                      logMutation.isPending ||
-                      !visitBranchId ||
-                      (!logTarget && !visitRep)
-                    }
+                    disabled={logMutation.isPending || !visitBranchId || (!logTarget && !visitRep)}
                   >
                     {logMutation.isPending ? "Saving…" : "Log visit"}
                   </Button>
@@ -770,36 +837,59 @@ export default function DoctorsPage() {
 
       {showForm && hasPerm("DOCTOR_MANAGE") ? (
         <Card>
-          <CardHeader title={editing ? `Edit ${editing.name}` : "New doctor"} subtitle="Promotions are mapped medicine-by-medicine." />
+          <CardHeader
+            title={editing ? `Edit ${editing.name}` : "New doctor"}
+            subtitle="Promotions are mapped medicine-by-medicine."
+          />
           <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
             <div className="col-span-2 lg:col-span-4">
               <ErrorBanner error={createMutation.error ?? updateMutation.error} />
             </div>
             <Field label="Code" error={fieldError("code")}>
-              <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
+              <Input
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                required
+              />
             </Field>
             <Field label="Name" error={fieldError("name")}>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
             </Field>
             <Field label="Specialty" error={fieldError("specialty")}>
-              <Input value={form.specialty} onChange={(e) => setForm({ ...form, specialty: e.target.value })} />
+              <Input
+                value={form.specialty}
+                onChange={(e) => setForm({ ...form, specialty: e.target.value })}
+              />
             </Field>
             <Field label="Type" error={fieldError("doctor_type")}>
-              <Select value={form.doctor_type} onChange={(e) => setForm({ ...form, doctor_type: e.target.value })}>
+              <Select
+                value={form.doctor_type}
+                onChange={(e) => setForm({ ...form, doctor_type: e.target.value })}
+              >
                 <option value="CONSULTANT">Consultant</option>
                 <option value="GP">General practitioner</option>
                 <option value="OTHER">Other</option>
               </Select>
             </Field>
             <Field label="Category" error={fieldError("category")}>
-              <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              <Select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              >
                 <option value="A">A</option>
                 <option value="B">B</option>
                 <option value="C">C</option>
               </Select>
             </Field>
             <Field label="Phone" error={fieldError("phones")}>
-              <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <Input
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              />
             </Field>
             <Field label="Registration no." error={fieldError("registration_no")}>
               <Input
@@ -808,7 +898,10 @@ export default function DoctorsPage() {
               />
             </Field>
             <Field label="Territory" error={fieldError("territory")}>
-              <Select value={form.territory} onChange={(e) => setForm({ ...form, territory: e.target.value })}>
+              <Select
+                value={form.territory}
+                onChange={(e) => setForm({ ...form, territory: e.target.value })}
+              >
                 <option value="">—</option>
                 {territoriesQuery.data?.results.map((territory) => (
                   <option key={territory.id} value={territory.id}>
@@ -858,11 +951,12 @@ export default function DoctorsPage() {
               <li key={doctor.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
                   <p className="font-medium">
-                    {doctor.name} <span className="font-mono text-xs text-slate-500">{doctor.code}</span>
+                    {doctor.name}{" "}
+                    <span className="font-mono text-xs text-slate-500">{doctor.code}</span>
                   </p>
                   <p className="text-xs text-slate-500">
-                    {doctor.specialty || "—"} · category {doctor.category} · {doctor.territory_name || "no territory"} ·{" "}
-                    {doctor.open_mapping_count} promoted
+                    {doctor.specialty || "—"} · category {doctor.category} ·{" "}
+                    {doctor.territory_name || "no territory"} · {doctor.open_mapping_count} promoted
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

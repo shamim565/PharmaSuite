@@ -5,7 +5,19 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks";
@@ -99,13 +111,20 @@ export default function PaymentsPage() {
         <Card className="p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs uppercase text-slate-500">Collected today ({formatDate(dailyQuery.data.date)})</p>
-              <p className="text-2xl font-bold text-primary-700">{formatMoney(dailyQuery.data.total)}</p>
+              <p className="text-xs uppercase text-slate-500">
+                Collected today ({formatDate(dailyQuery.data.date)})
+              </p>
+              <p className="text-2xl font-bold text-primary-700">
+                {formatMoney(dailyQuery.data.total)}
+              </p>
               <p className="text-xs text-slate-500">{dailyQuery.data.payment_count} receipt(s)</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {dailyQuery.data.by_method.map((row) => (
-                <span key={row.method} className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
+                <span
+                  key={row.method}
+                  className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700"
+                >
                   {row.method}: <strong>{formatMoney(row.total)}</strong> ({row.count})
                 </span>
               ))}
@@ -149,7 +168,10 @@ export default function PaymentsPage() {
       ) : null}
 
       <Card>
-        <CardHeader title="Receipts" subtitle={paymentsQuery.data ? `${paymentsQuery.data.count} receipt(s)` : undefined} />
+        <CardHeader
+          title="Receipts"
+          subtitle={paymentsQuery.data ? `${paymentsQuery.data.count} receipt(s)` : undefined}
+        />
         <ErrorBanner error={paymentsQuery.error} />
         {paymentsQuery.isLoading ? (
           <Spinner />
@@ -158,10 +180,16 @@ export default function PaymentsPage() {
         ) : (
           <ul className="divide-y divide-slate-100">
             {paymentsQuery.data.results.map((payment) => (
-              <li key={payment.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+              <li
+                key={payment.id}
+                className="flex flex-wrap items-center justify-between gap-2 p-4"
+              >
                 <div>
                   <p className="font-medium">
-                    <Link href={`/payments/${payment.id}`} className="text-primary-700 hover:underline">
+                    <Link
+                      href={`/payments/${payment.id}`}
+                      className="text-primary-700 hover:underline"
+                    >
                       {payment.number}
                     </Link>{" "}
                     <span className="text-xs text-slate-500">{payment.customer_name}</span>
@@ -174,7 +202,11 @@ export default function PaymentsPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="font-mono font-semibold">{formatMoney(payment.amount)}</span>
-                  {payment.status === "ACTIVE" ? <Badge tone="green">Active</Badge> : <Badge tone="rose">Reversed</Badge>}
+                  {payment.status === "ACTIVE" ? (
+                    <Badge tone="green">Active</Badge>
+                  ) : (
+                    <Badge tone="rose">Reversed</Badge>
+                  )}
                   <Link
                     href={`/payments/${payment.id}`}
                     className="inline-flex min-h-[36px] items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"

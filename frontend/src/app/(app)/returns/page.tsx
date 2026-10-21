@@ -5,7 +5,20 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner, Tabs } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+  Tabs,
+} from "@/components/ui";
 import { MedicineCombobox } from "@/components/medicine-combobox";
 import { api, newIdempotencyKey } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
@@ -23,7 +36,8 @@ const TABS = ["Sales returns", "Purchase returns"] as const;
 type Tab = (typeof TABS)[number];
 
 function reasonTone(reason: string): "slate" | "amber" | "rose" {
-  if (reason === "DAMAGED" || reason === "EXPIRED" || reason === "EXPIRED_AT_CUSTOMER") return "rose";
+  if (reason === "DAMAGED" || reason === "EXPIRED" || reason === "EXPIRED_AT_CUSTOMER")
+    return "rose";
   if (reason === "WRONG_ITEM" || reason === "OVER_SUPPLY") return "amber";
   return "slate";
 }
@@ -77,8 +91,7 @@ function DirectReturnForm() {
           branch,
           reason_code: reasonCode,
           refund_method: refundMethod,
-          refund_account:
-            refundMethod === "CASH" || refundMethod === "BANK" ? refundAccount : null,
+          refund_account: refundMethod === "CASH" || refundMethod === "BANK" ? refundAccount : null,
           notes,
           items: [{ medicine, batch, qty, condition }],
         },
@@ -255,9 +268,19 @@ export default function ReturnsPage() {
   });
   const purchaseQuery = useQuery({
     queryKey: ["purchase-returns", debouncedSearch, page],
-    queryFn: () => api.get<Paginated<{ id: string; number: string; purchase_number: string; supplier_name: string; business_date: string; reason_code: string; status: string; grand_total: string }>>(
-      `/purchase-returns/?${salesParams.toString()}`,
-    ),
+    queryFn: () =>
+      api.get<
+        Paginated<{
+          id: string;
+          number: string;
+          purchase_number: string;
+          supplier_name: string;
+          business_date: string;
+          reason_code: string;
+          status: string;
+          grand_total: string;
+        }>
+      >(`/purchase-returns/?${salesParams.toString()}`),
     enabled: tab === "Purchase returns",
   });
 
@@ -331,21 +354,28 @@ export default function ReturnsPage() {
                       </p>
                       <p className="text-xs text-slate-500">
                         {salesReturn.customer_name} · {formatDate(salesReturn.business_date)} ·{" "}
-                        {salesReturn.refund_method.replace("_", " ").toLowerCase()} · {salesReturn.items.length} line(s)
+                        {salesReturn.refund_method.replace("_", " ").toLowerCase()} ·{" "}
+                        {salesReturn.items.length} line(s)
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={reasonTone(salesReturn.reason_code)}>{salesReturn.reason_code.replace(/_/g, " ")}</Badge>
+                      <Badge tone={reasonTone(salesReturn.reason_code)}>
+                        {salesReturn.reason_code.replace(/_/g, " ")}
+                      </Badge>
                       {salesReturn.status === "CONFIRMED" ? (
                         <Badge tone="green">Confirmed</Badge>
                       ) : (
                         <Badge tone="slate">{salesReturn.status}</Badge>
                       )}
-                      <span className="font-mono font-semibold">{formatMoney(salesReturn.grand_total)}</span>
+                      <span className="font-mono font-semibold">
+                        {formatMoney(salesReturn.grand_total)}
+                      </span>
                     </div>
                   </div>
                   {salesReturn.items.some((item) => !item.restocked) ? (
-                    <p className="text-xs text-amber-700">Some lines went to quarantine (damaged/expired).</p>
+                    <p className="text-xs text-amber-700">
+                      Some lines went to quarantine (damaged/expired).
+                    </p>
                   ) : null}
                 </li>
               ))}
@@ -376,11 +406,16 @@ export default function ReturnsPage() {
           ) : (
             <ul className="divide-y divide-slate-100">
               {purchaseQuery.data.results.map((purchaseReturn) => (
-                <li key={purchaseReturn.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+                <li
+                  key={purchaseReturn.id}
+                  className="flex flex-wrap items-center justify-between gap-2 p-4"
+                >
                   <div>
                     <p className="font-medium">
                       {purchaseReturn.number}{" "}
-                      <span className="text-xs text-slate-500">purchase {purchaseReturn.purchase_number}</span>
+                      <span className="text-xs text-slate-500">
+                        purchase {purchaseReturn.purchase_number}
+                      </span>
                     </p>
                     <p className="text-xs text-slate-500">
                       {purchaseReturn.supplier_name} · {formatDate(purchaseReturn.business_date)}
@@ -393,7 +428,9 @@ export default function ReturnsPage() {
                     <Badge tone={purchaseReturn.status === "CONFIRMED" ? "green" : "slate"}>
                       {purchaseReturn.status}
                     </Badge>
-                    <span className="font-mono font-semibold">{formatMoney(purchaseReturn.grand_total)}</span>
+                    <span className="font-mono font-semibold">
+                      {formatMoney(purchaseReturn.grand_total)}
+                    </span>
                     <Link
                       href="/purchases"
                       className="inline-flex min-h-[36px] items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"

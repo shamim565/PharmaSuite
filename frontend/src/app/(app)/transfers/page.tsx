@@ -4,7 +4,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmButton,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { MedicineCombobox } from "@/components/medicine-combobox";
 import { ApiError, api, newIdempotencyKey } from "@/lib/api";
 import { formatDate, formatMoney, formatQty } from "@/lib/format";
@@ -65,7 +78,8 @@ function TransferRow({
           <option value="">Select…</option>
           {batchesQuery.data?.results.map((batch) => (
             <option key={batch.id} value={batch.id}>
-              {batch.batch_number} · qty {formatQty(batch.qty_on_hand)} · exp {batch.expiry_date ? formatDate(batch.expiry_date) : "—"}
+              {batch.batch_number} · qty {formatQty(batch.qty_on_hand)} · exp{" "}
+              {batch.expiry_date ? formatDate(batch.expiry_date) : "—"}
             </option>
           ))}
         </Select>
@@ -238,7 +252,11 @@ export default function TransfersPage() {
                 </Select>
               </Field>
               <Field label="To branch" error={fieldError("to_branch")}>
-                <Select value={toBranch} onChange={(event) => setToBranch(event.target.value)} required>
+                <Select
+                  value={toBranch}
+                  onChange={(event) => setToBranch(event.target.value)}
+                  required
+                >
                   <option value="">Select…</option>
                   {branchesQuery.data?.results
                     .filter((branch) => branch.id !== fromBranch)
@@ -335,9 +353,11 @@ export default function TransfersPage() {
                       </span>
                     </p>
                     <p className="text-xs text-slate-500">
-                      {formatDate(transfer.business_date)} · {transfer.items.length} line(s) · requested by{" "}
-                      {transfer.requested_by_name || "—"}
-                      {transfer.confirmed_by_name ? ` · confirmed by ${transfer.confirmed_by_name}` : ""}
+                      {formatDate(transfer.business_date)} · {transfer.items.length} line(s) ·
+                      requested by {transfer.requested_by_name || "—"}
+                      {transfer.confirmed_by_name
+                        ? ` · confirmed by ${transfer.confirmed_by_name}`
+                        : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">

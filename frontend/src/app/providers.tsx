@@ -46,10 +46,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             // Field-level validation errors are already shown inline on the
             // form — only toast errors the user cannot see elsewhere.
             if (error instanceof ApiError && error.fieldErrors) return;
-            pushToast(
-              error instanceof ApiError ? error.message : "Something went wrong",
-              "error",
-            );
+            pushToast(error instanceof ApiError ? error.message : "Something went wrong", "error");
           },
           onSuccess: (data, variables, _context, mutation) => {
             const meta = mutation.meta?.successMessage;

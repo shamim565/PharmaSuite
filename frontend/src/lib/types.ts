@@ -202,9 +202,23 @@ export type MedicineBatch = {
   qty_received_total: string;
   qty_on_hand: string;
   unit_cost: string;
+  location: string;
   status: BatchStatus;
   notes: string;
   days_to_expiry: number | null;
+  created_at: string;
+};
+
+export type WarehouseLocation = {
+  id: string;
+  branch: string;
+  branch_name: string;
+  zone: string;
+  rack: string;
+  bin: string;
+  label: string;
+  is_active: boolean;
+  notes: string;
   created_at: string;
 };
 
@@ -427,6 +441,258 @@ export type PayableAgingRow = {
   total: string;
 };
 
+export type PurchaseOrderItem = {
+  id: string;
+  line_no: number;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  qty_ordered: string;
+  qty_received: string;
+  qty_pending: string;
+  is_fully_received: boolean;
+  unit_cost: string;
+  line_discount: string;
+  vat_rate: string;
+  vat_amount: string;
+  line_net: string;
+  notes: string;
+};
+
+export type PurchaseOrder = {
+  id: string;
+  number: string | null;
+  branch: string;
+  branch_name: string;
+  supplier: string;
+  supplier_name: string;
+  business_date: string;
+  expected_delivery_date: string | null;
+  status:
+    | "DRAFT"
+    | "SUBMITTED"
+    | "APPROVED"
+    | "PARTIALLY_RECEIVED"
+    | "FULLY_RECEIVED"
+    | "CANCELLED";
+  subtotal: string;
+  discount_total: string;
+  vat_total: string;
+  grand_total: string;
+  notes: string;
+  submitted_at: string | null;
+  submitted_by_name: string;
+  approved_at: string | null;
+  approved_by_name: string;
+  cancel_reason: string;
+  cancelled_by_name: string;
+  fulfilled_by: string | null;
+  fulfilled_by_number: string;
+  created_at: string;
+  items: PurchaseOrderItem[];
+};
+
+export type DeliveryChallanItem = {
+  id: string;
+  line_no: number;
+  medicine: string;
+  medicine_name: string;
+  medicine_code: string;
+  batch: string | null;
+  batch_number: string;
+  qty: string;
+  notes: string;
+};
+
+export type DeliveryChallan = {
+  id: string;
+  number: string | null;
+  branch: string;
+  branch_name: string;
+  customer: string;
+  customer_name: string;
+  customer_code: string;
+  invoice: string | null;
+  invoice_number: string;
+  business_date: string;
+  status: "PREPARED" | "DISPATCHED" | "DELIVERED" | "UNDELIVERED" | "CANCELLED";
+  delivery_person: string;
+  delivery_phone: string;
+  vehicle_no: string;
+  dispatched_at: string | null;
+  dispatched_by_name: string;
+  delivered_at: string | null;
+  delivered_by_name: string;
+  recipient_name: string;
+  recipient_phone: string;
+  notes: string;
+  cancel_reason: string;
+  created_at: string;
+  items: DeliveryChallanItem[];
+};
+
+export type SalesTarget = {
+  id: string;
+  representative: string;
+  representative_name: string;
+  representative_code: string;
+  branch: string | null;
+  branch_name: string;
+  fiscal_year: number;
+  period_month: number;
+  target_amount: string;
+  target_collection: string;
+  target_visits: number;
+  achieved_sales: string;
+  achieved_percent: number | null;
+  notes: string;
+  created_at: string;
+};
+
+export type InventoryDsiRow = {
+  medicine: string;
+  name: string;
+  code: string;
+  qty_on_hand: string;
+  reorder_level: string;
+  avg_daily_sales: string;
+  total_sold_in_period: string;
+  dsi: number | null;
+  last_sale_date: string | null;
+  days_since_sale: number | null;
+  is_dead_stock: boolean;
+  is_slow_mover: boolean;
+};
+
+export type InventoryDsiReport = {
+  period_days: number;
+  dead_days_threshold: number;
+  slow_dsi_threshold: number;
+  count: number;
+  dead_stock_count: number;
+  slow_mover_count: number;
+  results: InventoryDsiRow[];
+};
+
+export type MarginAnalysisRow = {
+  id: string;
+  name: string;
+  qty: string;
+  gross: string;
+  discount: string;
+  net_revenue: string;
+  cogs?: string;
+  gross_profit?: string;
+  gross_profit_pct?: number;
+};
+
+export type MarginAnalysisReport = {
+  period: { date_from: string; date_to: string };
+  group_by: string;
+  has_cost_access: boolean;
+  total_net_revenue: string;
+  total_gross_profit: string | null;
+  count: number;
+  results: MarginAnalysisRow[];
+};
+
+export type RepPerformanceRow = {
+  representative: string;
+  name: string;
+  code: string;
+  rep_type: "SALES" | "MEDICAL";
+  branch: string | null;
+  branch_name: string;
+  target_amount: string;
+  actual_sales: string;
+  achievement_pct: number | null;
+  gap: string;
+};
+
+export type RepPerformanceReport = {
+  fiscal_year: number;
+  period_month: number;
+  count: number;
+  total_target: string;
+  total_actual: string;
+  results: RepPerformanceRow[];
+};
+
+export type CollectionEfficiencyRow = {
+  customer: string;
+  name: string;
+  code: string;
+  invoiced: string;
+  collected: string;
+  outstanding: string;
+  efficiency_pct: number;
+};
+
+export type CollectionEfficiencyReport = {
+  period: { date_from: string; date_to: string };
+  kpi: {
+    total_invoiced: string;
+    total_collected: string;
+    total_outstanding: string;
+    collection_efficiency_pct: number;
+  };
+  count: number;
+  results: CollectionEfficiencyRow[];
+};
+
+export type SupplierConcentrationRow = {
+  supplier: string;
+  name: string;
+  total_spend: string;
+  purchase_count: number;
+  pct_of_total: number;
+  cumulative_pct: number;
+  high_dependency: boolean;
+};
+
+export type SupplierConcentrationReport = {
+  period: { date_from: string; date_to: string };
+  total_spend: string;
+  supplier_count: number;
+  high_dependency_count: number;
+  results: SupplierConcentrationRow[];
+};
+
+export type ExceptionOverride = {
+  type:
+    | "CREDIT_OVERRIDE"
+    | "FEFO_OVERRIDE"
+    | "RX_OVERRIDE"
+    | "PRICE_OVERRIDE"
+    | "DUPLICATE_INVOICE";
+  reason: string;
+};
+
+export type ExceptionReportRow = {
+  document_type: "SALES_INVOICE" | "PURCHASE";
+  document_id: string;
+  document_number: string | null;
+  business_date: string;
+  branch: string;
+  branch_name: string;
+  customer?: string;
+  customer_name?: string;
+  supplier?: string;
+  supplier_name?: string;
+  grand_total: string;
+  confirmed_by: string;
+  confirmed_at: string;
+  overrides: ExceptionOverride[];
+};
+
+export type ExceptionReport = {
+  period: { date_from: string; date_to: string };
+  total_exceptions: number;
+  invoice_exceptions: number;
+  purchase_exceptions: number;
+  results: ExceptionReportRow[];
+};
+
 export type Customer = {
   id: string;
   code: string;
@@ -440,6 +706,7 @@ export type Customer = {
   price_tier: "RETAIL" | "WHOLESALE" | "CUSTOM";
   default_discount_pct: string;
   credit_limit: string;
+  credit_unlimited: boolean;
   credit_days: number;
   credit_hold: boolean;
   credit_hold_reason: string;
@@ -482,6 +749,7 @@ export type SalesInvoiceItem = {
   unit_cost: string;
   is_free_goods: boolean;
   returned_qty: string;
+  medicine_rx_required: boolean;
 };
 
 export type SalesInvoice = {
@@ -517,6 +785,9 @@ export type SalesInvoice = {
   credit_override_reason: string;
   fefo_override: boolean;
   fefo_override_reason: string;
+  prescription_number: string;
+  rx_override: boolean;
+  rx_override_reason: string;
   delivered_at: string | null;
   created_at: string;
   items: SalesInvoiceItem[];
@@ -612,7 +883,12 @@ export type DailyCollectionReport = {
   payment_count: number;
   total: string;
   by_method: { method: string; total: string; count: number }[];
-  by_collector: { collector: string | null; collector_name: string; total: string; count: number }[];
+  by_collector: {
+    collector: string | null;
+    collector_name: string;
+    total: string;
+    count: number;
+  }[];
 };
 
 export type SalesReturnItem = {
@@ -819,7 +1095,13 @@ export type FinancialPositionReport = {
   receivables: string;
   payables: string;
   cash_position: string;
-  accounts: { account: string; code: string; name: string; account_type: string; balance: string }[];
+  accounts: {
+    account: string;
+    code: string;
+    name: string;
+    account_type: string;
+    balance: string;
+  }[];
   stock_value_saleable: string;
   stock_value_quarantine: string;
   net_working_position: string;
@@ -964,7 +1246,13 @@ export type DashboardWidgets = {
   sales_trend: { date: string; revenue: string; invoices: number }[];
   top_items: { medicine: string; name: string; code: string; qty: string; revenue: string }[];
   top_customers: { customer: string; name: string; revenue: string; invoices: number }[];
-  low_stock: { medicine: string; name: string; code: string; on_hand: string; reorder_level: string }[];
+  low_stock: {
+    medicine: string;
+    name: string;
+    code: string;
+    on_hand: string;
+    reorder_level: string;
+  }[];
   near_expiry: {
     medicine: string;
     batch_number: string;
@@ -979,14 +1267,26 @@ export type SalesSummaryReport = {
   period: { date_from: string; date_to: string };
   count: number;
   totals: { invoices: number; net_revenue: string; vat: string; grand_total: string };
-  results: { date: string; invoices: number; net_revenue: string; vat: string; grand_total: string }[];
+  results: {
+    date: string;
+    invoices: number;
+    net_revenue: string;
+    vat: string;
+    grand_total: string;
+  }[];
 };
 
 export type PurchasesSummaryReport = {
   period: { date_from: string; date_to: string };
   count: number;
   totals: { purchases: number; net_cost: string; grand_total: string };
-  results: { date: string; purchases: number; net_cost: string; vat: string; grand_total: string }[];
+  results: {
+    date: string;
+    purchases: number;
+    net_cost: string;
+    vat: string;
+    grand_total: string;
+  }[];
 };
 
 export type SalesByItemReport = {
@@ -1076,6 +1376,8 @@ export type NotificationPreference = {
   category: string;
   label: string;
   enabled: boolean;
+  email_enabled: boolean;
+  sms_enabled: boolean;
 };
 
 export type NotificationPreferenceList = {
@@ -1100,14 +1402,7 @@ export type AttachmentRow = {
 export type Cheque = {
   id: string;
   direction: "RECEIVED" | "ISSUED";
-  status:
-    | "PENDING_DEPOSIT"
-    | "DEPOSITED"
-    | "CLEARED"
-    | "BOUNCED"
-    | "PENDING"
-    | "PAID"
-    | "STOPPED";
+  status: "PENDING_DEPOSIT" | "DEPOSITED" | "CLEARED" | "BOUNCED" | "PENDING" | "PAID" | "STOPPED";
   number: string;
   bank_name: string;
   bank_branch: string;
@@ -1136,8 +1431,20 @@ export type SearchResults = {
     customers: Array<{ id: string; code: string; name: string; phone: string }>;
     suppliers: Array<{ id: string; code: string; name: string; phone: string }>;
     doctors: Array<{ id: string; code: string; name: string; category: string }>;
-    invoices: Array<{ id: string; number: string; customer__name: string; grand_total: string; lifecycle: string }>;
-    purchases: Array<{ id: string; number: string; supplier__name: string; grand_total: string; lifecycle: string }>;
+    invoices: Array<{
+      id: string;
+      number: string;
+      customer__name: string;
+      grand_total: string;
+      lifecycle: string;
+    }>;
+    purchases: Array<{
+      id: string;
+      number: string;
+      supplier__name: string;
+      grand_total: string;
+      lifecycle: string;
+    }>;
   };
 };
 

@@ -7,7 +7,16 @@ import { useParams } from "next/navigation";
 
 import { useAuth } from "@/app/providers";
 import { AttachmentPanel } from "@/components/attachments";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Spinner, pushToast } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Spinner,
+  pushToast,
+} from "@/components/ui";
 import { ApiError, api, apiDownload } from "@/lib/api";
 import { formatDate, formatDateTime, formatMoney, formatQty } from "@/lib/format";
 import type { Paginated, Purchase, SupplierPayment } from "@/lib/types";
@@ -18,7 +27,9 @@ function PaymentHistory({ purchaseId }: { purchaseId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["supplier-payments", "purchase", purchaseId],
     queryFn: () =>
-      api.get<Paginated<SupplierPayment>>(`/supplier-payments/?purchase=${purchaseId}&page_size=50`),
+      api.get<Paginated<SupplierPayment>>(
+        `/supplier-payments/?purchase=${purchaseId}&page_size=50`,
+      ),
     enabled: canView,
   });
 
@@ -26,7 +37,10 @@ function PaymentHistory({ purchaseId }: { purchaseId: string }) {
 
   return (
     <Card>
-      <CardHeader title="Payments" subtitle={data ? `${data.count} payment(s) allocated` : undefined} />
+      <CardHeader
+        title="Payments"
+        subtitle={data ? `${data.count} payment(s) allocated` : undefined}
+      />
       <ErrorBanner error={error} />
       {isLoading ? (
         <Spinner />
@@ -112,26 +126,44 @@ export default function PurchaseDetailPage() {
               <p className="text-sm text-slate-600">{data.branch_name}</p>
             </div>
             <div className="text-right">
-              <h2 className="text-lg font-semibold uppercase tracking-wide text-slate-700">Purchase Record</h2>
+              <h2 className="text-lg font-semibold uppercase tracking-wide text-slate-700">
+                Purchase Record
+              </h2>
               <p className="font-mono text-sm">{data.number ?? "DRAFT"}</p>
-              <p className="text-xs text-slate-500">Business date: {formatDate(data.business_date)}</p>
+              <p className="text-xs text-slate-500">
+                Business date: {formatDate(data.business_date)}
+              </p>
               <p className="text-xs text-slate-500">
                 Supplier invoice: {data.supplier_invoice_number || "—"} (
                 {data.supplier_invoice_date ? formatDate(data.supplier_invoice_date) : "—"})
               </p>
               <div className="mt-1 flex justify-end gap-1">
-                <Badge tone={data.payment_status === "PAID" ? "green" : data.payment_status === "PARTIALLY_PAID" ? "amber" : "slate"}>
+                <Badge
+                  tone={
+                    data.payment_status === "PAID"
+                      ? "green"
+                      : data.payment_status === "PARTIALLY_PAID"
+                        ? "amber"
+                        : "slate"
+                  }
+                >
                   {data.payment_status}
                 </Badge>
-                {data.lifecycle !== "CONFIRMED" ? <Badge tone="rose">{data.lifecycle}</Badge> : null}
-                {data.return_status !== "NONE" ? <Badge tone="blue">{data.return_status}</Badge> : null}
+                {data.lifecycle !== "CONFIRMED" ? (
+                  <Badge tone="rose">{data.lifecycle}</Badge>
+                ) : null}
+                {data.return_status !== "NONE" ? (
+                  <Badge tone="blue">{data.return_status}</Badge>
+                ) : null}
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 py-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supplier</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Supplier
+              </p>
               <p className="text-sm font-medium">{data.supplier_name}</p>
               {data.confirmed_at ? (
                 <p className="mt-1 text-xs text-slate-500">
@@ -141,7 +173,9 @@ export default function PurchaseDetailPage() {
               ) : null}
             </div>
             <div className="text-right">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Amounts (BDT)</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Amounts (BDT)
+              </p>
               <p className="text-sm">Subtotal {formatMoney(data.subtotal)}</p>
               <p className="text-sm">Discount −{formatMoney(data.discount_total)}</p>
               <p className="text-sm">Freight +{formatMoney(data.freight_total)}</p>
@@ -177,7 +211,9 @@ export default function PurchaseDetailPage() {
                     <span className="block text-xs text-slate-500">{item.medicine_code}</span>
                   </td>
                   <td className="py-2 font-mono text-xs">{item.batch_number}</td>
-                  <td className="py-2 text-right">{item.expiry_date ? formatDate(item.expiry_date) : "—"}</td>
+                  <td className="py-2 text-right">
+                    {item.expiry_date ? formatDate(item.expiry_date) : "—"}
+                  </td>
                   <td className="py-2 text-right">{formatQty(item.qty_base)}</td>
                   <td className="py-2 text-right">{formatQty(item.bonus_qty_base || "0")}</td>
                   <td className="py-2 text-right">{formatMoney(item.unit_cost)}</td>

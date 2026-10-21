@@ -3,7 +3,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Select, Spinner, Tabs } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmButton,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Select,
+  Spinner,
+  Tabs,
+} from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import type { Paginated } from "@/lib/types";
 
@@ -36,7 +49,11 @@ function MasterSection({
 }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<Record<string, string>>(
-    Object.fromEntries(textFields.map((f) => [f.name, ""]).concat(selectField ? [[selectField.name, selectField.options[0]?.value ?? ""]] : [])),
+    Object.fromEntries(
+      textFields
+        .map((f) => [f.name, ""])
+        .concat(selectField ? [[selectField.name, selectField.options[0]?.value ?? ""]] : []),
+    ),
   );
 
   const { data, isLoading, error } = useQuery({
@@ -52,7 +69,13 @@ function MasterSection({
         ...(selectField ? {} : {}),
       }),
     onSuccess: () => {
-      setForm(Object.fromEntries(textFields.map((f) => [f.name, ""]).concat(selectField ? [[selectField.name, selectField.options[0]?.value ?? ""]] : [])));
+      setForm(
+        Object.fromEntries(
+          textFields
+            .map((f) => [f.name, ""])
+            .concat(selectField ? [[selectField.name, selectField.options[0]?.value ?? ""]] : []),
+        ),
+      );
       queryClient.invalidateQueries({ queryKey: [queryKey] });
       queryClient.invalidateQueries({ queryKey: [queryKey, "select"] });
     },
@@ -60,7 +83,8 @@ function MasterSection({
 
   const toggleMutation = useMutation({
     meta: { successMessage: `${singular} status updated` },
-    mutationFn: (row: MasterRow) => api.patch(`${endpoint}/${row.id}/`, { is_active: !row.is_active }),
+    mutationFn: (row: MasterRow) =>
+      api.patch(`${endpoint}/${row.id}/`, { is_active: !row.is_active }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [queryKey] });
       queryClient.invalidateQueries({ queryKey: [queryKey, "select"] });
@@ -81,7 +105,10 @@ function MasterSection({
   return (
     <Card>
       <CardHeader title={title} subtitle={subtitle} />
-      <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 border-b border-slate-100 p-4 lg:grid-cols-4">
+      <form
+        onSubmit={onSubmit}
+        className="grid grid-cols-2 gap-3 border-b border-slate-100 p-4 lg:grid-cols-4"
+      >
         <div className="col-span-2 lg:col-span-4">
           <ErrorBanner error={createMutation.error} />
         </div>
@@ -123,7 +150,10 @@ function MasterSection({
       ) : (
         <ul className="divide-y divide-slate-100">
           {data.results.map((row) => (
-            <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+            <li
+              key={row.id}
+              className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+            >
               <div className="text-sm">
                 <span className="font-medium">{row.name}</span>
                 {typeof row.parent_name === "string" && row.parent_name ? (

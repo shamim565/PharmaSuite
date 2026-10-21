@@ -63,14 +63,20 @@ export default function NotificationsPage() {
         <h1 className="text-lg font-semibold text-slate-800">Notifications</h1>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1 text-xs text-slate-600">
-            <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={unreadOnly}
+              onChange={(e) => setUnreadOnly(e.target.checked)}
+            />
             Unread only
           </label>
           <Button
             size="sm"
             variant="secondary"
             onClick={() => readAllMutation.mutate()}
-            disabled={readAllMutation.isPending || (notificationsQuery.data?.unread_count ?? 0) === 0}
+            disabled={
+              readAllMutation.isPending || (notificationsQuery.data?.unread_count ?? 0) === 0
+            }
           >
             Mark all read
           </Button>
@@ -110,7 +116,9 @@ export default function NotificationsPage() {
       <Card>
         <CardHeader
           title="All notifications"
-          subtitle={notificationsQuery.data ? `${notificationsQuery.data.unread_count} unread` : undefined}
+          subtitle={
+            notificationsQuery.data ? `${notificationsQuery.data.unread_count} unread` : undefined
+          }
         />
         <ErrorBanner error={notificationsQuery.error} />
         {notificationsQuery.isLoading ? (
@@ -131,7 +139,11 @@ export default function NotificationsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     {!item.is_read ? (
-                      <Button size="sm" variant="ghost" onClick={() => readMutation.mutate(item.id)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => readMutation.mutate(item.id)}
+                      >
                         Mark read
                       </Button>
                     ) : null}

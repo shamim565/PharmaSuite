@@ -3,7 +3,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmButton,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import type { Branch, Paginated } from "@/lib/types";
 
@@ -117,10 +129,18 @@ export default function BranchesPage() {
               <ErrorBanner error={createMutation.error} />
             </div>
             <Field label="Code" error={fieldError("code")}>
-              <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
+              <Input
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                required
+              />
             </Field>
             <Field label="Name" error={fieldError("name")}>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
             </Field>
             <Field label="Type" error={fieldError("type")}>
               <Select
@@ -132,11 +152,17 @@ export default function BranchesPage() {
               </Select>
             </Field>
             <Field label="Phone" error={fieldError("phone")}>
-              <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <Input
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              />
             </Field>
             <div className="col-span-2 lg:col-span-4">
               <Field label="Address" error={fieldError("address")}>
-                <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+                <Input
+                  value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                />
               </Field>
             </div>
             <div className="col-span-2 lg:col-span-4">
@@ -165,7 +191,8 @@ export default function BranchesPage() {
               <li key={branch.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
                   <p className="font-medium">
-                    {branch.name} <span className="font-mono text-xs text-slate-500">{branch.code}</span>
+                    {branch.name}{" "}
+                    <span className="font-mono text-xs text-slate-500">{branch.code}</span>
                   </p>
                   <p className="text-xs text-slate-500">
                     {branch.type === "HEAD_OFFICE" ? "Head office" : "Branch"}
@@ -174,7 +201,9 @@ export default function BranchesPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge tone={branch.status === "ACTIVE" ? "green" : "slate"}>{branch.status}</Badge>
+                  <Badge tone={branch.status === "ACTIVE" ? "green" : "slate"}>
+                    {branch.status}
+                  </Badge>
                   <Button size="sm" variant="secondary" onClick={() => openEdit(branch)}>
                     Edit
                   </Button>

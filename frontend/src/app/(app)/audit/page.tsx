@@ -3,7 +3,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Spinner,
+} from "@/components/ui";
 import { api, apiDownload } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import type { AuditLogEntry, Paginated } from "@/lib/types";
@@ -113,7 +124,9 @@ export default function AuditPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <p className="text-sm">
-                        <Badge tone={entry.actor_type === "SYSTEM" ? "blue" : "slate"}>{entry.action}</Badge>{" "}
+                        <Badge tone={entry.actor_type === "SYSTEM" ? "blue" : "slate"}>
+                          {entry.action}
+                        </Badge>{" "}
                         <span className="font-medium">{entry.entity_type}</span>{" "}
                         <span className="font-mono text-xs text-slate-500">
                           {entry.entity_id ? entry.entity_id.slice(0, 8) : ""}
@@ -125,7 +138,9 @@ export default function AuditPage() {
                         {entry.ip ? ` · ${entry.ip}` : ""}
                       </p>
                     </div>
-                    <span className="font-mono text-xs text-slate-500">req {entry.request_id || "—"}</span>
+                    <span className="font-mono text-xs text-slate-500">
+                      req {entry.request_id || "—"}
+                    </span>
                   </div>
                   {entry.before || entry.after ? (
                     <details className="text-xs">

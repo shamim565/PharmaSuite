@@ -212,7 +212,8 @@ export default function ItemsPage() {
 
   const createMutation = useMutation({
     meta: { successMessage: "Item created" },
-    mutationFn: (payload: typeof emptyForm) => api.post<Medicine>("/medicines/", payloadFor(payload)),
+    mutationFn: (payload: typeof emptyForm) =>
+      api.post<Medicine>("/medicines/", payloadFor(payload)),
     onSuccess: () => {
       setForm(emptyForm);
       setShowForm(false);
@@ -332,13 +333,24 @@ export default function ItemsPage() {
               <ErrorBanner error={createMutation.error} />
             </div>
             <Field label="Code (SKU)" error={fieldError("code")}>
-              <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
+              <Input
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                required
+              />
             </Field>
             <Field label="Name" error={fieldError("name")}>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
             </Field>
             <Field label="Generic" error={fieldError("generic")}>
-              <Select value={form.generic} onChange={(e) => setForm({ ...form, generic: e.target.value })}>
+              <Select
+                value={form.generic}
+                onChange={(e) => setForm({ ...form, generic: e.target.value })}
+              >
                 <option value="">—</option>
                 {genericsQuery.data?.results.map((g) => (
                   <option key={g.id} value={g.id}>
@@ -361,7 +373,10 @@ export default function ItemsPage() {
               </Select>
             </Field>
             <Field label="Category" error={fieldError("category")}>
-              <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              <Select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              >
                 <option value="">—</option>
                 {categoriesQuery.data?.results.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -384,7 +399,10 @@ export default function ItemsPage() {
               </Select>
             </Field>
             <Field label="Strength" error={fieldError("strength")}>
-              <Input value={form.strength} onChange={(e) => setForm({ ...form, strength: e.target.value })} />
+              <Input
+                value={form.strength}
+                onChange={(e) => setForm({ ...form, strength: e.target.value })}
+              />
             </Field>
             <Field label="Dosage form" error={fieldError("dosage_form")}>
               <Input
@@ -394,7 +412,10 @@ export default function ItemsPage() {
               />
             </Field>
             <Field label="Barcode" error={fieldError("barcode")}>
-              <Input value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
+              <Input
+                value={form.barcode}
+                onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+              />
             </Field>
             <Field label="Shelf life (months)" error={fieldError("shelf_life_months")}>
               <Input
@@ -527,17 +548,29 @@ export default function ItemsPage() {
                       <td className="px-4 py-2 font-medium">{medicine.name}</td>
                       <td className="px-4 py-2 text-slate-500">{medicine.generic_name || "—"}</td>
                       <td className="px-4 py-2">{medicine.base_unit_name || "—"}</td>
-                      <td className="px-4 py-2 text-right">{formatMoney(medicine.purchase_price)}</td>
-                      <td className="px-4 py-2 text-right">{formatMoney(medicine.selling_price)}</td>
+                      <td className="px-4 py-2 text-right">
+                        {formatMoney(medicine.purchase_price)}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        {formatMoney(medicine.selling_price)}
+                      </td>
                       <td className="space-x-1 px-4 py-2">{flags(medicine)}</td>
                       <td className="px-4 py-2">
-                        {medicine.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
+                        {medicine.is_active ? (
+                          <Badge tone="green">Active</Badge>
+                        ) : (
+                          <Badge>Inactive</Badge>
+                        )}
                       </td>
                       <td className="space-x-1 px-4 py-2 text-right">
                         <Button size="sm" variant="secondary" onClick={() => openEdit(medicine)}>
                           Edit
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setConversionsFor(medicine)}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setConversionsFor(medicine)}
+                        >
                           Units
                         </Button>
                         {medicine.is_active ? (
@@ -572,14 +605,19 @@ export default function ItemsPage() {
                 <li key={medicine.id} className="space-y-1 p-4">
                   <div className="flex items-center justify-between">
                     <p className="font-medium">{medicine.name}</p>
-                    {medicine.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
+                    {medicine.is_active ? (
+                      <Badge tone="green">Active</Badge>
+                    ) : (
+                      <Badge>Inactive</Badge>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500">
                     {medicine.code} · {medicine.generic_name || "no generic"} ·{" "}
                     {medicine.base_unit_name || "no unit"}
                   </p>
                   <p className="text-sm">
-                    Purchase {formatMoney(medicine.purchase_price)} · Selling {formatMoney(medicine.selling_price)}
+                    Purchase {formatMoney(medicine.purchase_price)} · Selling{" "}
+                    {formatMoney(medicine.selling_price)}
                   </p>
                   <div className="flex flex-wrap gap-1">{flags(medicine)}</div>
                   <div className="flex gap-2">

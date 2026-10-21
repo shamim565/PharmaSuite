@@ -4,15 +4,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
-import type {
-  AccountLedgerResponse,
-  Branch,
-  FinancialAccount,
-  Paginated,
-} from "@/lib/types";
+import type { AccountLedgerResponse, Branch, FinancialAccount, Paginated } from "@/lib/types";
 
 const emptyAccount = {
   code: "",
@@ -97,7 +103,13 @@ function AccountPanel({ account, onClose }: { account: FinancialAccount; onClose
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
             <div className="col-span-2">
               <Field label="Amount">
-                <Input type="number" step="0.01" min="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
               </Field>
             </div>
             <div className="col-span-2">
@@ -152,7 +164,10 @@ function AccountPanel({ account, onClose }: { account: FinancialAccount; onClose
             </div>
             <div className="col-span-2">
               <Field label="Transfer reference">
-                <Input value={transferReference} onChange={(e) => setTransferReference(e.target.value)} />
+                <Input
+                  value={transferReference}
+                  onChange={(e) => setTransferReference(e.target.value)}
+                />
               </Field>
             </div>
             <div className="flex items-end lg:col-span-1">
@@ -182,7 +197,10 @@ function AccountPanel({ account, onClose }: { account: FinancialAccount; onClose
               {ledgerQuery.data.results.map((entry) => {
                 const positive = !entry.amount_delta.startsWith("-");
                 return (
-                  <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+                  <li
+                    key={entry.id}
+                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+                  >
                     <div>
                       <p className="font-medium">{entry.entry_type.replace(/_/g, " ")}</p>
                       <p className="text-xs text-slate-500">
@@ -192,11 +210,15 @@ function AccountPanel({ account, onClose }: { account: FinancialAccount; onClose
                       </p>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className={`font-mono font-semibold ${positive ? "text-primary-700" : "text-danger-700"}`}>
+                      <span
+                        className={`font-mono font-semibold ${positive ? "text-primary-700" : "text-danger-700"}`}
+                      >
                         {positive ? "+" : "−"}
                         {formatMoney(Math.abs(Number(entry.amount_delta)))}
                       </span>
-                      <span className="text-xs text-slate-500">bal {formatMoney(entry.running_balance)}</span>
+                      <span className="text-xs text-slate-500">
+                        bal {formatMoney(entry.running_balance)}
+                      </span>
                     </div>
                   </li>
                 );
@@ -272,26 +294,43 @@ export default function AccountsPage() {
 
       {showForm && hasPerm("ACCOUNT_MANAGE") ? (
         <Card>
-          <CardHeader title="New account" subtitle="Cash, bank or mobile financial service wallet." />
+          <CardHeader
+            title="New account"
+            subtitle="Cash, bank or mobile financial service wallet."
+          />
           <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
             <div className="col-span-2 lg:col-span-4">
               <ErrorBanner error={createMutation.error} />
             </div>
             <Field label="Code" error={fieldError("code")}>
-              <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required />
+              <Input
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                required
+              />
             </Field>
             <Field label="Name" error={fieldError("name")}>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
             </Field>
             <Field label="Type" error={fieldError("account_type")}>
-              <Select value={form.account_type} onChange={(e) => setForm({ ...form, account_type: e.target.value })}>
+              <Select
+                value={form.account_type}
+                onChange={(e) => setForm({ ...form, account_type: e.target.value })}
+              >
                 <option value="CASH">Cash</option>
                 <option value="BANK">Bank</option>
                 <option value="MFS">MFS wallet</option>
               </Select>
             </Field>
             <Field label="Branch" error={fieldError("branch")}>
-              <Select value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })}>
+              <Select
+                value={form.branch}
+                onChange={(e) => setForm({ ...form, branch: e.target.value })}
+              >
                 <option value="">Company-level</option>
                 {branchesQuery.data?.results.map((branch) => (
                   <option key={branch.id} value={branch.id}>
@@ -301,7 +340,10 @@ export default function AccountsPage() {
               </Select>
             </Field>
             <Field label="Provider" error={fieldError("provider")}>
-              <Input value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} />
+              <Input
+                value={form.provider}
+                onChange={(e) => setForm({ ...form, provider: e.target.value })}
+              />
             </Field>
             <Field label="Account number" error={fieldError("account_number")}>
               <Input
@@ -319,7 +361,10 @@ export default function AccountsPage() {
       ) : null}
 
       <Card>
-        <CardHeader title="All accounts" subtitle={accountsQuery.data ? `${accountsQuery.data.count} account(s)` : undefined} />
+        <CardHeader
+          title="All accounts"
+          subtitle={accountsQuery.data ? `${accountsQuery.data.count} account(s)` : undefined}
+        />
         <ErrorBanner error={accountsQuery.error} />
         {accountsQuery.isLoading ? (
           <Spinner />
@@ -328,10 +373,14 @@ export default function AccountsPage() {
         ) : (
           <ul className="divide-y divide-slate-100">
             {accountsQuery.data.results.map((account) => (
-              <li key={account.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+              <li
+                key={account.id}
+                className="flex flex-wrap items-center justify-between gap-2 p-4"
+              >
                 <div>
                   <p className="font-medium">
-                    {account.name} <span className="font-mono text-xs text-slate-500">{account.code}</span>
+                    {account.name}{" "}
+                    <span className="font-mono text-xs text-slate-500">{account.code}</span>
                   </p>
                   <p className="text-xs text-slate-500">
                     {account.account_type}
@@ -340,7 +389,9 @@ export default function AccountsPage() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className={`font-mono font-semibold ${Number(account.balance_cache) < 0 ? "text-danger-700" : "text-slate-800"}`}>
+                  <span
+                    className={`font-mono font-semibold ${Number(account.balance_cache) < 0 ? "text-danger-700" : "text-slate-800"}`}
+                  >
                     {formatMoney(account.balance_cache)}
                   </span>
                   {account.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}

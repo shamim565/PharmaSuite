@@ -4,7 +4,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useEffect, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import type { Paginated, PermissionCatalog, PermissionItem, Role } from "@/lib/types";
 
@@ -346,8 +357,8 @@ export default function RolesPage() {
                   <ErrorBanner error={permissionsMutation.error} />
                   {roleQuery.data.is_system ? (
                     <p className="mt-2 text-xs text-slate-500">
-                      System role — edits are kept; rerunning <code>seed_rbac --sync-permissions</code>{" "}
-                      restores the built-in defaults.
+                      System role — edits are kept; rerunning{" "}
+                      <code>seed_rbac --sync-permissions</code> restores the built-in defaults.
                     </p>
                   ) : null}
                 </div>
@@ -440,7 +451,11 @@ export default function RolesPage() {
                                   ) : (
                                     <Badge
                                       tone={
-                                        effect === "ALLOW" ? "green" : effect === "DENY" ? "rose" : "slate"
+                                        effect === "ALLOW"
+                                          ? "green"
+                                          : effect === "DENY"
+                                            ? "rose"
+                                            : "slate"
                                       }
                                     >
                                       {effect ? effect.toLowerCase() : "default"}

@@ -5,7 +5,20 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmButton,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { ApiError, api, apiDownload, newIdempotencyKey } from "@/lib/api";
 import { formatDate, formatMoney, formatQty } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks";
@@ -127,6 +140,9 @@ export default function SalesPage() {
   const [payReference, setPayReference] = useState("");
   const [creditOverride, setCreditOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
+  const [rxNumber, setRxNumber] = useState("");
+  const [rxOverride, setRxOverride] = useState(false);
+  const [rxOverrideReason, setRxOverrideReason] = useState("");
   const [returnFor, setReturnFor] = useState<SalesInvoice | null>(null);
   const [returnItemId, setReturnItemId] = useState("");
   const [returnQty, setReturnQty] = useState("");
@@ -168,15 +184,21 @@ export default function SalesPage() {
   const availabilityQuery = useQuery({
     queryKey: ["fefo-availability", user?.default_branch_id, selectedMedicine],
     queryFn: () =>
-      api.get<{ results: Array<{ batch_number: string; expiry_date: string | null; qty_on_hand: string; days_to_expiry: number | null }> }>(
-        `/sales/fefo/?branch=${user?.default_branch_id}&medicine=${selectedMedicine}`,
-      ),
+      api.get<{
+        results: Array<{
+          batch_number: string;
+          expiry_date: string | null;
+          qty_on_hand: string;
+          days_to_expiry: number | null;
+        }>;
+      }>(`/sales/fefo/?branch=${user?.default_branch_id}&medicine=${selectedMedicine}`),
     enabled: Boolean(selectedMedicine) && Boolean(user?.default_branch_id),
   });
   const availability = availabilityQuery.data?.results ?? [];
   const availableQty = availability.reduce((sum, row) => sum + Number(row.qty_on_hand), 0);
   const nearestExpiry = availability.length
-    ? availability.reduce((a, b) => ((a.expiry_date ?? "9999") < (b.expiry_date ?? "9999") ? a : b)).expiry_date
+    ? availability.reduce((a, b) => ((a.expiry_date ?? "9999") < (b.expiry_date ?? "9999") ? a : b))
+        .expiry_date
     : null;
   const accountsQuery = useQuery({
     queryKey: ["accounts", "select"],
@@ -188,7 +210,8 @@ export default function SalesPage() {
   });
   const repsQuery = useQuery({
     queryKey: ["reps", "select"],
-    queryFn: () => api.get<Paginated<Representative>>("/representatives/?page_size=100&is_active=true"),
+    queryFn: () =>
+      api.get<Paginated<Representative>>("/representatives/?page_size=100&is_active=true"),
   });
   const configQuery = useQuery({
     queryKey: ["sales-config"],
@@ -240,10 +263,18 @@ export default function SalesPage() {
         {
           payment:
             Number(payAmount) > 0
-              ? { amount: payAmount, method: payMethod, account: payAccount, reference: payReference }
+              ? {
+                  amount: payAmount,
+                  method: payMethod,
+                  account: payAccount,
+                  reference: payReference,
+                }
               : null,
           allow_credit_override: creditOverride,
           credit_override_reason: overrideReason,
+          prescription_number: rxNumber,
+          rx_override: rxOverride,
+          rx_override_reason: rxOverrideReason,
         },
         confirmKey,
       ),
@@ -253,6 +284,9 @@ export default function SalesPage() {
       setPayReference("");
       setCreditOverride(false);
       setOverrideReason("");
+      setRxNumber("");
+      setRxOverride(false);
+      setRxOverrideReason("");
       setConfirmKey(newIdempotencyKey());
       invalidateAll();
     },
@@ -358,6 +392,9 @@ export default function SalesPage() {
     setPayAccount(accountsQuery.data?.results[0]?.id ?? "");
     setCreditOverride(false);
     setOverrideReason("");
+    setRxNumber("");
+    setRxOverride(false);
+    setRxOverrideReason("");
     setConfirmKey(newIdempotencyKey());
   };
 
@@ -451,7 +488,11 @@ export default function SalesPage() {
             <ErrorBanner error={createMutation.error} />
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Field label="Customer" error={fieldError("customer")}>
-                <Select value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} required>
+                <Select
+                  value={form.customer}
+                  onChange={(e) => setForm({ ...form, customer: e.target.value })}
+                  required
+                >
                   <option value="">Select…</option>
                   {customersQuery.data?.results.map((customer) => (
                     <option key={customer.id} value={customer.id}>
@@ -461,7 +502,11 @@ export default function SalesPage() {
                 </Select>
               </Field>
               <Field label="Branch" error={fieldError("branch")}>
-                <Select value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} required>
+                <Select
+                  value={form.branch}
+                  onChange={(e) => setForm({ ...form, branch: e.target.value })}
+                  required
+                >
                   <option value="">Select…</option>
                   {branchesQuery.data?.results.map((branch) => (
                     <option key={branch.id} value={branch.id}>
@@ -478,7 +523,10 @@ export default function SalesPage() {
                 />
               </Field>
               <Field label="Doctor (optional attribution)">
-                <Select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })}>
+                <Select
+                  value={form.doctor}
+                  onChange={(e) => setForm({ ...form, doctor: e.target.value })}
+                >
                   <option value="">—</option>
                   {doctorsQuery.data?.results.map((doctor) => (
                     <option key={doctor.id} value={doctor.id}>
@@ -488,7 +536,10 @@ export default function SalesPage() {
                 </Select>
               </Field>
               <Field label="Sales rep (optional)">
-                <Select value={form.sales_rep} onChange={(e) => setForm({ ...form, sales_rep: e.target.value })}>
+                <Select
+                  value={form.sales_rep}
+                  onChange={(e) => setForm({ ...form, sales_rep: e.target.value })}
+                >
                   <option value="">—</option>
                   {repsQuery.data?.results.map((rep) => (
                     <option key={rep.id} value={rep.id}>
@@ -541,7 +592,10 @@ export default function SalesPage() {
                 />
               </div>
               {rows.map((row, index) => (
-                <div key={row.key} className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-6">
+                <div
+                  key={row.key}
+                  className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-6"
+                >
                   <div className="col-span-2">
                     <Field label={`Medicine ${index + 1}`}>
                       <Select
@@ -559,12 +613,16 @@ export default function SalesPage() {
                         {medicinesQuery.data?.results.map((medicine) => (
                           <option key={medicine.id} value={medicine.id}>
                             {medicine.name} ({medicine.code})
-                            {medicine.pack_size && Number(medicine.pack_size) > 1 ? ` · pack of ${medicine.pack_size}` : ""}
+                            {medicine.pack_size && Number(medicine.pack_size) > 1
+                              ? ` · pack of ${medicine.pack_size}`
+                              : ""}
                           </option>
                         ))}
                       </Select>
                       {(() => {
-                        const selected = medicinesQuery.data?.results.find((m) => m.id === row.medicine);
+                        const selected = medicinesQuery.data?.results.find(
+                          (m) => m.id === row.medicine,
+                        );
                         const packSize = selected ? Number(selected.pack_size) : 0;
                         if (!selected || packSize <= 1) return null;
                         return (
@@ -716,7 +774,13 @@ export default function SalesPage() {
             <ErrorBanner error={confirmMutation.error} />
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Field label="Receive now (amount)">
-                <Input type="number" step="0.01" min="0" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                />
               </Field>
               <Field label="Method">
                 <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
@@ -740,10 +804,49 @@ export default function SalesPage() {
                 <Input value={payReference} onChange={(e) => setPayReference(e.target.value)} />
               </Field>
             </div>
+            {confirmFor && confirmFor.items.some((item) => item.medicine_rx_required) ? (
+              <div className="space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3">
+                <p className="text-xs font-semibold uppercase text-sky-800">
+                  Rx medicines in this invoice
+                </p>
+                <p className="text-xs text-sky-700">
+                  {confirmFor.items
+                    .filter((item) => item.medicine_rx_required)
+                    .map((item) => item.medicine_name)
+                    .join(", ")}
+                </p>
+                <Field label="Prescription number">
+                  <Input
+                    value={rxNumber}
+                    onChange={(e) => setRxNumber(e.target.value)}
+                    placeholder="e.g. RX-2026-00123"
+                  />
+                </Field>
+                <label className="flex items-center gap-2 text-sm text-sky-800">
+                  <input
+                    type="checkbox"
+                    checked={rxOverride}
+                    onChange={(e) => setRxOverride(e.target.checked)}
+                  />
+                  No prescription captured (override, audited)
+                </label>
+                {rxOverride ? (
+                  <Input
+                    placeholder="Override reason (required)"
+                    value={rxOverrideReason}
+                    onChange={(e) => setRxOverrideReason(e.target.value)}
+                  />
+                ) : null}
+              </div>
+            ) : null}
             {creditBlocked && hasPerm("SALE_OVERRIDE_CREDIT") ? (
               <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <label className="flex items-center gap-2 text-sm text-amber-800">
-                  <input type="checkbox" checked={creditOverride} onChange={(e) => setCreditOverride(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={creditOverride}
+                    onChange={(e) => setCreditOverride(e.target.checked)}
+                  />
                   Override credit limit (audited)
                 </label>
                 <Input
@@ -778,7 +881,13 @@ export default function SalesPage() {
             <ErrorBanner error={payMutation.error} />
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Field label="Amount">
-                <Input type="number" step="0.01" min="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                />
               </Field>
               <Field label="Method">
                 <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
@@ -802,7 +911,10 @@ export default function SalesPage() {
                 <Input value={payReference} onChange={(e) => setPayReference(e.target.value)} />
               </Field>
             </div>
-            <Button onClick={() => payMutation.mutate()} disabled={payMutation.isPending || !payAccount || !payAmount}>
+            <Button
+              onClick={() => payMutation.mutate()}
+              disabled={payMutation.isPending || !payAccount || !payAmount}
+            >
               {payMutation.isPending ? "Posting…" : "Post receipt"}
             </Button>
           </div>
@@ -837,7 +949,8 @@ export default function SalesPage() {
                       const returnable = Number(item.qty) - Number(item.returned_qty ?? 0);
                       return (
                         <option key={item.id} value={item.id} disabled={returnable <= 0}>
-                          {item.medicine_name} · {item.batch_number} · returnable {formatQty(returnable)}
+                          {item.medicine_name} · {item.batch_number} · returnable{" "}
+                          {formatQty(returnable)}
                         </option>
                       );
                     })}
@@ -854,7 +967,10 @@ export default function SalesPage() {
                 />
               </Field>
               <Field label="Condition">
-                <Select value={returnCondition} onChange={(e) => setReturnCondition(e.target.value)}>
+                <Select
+                  value={returnCondition}
+                  onChange={(e) => setReturnCondition(e.target.value)}
+                >
                   <option value="RESELLABLE">Resellable (restock)</option>
                   <option value="DAMAGED">Damaged (quarantine)</option>
                   <option value="EXPIRED">Expired (quarantine)</option>
@@ -870,7 +986,10 @@ export default function SalesPage() {
                 </Select>
               </Field>
               <Field label="Refund method">
-                <Select value={returnRefundMethod} onChange={(e) => setReturnRefundMethod(e.target.value)}>
+                <Select
+                  value={returnRefundMethod}
+                  onChange={(e) => setReturnRefundMethod(e.target.value)}
+                >
                   <option value="CUSTOMER_CREDIT">Customer credit</option>
                   <option value="ADJUST_DUES">Adjust dues</option>
                   <option value="CASH">Cash refund</option>
@@ -879,7 +998,10 @@ export default function SalesPage() {
               </Field>
               {returnRefundMethod === "CASH" || returnRefundMethod === "BANK" ? (
                 <Field label="Refund account">
-                  <Select value={returnAccountId} onChange={(e) => setReturnAccountId(e.target.value)}>
+                  <Select
+                    value={returnAccountId}
+                    onChange={(e) => setReturnAccountId(e.target.value)}
+                  >
                     <option value="">Select…</option>
                     {accountsQuery.data?.results.map((account) => (
                       <option key={account.id} value={account.id}>
@@ -893,8 +1015,10 @@ export default function SalesPage() {
             {selectedReturnItem ? (
               <p className="text-xs text-slate-500">
                 Returnable now:{" "}
-                {formatQty(Number(selectedReturnItem.qty) - Number(selectedReturnItem.returned_qty ?? 0))} · unit
-                price {formatMoney(selectedReturnItem.unit_price)}
+                {formatQty(
+                  Number(selectedReturnItem.qty) - Number(selectedReturnItem.returned_qty ?? 0),
+                )}{" "}
+                · unit price {formatMoney(selectedReturnItem.unit_price)}
               </p>
             ) : null}
             <Button
@@ -903,7 +1027,8 @@ export default function SalesPage() {
                 returnMutation.isPending ||
                 !returnItemId ||
                 !returnQty ||
-                ((returnRefundMethod === "CASH" || returnRefundMethod === "BANK") && !returnAccountId)
+                ((returnRefundMethod === "CASH" || returnRefundMethod === "BANK") &&
+                  !returnAccountId)
               }
             >
               {returnMutation.isPending ? "Processing…" : "Create & confirm return"}
@@ -983,108 +1108,123 @@ export default function SalesPage() {
           <EmptyState message="No invoices yet." />
         ) : (
           <>
-          <ul className="divide-y divide-slate-100">
-            {salesQuery.data.results.map((invoice) => (
-              <li key={invoice.id} className="space-y-2 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium">
-                      <Link href={`/sales/${invoice.id}`} className="text-primary-700 hover:underline">
-                        {invoice.number ?? "Draft"}
-                      </Link>{" "}
-                      <span className="text-xs text-slate-500">{invoice.customer_name}</span>
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {formatDate(invoice.business_date)} · {invoice.items.length} line(s)
-                      {invoice.due_date ? ` · due ${formatDate(invoice.due_date)}` : ""}
-                    </p>
+            <ul className="divide-y divide-slate-100">
+              {salesQuery.data.results.map((invoice) => (
+                <li key={invoice.id} className="space-y-2 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-medium">
+                        <Link
+                          href={`/sales/${invoice.id}`}
+                          className="text-primary-700 hover:underline"
+                        >
+                          {invoice.number ?? "Draft"}
+                        </Link>{" "}
+                        <span className="text-xs text-slate-500">{invoice.customer_name}</span>
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {formatDate(invoice.business_date)} · {invoice.items.length} line(s)
+                        {invoice.due_date ? ` · due ${formatDate(invoice.due_date)}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={lifecycleTone(invoice.lifecycle)}>{invoice.lifecycle}</Badge>
+                      <Badge tone={paymentTone(invoice.payment_status)}>
+                        {invoice.payment_status}
+                      </Badge>
+                      {invoice.fulfillment_status === "DELIVERED" ? (
+                        <Badge tone="blue">Delivered</Badge>
+                      ) : null}
+                      {invoice.credit_override ? <Badge tone="amber">Credit override</Badge> : null}
+                      {invoice.fefo_override ? <Badge tone="amber">FEFO override</Badge> : null}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={lifecycleTone(invoice.lifecycle)}>{invoice.lifecycle}</Badge>
-                    <Badge tone={paymentTone(invoice.payment_status)}>{invoice.payment_status}</Badge>
-                    {invoice.fulfillment_status === "DELIVERED" ? (
-                      <Badge tone="blue">Delivered</Badge>
-                    ) : null}
-                    {invoice.credit_override ? <Badge tone="amber">Credit override</Badge> : null}
-                    {invoice.fefo_override ? <Badge tone="amber">FEFO override</Badge> : null}
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm">
-                    Total <strong>{formatMoney(invoice.grand_total)}</strong> · Paid{" "}
-                    {formatMoney(invoice.paid_total)} ·{" "}
-                    <span className={Number(invoice.outstanding) > 0 ? "text-danger-700" : "text-primary-700"}>
-                      Outstanding {formatMoney(invoice.outstanding)}
-                    </span>
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {invoice.lifecycle === "DRAFT" ? (
-                      <>
-                        <Button size="sm" onClick={() => openConfirm(invoice)} disabled={!accountsQuery.data}>
-                          Confirm
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm">
+                      Total <strong>{formatMoney(invoice.grand_total)}</strong> · Paid{" "}
+                      {formatMoney(invoice.paid_total)} ·{" "}
+                      <span
+                        className={
+                          Number(invoice.outstanding) > 0 ? "text-danger-700" : "text-primary-700"
+                        }
+                      >
+                        Outstanding {formatMoney(invoice.outstanding)}
+                      </span>
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {invoice.lifecycle === "DRAFT" ? (
+                        <>
+                          <Button
+                            size="sm"
+                            onClick={() => openConfirm(invoice)}
+                            disabled={!accountsQuery.data}
+                          >
+                            Confirm
+                          </Button>
+                          <ConfirmButton
+                            size="sm"
+                            variant="ghost"
+                            confirmLabel="Delete draft?"
+                            onConfirm={() => deleteDraftMutation.mutate(invoice)}
+                            disabled={deleteDraftMutation.isPending}
+                          >
+                            Delete
+                          </ConfirmButton>
+                        </>
+                      ) : null}
+                      {invoice.lifecycle === "CONFIRMED" && Number(invoice.outstanding) > 0 ? (
+                        <Button size="sm" variant="secondary" onClick={() => openPay(invoice)}>
+                          Receive payment
                         </Button>
-                        <ConfirmButton
+                      ) : null}
+                      {invoice.lifecycle === "CONFIRMED" &&
+                      Number(invoice.paid_total) === 0 &&
+                      invoice.return_status === "NONE" &&
+                      hasPerm("SALE_CANCEL") ? (
+                        <Button
                           size="sm"
                           variant="ghost"
-                          confirmLabel="Delete draft?"
-                          onConfirm={() => deleteDraftMutation.mutate(invoice)}
-                          disabled={deleteDraftMutation.isPending}
+                          onClick={() => openCancel(invoice)}
+                          disabled={cancelMutation.isPending}
                         >
-                          Delete
-                        </ConfirmButton>
-                      </>
-                    ) : null}
-                    {invoice.lifecycle === "CONFIRMED" && Number(invoice.outstanding) > 0 ? (
-                      <Button size="sm" variant="secondary" onClick={() => openPay(invoice)}>
-                        Receive payment
-                      </Button>
-                    ) : null}
-                    {invoice.lifecycle === "CONFIRMED" &&
-                    Number(invoice.paid_total) === 0 &&
-                    invoice.return_status === "NONE" &&
-                    hasPerm("SALE_CANCEL") ? (
+                          Cancel
+                        </Button>
+                      ) : null}
+                      {invoice.lifecycle === "CONFIRMED" &&
+                      invoice.fulfillment_status !== "DELIVERED" ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => deliveredMutation.mutate(invoice)}
+                          disabled={deliveredMutation.isPending}
+                        >
+                          Mark delivered
+                        </Button>
+                      ) : null}
+                      {invoice.lifecycle === "CONFIRMED" &&
+                      invoice.return_status !== "FULLY_RETURNED" ? (
+                        <Button size="sm" variant="secondary" onClick={() => openReturn(invoice)}>
+                          Return
+                        </Button>
+                      ) : null}
+                      <Link href={`/sales/${invoice.id}`}>
+                        <Button size="sm" variant="secondary">
+                          View / Print
+                        </Button>
+                      </Link>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => openCancel(invoice)}
-                        disabled={cancelMutation.isPending}
+                        onClick={() =>
+                          apiDownload(
+                            `/sales/${invoice.id}/print/`,
+                            `${invoice.number ?? "invoice"}.pdf`,
+                          )
+                        }
                       >
-                        Cancel
+                        PDF
                       </Button>
-                    ) : null}
-                    {invoice.lifecycle === "CONFIRMED" && invoice.fulfillment_status !== "DELIVERED" ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => deliveredMutation.mutate(invoice)}
-                        disabled={deliveredMutation.isPending}
-                      >
-                        Mark delivered
-                      </Button>
-                    ) : null}
-                    {invoice.lifecycle === "CONFIRMED" && invoice.return_status !== "FULLY_RETURNED" ? (
-                      <Button size="sm" variant="secondary" onClick={() => openReturn(invoice)}>
-                        Return
-                      </Button>
-                    ) : null}
-                    <Link href={`/sales/${invoice.id}`}>
-                      <Button size="sm" variant="secondary">
-                        View / Print
-                      </Button>
-                    </Link>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        apiDownload(
-                          `/sales/${invoice.id}/print/`,
-                          `${invoice.number ?? "invoice"}.pdf`,
-                        )
-                      }
-                    >
-                      PDF
-                    </Button>
-                  </div>
+                    </div>
                   </div>
                 </li>
               ))}

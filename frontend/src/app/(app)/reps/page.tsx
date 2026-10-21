@@ -3,15 +3,29 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner, Tabs } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+  Tabs,
+} from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks";
 import type {
   Branch,
   Customer,
   Doctor,
   Paginated,
+  RepPerformanceReport,
   Representative,
   RepresentativeAssignment,
   Territory,
@@ -33,6 +47,95 @@ const emptyTerritory = {
   territory_type: "AREA",
   parent: "",
 };
+
+function RepPerformanceCard({ repId }: { repId: string }) {
+  const now = new Date();
+  const [fiscalYear, setFiscalYear] = useState(now.getFullYear());
+  const [periodMonth, setPeriodMonth] = useState(now.getMonth() + 1);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["rep-performance", repId, fiscalYear, periodMonth],
+    queryFn: () =>
+      api.get<RepPerformanceReport>(
+        `/reports/rep-performance/?representative=${repId}&fiscal_year=${fiscalYear}&period_month=${periodMonth}`,
+      ),
+  });
+
+  const row = data?.results[0];
+  const pct = row?.achievement_pct ?? null;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase text-slate-500">
+          Target vs actual (sales)
+        </p>
+        <div className="flex gap-2">
+          <Select
+            value={fiscalYear}
+            onChange={(e) => setFiscalYear(Number(e.target.value))}
+            className="w-28"
+            aria-label="Fiscal year"
+          >
+            {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map((year) => (
+              <option key={year} value={year}>
+                FY {year}
+              </option>
+            ))}
+          </Select>
+          <Select
+            value={periodMonth}
+            onChange={(e) => setPeriodMonth(Number(e.target.value))}
+            className="w-36"
+            aria-label="Month"
+          >
+            {Array.from({ length: 12 }, (_, i) => (
+              <option key={i + 1} value={i + 1}>
+                {new Date(2020, i, 1).toLocaleDateString("en-GB", { month: "long" })}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+      <ErrorBanner error={error} />
+      {isLoading ? (
+        <Spinner />
+      ) : !row ? (
+        <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+          No target or sales recorded for this period.
+        </p>
+      ) : (
+        <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+          <div className="flex items-center justify-between text-sm">
+            <span>
+              {formatMoney(row.actual_sales)}{" "}
+              <span className="text-xs text-slate-500">of {formatMoney(row.target_amount)}</span>
+            </span>
+            {pct === null ? (
+              <Badge tone="slate">No target</Badge>
+            ) : (
+              <Badge tone={pct >= 100 ? "green" : pct >= 75 ? "amber" : "rose"}>{pct}%</Badge>
+            )}
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={`h-full rounded-full ${
+                pct === null
+                  ? "bg-slate-300"
+                  : pct >= 100
+                    ? "bg-primary-600"
+                    : pct >= 75
+                      ? "bg-amber-500"
+                      : "bg-danger-500"
+              }`}
+              style={{ width: `${Math.min(pct ?? 0, 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function RepPanel({ rep, onClose }: { rep: Representative; onClose: () => void }) {
   const queryClient = useQueryClient();
@@ -66,7 +169,11 @@ function RepPanel({ rep, onClose }: { rep: Representative; onClose: () => void }
 
   const assignMutation = useMutation({
     meta: { successMessage: "Assignment added" },
-    mutationFn: () => api.post(`/representatives/${rep.id}/assign/`, { entity_type: entityType, entity_id: entityId }),
+    mutationFn: () =>
+      api.post(`/representatives/${rep.id}/assign/`, {
+        entity_type: entityType,
+        entity_id: entityId,
+      }),
     onSuccess: () => {
       setEntityId("");
       invalidate();
@@ -83,8 +190,10 @@ function RepPanel({ rep, onClose }: { rep: Representative; onClose: () => void }
   });
 
   const options = (() => {
-    if (entityType === "CUSTOMER") return (customersQuery.data?.results ?? []).map((c) => ({ id: c.id, label: c.name }));
-    if (entityType === "DOCTOR") return (doctorsQuery.data?.results ?? []).map((d) => ({ id: d.id, label: d.name }));
+    if (entityType === "CUSTOMER")
+      return (customersQuery.data?.results ?? []).map((c) => ({ id: c.id, label: c.name }));
+    if (entityType === "DOCTOR")
+      return (doctorsQuery.data?.results ?? []).map((d) => ({ id: d.id, label: d.name }));
     return (territoriesQuery.data?.results ?? []).map((t) => ({ id: t.id, label: t.name }));
   })();
 
@@ -109,14 +218,21 @@ function RepPanel({ rep, onClose }: { rep: Representative; onClose: () => void }
         ) : (
           <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
             {assignmentsQuery.data.map((assignment) => (
-              <li key={assignment.id} className="flex items-center justify-between px-3 py-2 text-sm">
+              <li
+                key={assignment.id}
+                className="flex items-center justify-between px-3 py-2 text-sm"
+              >
                 <div>
                   <p className="font-medium">{assignment.entity_label}</p>
                   <p className="text-xs text-slate-500">
                     {assignment.entity_type} · since {formatDate(assignment.effective_from)}
                   </p>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => unassignMutation.mutate(assignment)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => unassignMutation.mutate(assignment)}
+                >
                   Unassign
                 </Button>
               </li>
@@ -151,10 +267,16 @@ function RepPanel({ rep, onClose }: { rep: Representative; onClose: () => void }
               </Select>
             </Field>
           </div>
-          <Button size="sm" onClick={() => assignMutation.mutate()} disabled={!entityId || assignMutation.isPending}>
+          <Button
+            size="sm"
+            onClick={() => assignMutation.mutate()}
+            disabled={!entityId || assignMutation.isPending}
+          >
             Assign
           </Button>
         </div>
+
+        <RepPerformanceCard repId={rep.id} />
       </div>
     </Card>
   );
@@ -260,22 +382,39 @@ export default function RepsPage() {
                   <ErrorBanner error={repMutation.error} />
                 </div>
                 <Field label="Code" error={fieldError(repMutation.error, "code")}>
-                  <Input value={repForm.code} onChange={(e) => setRepForm({ ...repForm, code: e.target.value })} required />
+                  <Input
+                    value={repForm.code}
+                    onChange={(e) => setRepForm({ ...repForm, code: e.target.value })}
+                    required
+                  />
                 </Field>
                 <Field label="Name" error={fieldError(repMutation.error, "name")}>
-                  <Input value={repForm.name} onChange={(e) => setRepForm({ ...repForm, name: e.target.value })} required />
+                  <Input
+                    value={repForm.name}
+                    onChange={(e) => setRepForm({ ...repForm, name: e.target.value })}
+                    required
+                  />
                 </Field>
                 <Field label="Type" error={fieldError(repMutation.error, "rep_type")}>
-                  <Select value={repForm.rep_type} onChange={(e) => setRepForm({ ...repForm, rep_type: e.target.value })}>
+                  <Select
+                    value={repForm.rep_type}
+                    onChange={(e) => setRepForm({ ...repForm, rep_type: e.target.value })}
+                  >
                     <option value="SALES">Sales representative</option>
                     <option value="MEDICAL">Medical representative</option>
                   </Select>
                 </Field>
                 <Field label="Phone" error={fieldError(repMutation.error, "phone")}>
-                  <Input value={repForm.phone} onChange={(e) => setRepForm({ ...repForm, phone: e.target.value })} />
+                  <Input
+                    value={repForm.phone}
+                    onChange={(e) => setRepForm({ ...repForm, phone: e.target.value })}
+                  />
                 </Field>
                 <Field label="Branch" error={fieldError(repMutation.error, "branch")}>
-                  <Select value={repForm.branch} onChange={(e) => setRepForm({ ...repForm, branch: e.target.value })}>
+                  <Select
+                    value={repForm.branch}
+                    onChange={(e) => setRepForm({ ...repForm, branch: e.target.value })}
+                  >
                     <option value="">—</option>
                     {branchesQuery.data?.results.map((branch) => (
                       <option key={branch.id} value={branch.id}>
@@ -293,7 +432,10 @@ export default function RepsPage() {
             </Card>
           ) : null}
           <Card>
-            <CardHeader title="Representatives" subtitle={repsQuery.data ? `${repsQuery.data.count} rep(s)` : undefined} />
+            <CardHeader
+              title="Representatives"
+              subtitle={repsQuery.data ? `${repsQuery.data.count} rep(s)` : undefined}
+            />
             <ErrorBanner error={repsQuery.error} />
             {repsQuery.isLoading ? (
               <Spinner />
@@ -302,10 +444,14 @@ export default function RepsPage() {
             ) : (
               <ul className="divide-y divide-slate-100">
                 {repsQuery.data.results.map((rep) => (
-                  <li key={rep.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
+                  <li
+                    key={rep.id}
+                    className="flex flex-wrap items-center justify-between gap-2 p-4"
+                  >
                     <div>
                       <p className="font-medium">
-                        {rep.name} <span className="font-mono text-xs text-slate-500">{rep.code}</span>
+                        {rep.name}{" "}
+                        <span className="font-mono text-xs text-slate-500">{rep.code}</span>
                       </p>
                       <p className="text-xs text-slate-500">
                         {rep.rep_type} · {rep.phone || "no phone"}
@@ -357,7 +503,9 @@ export default function RepsPage() {
                 <Field label="Type" error={fieldError(territoryMutation.error, "territory_type")}>
                   <Select
                     value={territoryForm.territory_type}
-                    onChange={(e) => setTerritoryForm({ ...territoryForm, territory_type: e.target.value })}
+                    onChange={(e) =>
+                      setTerritoryForm({ ...territoryForm, territory_type: e.target.value })
+                    }
                   >
                     <option value="REGION">Region</option>
                     <option value="AREA">Area</option>
@@ -386,7 +534,12 @@ export default function RepsPage() {
             </Card>
           ) : null}
           <Card>
-            <CardHeader title="Territories" subtitle={territoriesQuery.data ? `${territoriesQuery.data.count} territory(ies)` : undefined} />
+            <CardHeader
+              title="Territories"
+              subtitle={
+                territoriesQuery.data ? `${territoriesQuery.data.count} territory(ies)` : undefined
+              }
+            />
             <ErrorBanner error={territoriesQuery.error} />
             {territoriesQuery.isLoading ? (
               <Spinner />
@@ -403,7 +556,11 @@ export default function RepsPage() {
                         {territory.parent_name ? ` · parent: ${territory.parent_name}` : ""}
                       </p>
                     </div>
-                    {territory.is_active ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
+                    {territory.is_active ? (
+                      <Badge tone="green">Active</Badge>
+                    ) : (
+                      <Badge>Inactive</Badge>
+                    )}
                   </li>
                 ))}
               </ul>

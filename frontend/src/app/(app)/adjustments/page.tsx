@@ -4,7 +4,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmButton,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { AttachmentPanel } from "@/components/attachments";
 import { MedicineCombobox } from "@/components/medicine-combobox";
 import { ApiError, api } from "@/lib/api";
@@ -98,7 +111,8 @@ export default function AdjustmentsPage() {
             batch: form.batch,
             qty: form.qty,
             pool: form.pool,
-            target_pool: form.adjustment_type === "DECREASE" && form.target_pool ? form.target_pool : null,
+            target_pool:
+              form.adjustment_type === "DECREASE" && form.target_pool ? form.target_pool : null,
             unit_cost: form.unit_cost || null,
           },
         ],
@@ -171,7 +185,11 @@ export default function AdjustmentsPage() {
               <ErrorBanner error={createMutation.error} />
             </div>
             <Field label="Branch" error={fieldError("branch")}>
-              <Select value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} required>
+              <Select
+                value={form.branch}
+                onChange={(e) => setForm({ ...form, branch: e.target.value })}
+                required
+              >
                 <option value="">Select…</option>
                 {branchesQuery.data?.results.map((branch) => (
                   <option key={branch.id} value={branch.id}>
@@ -190,7 +208,10 @@ export default function AdjustmentsPage() {
               </Select>
             </Field>
             <Field label="Reason" error={fieldError("reason_code")}>
-              <Select value={form.reason_code} onChange={(e) => setForm({ ...form, reason_code: e.target.value })}>
+              <Select
+                value={form.reason_code}
+                onChange={(e) => setForm({ ...form, reason_code: e.target.value })}
+              >
                 {REASONS.map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
@@ -217,7 +238,8 @@ export default function AdjustmentsPage() {
                   <option value="">Select…</option>
                   {batchesQuery.data?.results.map((batch) => (
                     <option key={batch.id} value={batch.id}>
-                      {batch.batch_number} · qty {formatQty(batch.qty_on_hand)} · exp {batch.expiry_date ? formatDate(batch.expiry_date) : "—"}
+                      {batch.batch_number} · qty {formatQty(batch.qty_on_hand)} · exp{" "}
+                      {batch.expiry_date ? formatDate(batch.expiry_date) : "—"}
                     </option>
                   ))}
                 </Select>
@@ -244,7 +266,10 @@ export default function AdjustmentsPage() {
               />
             </Field>
             <Field label="From pool">
-              <Select value={form.pool} onChange={(e) => setForm({ ...form, pool: e.target.value })}>
+              <Select
+                value={form.pool}
+                onChange={(e) => setForm({ ...form, pool: e.target.value })}
+              >
                 <option value="SALEABLE">Saleable</option>
                 <option value="PROMO">Promotional</option>
                 <option value="QUARANTINE">Quarantine</option>
@@ -265,7 +290,10 @@ export default function AdjustmentsPage() {
             ) : null}
             <div className="col-span-2 lg:col-span-4">
               <Field label="Notes" error={fieldError("notes")}>
-                <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+                <Input
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                />
               </Field>
             </div>
             <div className="col-span-2 lg:col-span-4">
@@ -295,7 +323,9 @@ export default function AdjustmentsPage() {
             <Button
               variant="danger"
               disabled={actionMutation.isPending || !rejectReason}
-              onClick={() => actionMutation.mutate({ id: rejectFor.id, action: "reject", reason: rejectReason })}
+              onClick={() =>
+                actionMutation.mutate({ id: rejectFor.id, action: "reject", reason: rejectReason })
+              }
             >
               Reject adjustment
             </Button>
@@ -324,7 +354,13 @@ export default function AdjustmentsPage() {
             <Button
               variant="danger"
               disabled={actionMutation.isPending || !reverseReason}
-              onClick={() => actionMutation.mutate({ id: reverseFor.id, action: "reverse", reason: reverseReason })}
+              onClick={() =>
+                actionMutation.mutate({
+                  id: reverseFor.id,
+                  action: "reverse",
+                  reason: reverseReason,
+                })
+              }
             >
               Reverse adjustment
             </Button>
@@ -351,7 +387,9 @@ export default function AdjustmentsPage() {
       <Card>
         <CardHeader
           title="Adjustment register"
-          subtitle={adjustmentsQuery.data ? `${adjustmentsQuery.data.count} adjustment(s)` : undefined}
+          subtitle={
+            adjustmentsQuery.data ? `${adjustmentsQuery.data.count} adjustment(s)` : undefined
+          }
           action={
             <Input
               placeholder="Search medicine, notes…"
@@ -389,32 +427,47 @@ export default function AdjustmentsPage() {
                       </p>
                       <p className="text-xs text-slate-500">
                         {formatDate(adjustment.business_date)} · {adjustment.adjustment_type} ·{" "}
-                        {adjustment.reason_code.replace(/_/g, " ").toLowerCase()} · value {formatMoney(adjustment.total_value)}
+                        {adjustment.reason_code.replace(/_/g, " ").toLowerCase()} · value{" "}
+                        {formatMoney(adjustment.total_value)}
                       </p>
                       <p className="text-xs text-slate-500">
                         Requested by {adjustment.requested_by_name || "—"}
-                        {adjustment.approved_by_name ? ` · approved by ${adjustment.approved_by_name}` : ""}
-                        {adjustment.rejection_reason ? ` · rejected: ${adjustment.rejection_reason}` : ""}
+                        {adjustment.approved_by_name
+                          ? ` · approved by ${adjustment.approved_by_name}`
+                          : ""}
+                        {adjustment.rejection_reason
+                          ? ` · rejected: ${adjustment.rejection_reason}`
+                          : ""}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={statusTone(adjustment.status)}>{adjustment.status.replace("_", " ")}</Badge>
+                      <Badge tone={statusTone(adjustment.status)}>
+                        {adjustment.status.replace("_", " ")}
+                      </Badge>
                       {canApprove ? (
                         <>
                           <ConfirmButton
                             size="sm"
                             confirmLabel="Confirm approve?"
                             disabled={actionMutation.isPending}
-                            onConfirm={() => actionMutation.mutate({ id: adjustment.id, action: "approve" })}
+                            onConfirm={() =>
+                              actionMutation.mutate({ id: adjustment.id, action: "approve" })
+                            }
                           >
                             Approve
                           </ConfirmButton>
-                          <Button size="sm" variant="ghost" onClick={() => setRejectFor(adjustment)}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setRejectFor(adjustment)}
+                          >
                             Reject
                           </Button>
                         </>
                       ) : null}
-                      <Button size="sm" variant="secondary" onClick={() => setFilesFor(adjustment)}>Files</Button>
+                      <Button size="sm" variant="secondary" onClick={() => setFilesFor(adjustment)}>
+                        Files
+                      </Button>
                       {adjustment.status === "POSTED" && hasPerm("STOCK_ADJUST") ? (
                         <Button
                           size="sm"
@@ -433,9 +486,10 @@ export default function AdjustmentsPage() {
                   <ul className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
                     {adjustment.items.map((item) => (
                       <li key={item.id}>
-                        {item.medicine_name} ({item.medicine_code}) · batch {item.batch_number} · qty {formatQty(item.qty)} ·{" "}
-                        {item.pool}
-                        {item.target_pool ? ` → ${item.target_pool}` : ""} @ {formatMoney(item.unit_cost)}
+                        {item.medicine_name} ({item.medicine_code}) · batch {item.batch_number} ·
+                        qty {formatQty(item.qty)} · {item.pool}
+                        {item.target_pool ? ` → ${item.target_pool}` : ""} @{" "}
+                        {formatMoney(item.unit_cost)}
                       </li>
                     ))}
                   </ul>

@@ -4,7 +4,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks";
@@ -43,13 +55,16 @@ export default function IncomePage() {
   const summaryQuery = useQuery({
     queryKey: ["income-summary"],
     queryFn: () =>
-      api.get<{ count: number; total: string; results: { category_name: string; total: string }[] }>(
-        "/incomes/reports/summary/",
-      ),
+      api.get<{
+        count: number;
+        total: string;
+        results: { category_name: string; total: string }[];
+      }>("/incomes/reports/summary/"),
   });
   const categoriesQuery = useQuery({
     queryKey: ["income-categories"],
-    queryFn: () => api.get<Paginated<IncomeCategory>>("/income-categories/?page_size=100&is_active=true"),
+    queryFn: () =>
+      api.get<Paginated<IncomeCategory>>("/income-categories/?page_size=100&is_active=true"),
   });
   const branchesQuery = useQuery({
     queryKey: ["branches", "select"],
@@ -78,7 +93,8 @@ export default function IncomePage() {
   });
   const reverseMutation = useMutation({
     meta: { successMessage: "Income reversed" },
-    mutationFn: (income: Income) => api.post(`/incomes/${income.id}/reverse/`, { reason: reverseReason }),
+    mutationFn: (income: Income) =>
+      api.post(`/incomes/${income.id}/reverse/`, { reason: reverseReason }),
     onSuccess: () => {
       setReverseFor(null);
       setReverseReason("");
@@ -135,10 +151,15 @@ export default function IncomePage() {
       {summaryQuery.data ? (
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Posted income</p>
-          <p className="text-2xl font-bold text-primary-700">{formatMoney(summaryQuery.data.total)}</p>
+          <p className="text-2xl font-bold text-primary-700">
+            {formatMoney(summaryQuery.data.total)}
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {summaryQuery.data.results.map((row) => (
-              <span key={row.category_name} className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
+              <span
+                key={row.category_name}
+                className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700"
+              >
                 {row.category_name}: <strong>{formatMoney(row.total)}</strong>
               </span>
             ))}
@@ -154,7 +175,11 @@ export default function IncomePage() {
               <ErrorBanner error={createMutation.error} />
             </div>
             <Field label="Branch" error={fieldError("branch")}>
-              <Select value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} required>
+              <Select
+                value={form.branch}
+                onChange={(e) => setForm({ ...form, branch: e.target.value })}
+                required
+              >
                 <option value="">Select…</option>
                 {branchesQuery.data?.results.map((branch) => (
                   <option key={branch.id} value={branch.id}>
@@ -164,7 +189,11 @@ export default function IncomePage() {
               </Select>
             </Field>
             <Field label="Category" error={fieldError("category")}>
-              <Select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} required>
+              <Select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                required
+              >
                 <option value="">Select…</option>
                 {categoriesQuery.data?.results.map((category) => (
                   <option key={category.id} value={category.id}>
@@ -184,7 +213,11 @@ export default function IncomePage() {
               />
             </Field>
             <Field label="Received in" error={fieldError("account")}>
-              <Select value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })} required>
+              <Select
+                value={form.account}
+                onChange={(e) => setForm({ ...form, account: e.target.value })}
+                required
+              >
                 <option value="">Select…</option>
                 {accountsQuery.data?.results.map((account) => (
                   <option key={account.id} value={account.id}>
@@ -194,14 +227,23 @@ export default function IncomePage() {
               </Select>
             </Field>
             <Field label="Source / payer" error={fieldError("source")}>
-              <Input value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} />
+              <Input
+                value={form.source}
+                onChange={(e) => setForm({ ...form, source: e.target.value })}
+              />
             </Field>
             <Field label="Reference" error={fieldError("reference")}>
-              <Input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} />
+              <Input
+                value={form.reference}
+                onChange={(e) => setForm({ ...form, reference: e.target.value })}
+              />
             </Field>
             <div className="col-span-2">
               <Field label="Note" error={fieldError("note")}>
-                <Input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+                <Input
+                  value={form.note}
+                  onChange={(e) => setForm({ ...form, note: e.target.value })}
+                />
               </Field>
             </div>
             <div className="col-span-2 lg:col-span-4">
@@ -241,7 +283,10 @@ export default function IncomePage() {
       ) : null}
 
       <Card>
-        <CardHeader title="Income register" subtitle={incomesQuery.data ? `${incomesQuery.data.count} entry(ies)` : undefined} />
+        <CardHeader
+          title="Income register"
+          subtitle={incomesQuery.data ? `${incomesQuery.data.count} entry(ies)` : undefined}
+        />
         <ErrorBanner error={incomesQuery.error} />
         {incomesQuery.isLoading ? (
           <Spinner />
@@ -257,13 +302,18 @@ export default function IncomePage() {
                     <span className="text-xs text-slate-500">{income.category_name}</span>
                   </p>
                   <p className="text-xs text-slate-500">
-                    {formatDate(income.business_date)} · {income.account_name} · {income.source || "—"}
+                    {formatDate(income.business_date)} · {income.account_name} ·{" "}
+                    {income.source || "—"}
                     {income.posted_by_name ? ` · by ${income.posted_by_name}` : ""}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono font-semibold">{formatMoney(income.amount)}</span>
-                  {income.status === "POSTED" ? <Badge tone="green">Posted</Badge> : <Badge tone="rose">Reversed</Badge>}
+                  {income.status === "POSTED" ? (
+                    <Badge tone="green">Posted</Badge>
+                  ) : (
+                    <Badge tone="rose">Reversed</Badge>
+                  )}
                   {income.status === "POSTED" && hasPerm("INCOME_POST") ? (
                     <Button
                       size="sm"

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
 
-import { Badge, Button, ErrorBanner, Field, Spinner, pushToast } from "@/components/ui";
+import { Badge, Button, ErrorBanner, Spinner, pushToast } from "@/components/ui";
 import { ApiError, api, apiDownload, apiUpload } from "@/lib/api";
 import type { AttachmentRow } from "@/lib/types";
 
@@ -85,7 +85,10 @@ export function AttachmentPanel({
                 variant="secondary"
                 onClick={async () => {
                   try {
-                    await apiDownload(`/attachments/${attachment.id}/download/`, attachment.file_name);
+                    await apiDownload(
+                      `/attachments/${attachment.id}/download/`,
+                      attachment.file_name,
+                    );
                   } catch (err) {
                     pushToast(err instanceof ApiError ? err.message : "Download failed", "error");
                   }

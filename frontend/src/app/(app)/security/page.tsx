@@ -4,7 +4,16 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAuth } from "@/app/providers";
-import { Badge, Button, Card, CardHeader, ErrorBanner, Field, Input, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  ErrorBanner,
+  Field,
+  Input,
+  Spinner,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import type { CurrentUser } from "@/lib/types";
 
@@ -62,7 +71,11 @@ export default function SecurityPage() {
           title="Two-factor authentication (TOTP)"
           subtitle="Time-based codes from Google Authenticator, Authy or any TOTP app."
           action={
-            user.totp_enabled ? <Badge tone="green">Enabled</Badge> : <Badge tone="slate">Disabled</Badge>
+            user.totp_enabled ? (
+              <Badge tone="green">Enabled</Badge>
+            ) : (
+              <Badge tone="slate">Disabled</Badge>
+            )
           }
         />
 
@@ -85,11 +98,14 @@ export default function SecurityPage() {
             ) : (
               <>
                 <p className="text-sm text-slate-600">
-                  Add this key to your authenticator app (manual entry), then enter the generated code.
+                  Add this key to your authenticator app (manual entry), then enter the generated
+                  code.
                 </p>
                 <div className="space-y-1 rounded-lg bg-slate-50 p-3">
                   <p className="font-mono text-sm tracking-widest text-slate-800">{secret}</p>
-                  <p className="break-all font-mono text-[11px] text-slate-500">{provisioningUri}</p>
+                  <p className="break-all font-mono text-[11px] text-slate-500">
+                    {provisioningUri}
+                  </p>
                   <button
                     type="button"
                     className="text-xs text-primary-700 hover:underline"
@@ -141,8 +157,8 @@ export default function SecurityPage() {
           <div className="space-y-3 p-4">
             <ErrorBanner error={disableMutation.error} />
             <p className="text-sm text-slate-600">
-              Two-factor is active. Enter a current code to turn it off. If you lose your device, ask
-              an administrator to reset it.
+              Two-factor is active. Enter a current code to turn it off. If you lose your device,
+              ask an administrator to reset it.
             </p>
             <Field label="Authenticator code">
               <Input

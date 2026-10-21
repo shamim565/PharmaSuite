@@ -5,23 +5,43 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import type { ReactNode } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Spinner, Tabs } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+  Tabs,
+} from "@/components/ui";
 import { api, apiDownload } from "@/lib/api";
 import { formatDate, formatMoney, formatQty } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/hooks";
 import type {
   AttributionReport,
+  CollectionEfficiencyReport,
+  ExceptionReport,
   ExpiryReportRow,
   FinancialPositionReport,
+  InventoryDsiReport,
   InventoryTransaction,
   InventoryValuationReport,
+  MarginAnalysisReport,
   Paginated,
   PayableAgingRow,
   ProfitLossReport,
   PurchasesSummaryReport,
   ReceivableAgingRow,
+  RepPerformanceReport,
   SalesByCustomerReport,
   SalesByItemReport,
   SalesSummaryReport,
+  SupplierConcentrationReport,
   VisitCoverageRow,
 } from "@/lib/types";
 
@@ -39,6 +59,12 @@ const TABS = [
   "Sales by doctor",
   "Sales by rep",
   "Visit coverage",
+  "Inventory DSI",
+  "Margin analysis",
+  "Rep performance",
+  "Collection efficiency",
+  "Supplier concentration",
+  "Exceptions",
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -56,6 +82,12 @@ const TAB_SLUGS: Record<Tab, string> = {
   "Sales by doctor": "by-doctor",
   "Sales by rep": "by-rep",
   "Visit coverage": "visits",
+  "Inventory DSI": "dsi",
+  "Margin analysis": "margin",
+  "Rep performance": "rep-perf",
+  "Collection efficiency": "collection",
+  "Supplier concentration": "concentration",
+  Exceptions: "exceptions",
 };
 const SLUG_TO_TAB = Object.fromEntries(
   Object.entries(TAB_SLUGS).map(([tab, slug]) => [slug, tab]),
@@ -161,7 +193,9 @@ function MiniBarChart({
             key={row.label}
             title={row.hint}
             className={`flex-1 rounded-t ${
-              tone === "primary" ? "bg-primary-500/80 hover:bg-primary-600" : "bg-sky-500/70 hover:bg-sky-600"
+              tone === "primary"
+                ? "bg-primary-500/80 hover:bg-primary-600"
+                : "bg-sky-500/70 hover:bg-sky-600"
             }`}
             style={{ height: `${Math.max((Number(row.value) / max) * 100, 3)}%` }}
           />
@@ -200,7 +234,8 @@ function ProfitLossTab() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["pl-report", dateFrom, dateTo],
-    queryFn: () => api.get<ProfitLossReport>(`/reports/profit-loss/?date_from=${dateFrom}&date_to=${dateTo}`),
+    queryFn: () =>
+      api.get<ProfitLossReport>(`/reports/profit-loss/?date_from=${dateFrom}&date_to=${dateTo}`),
   });
 
   return (
@@ -215,7 +250,12 @@ function ProfitLossTab() {
           size="sm"
           variant="secondary"
           className="self-end"
-          onClick={() => apiDownload(`/reports/profit-loss/?date_from=${dateFrom}&date_to=${dateTo}&export=csv`, "profit-loss.csv")}
+          onClick={() =>
+            apiDownload(
+              `/reports/profit-loss/?date_from=${dateFrom}&date_to=${dateTo}&export=csv`,
+              "profit-loss.csv",
+            )
+          }
         >
           Download CSV
         </Button>
@@ -229,14 +269,19 @@ function ProfitLossTab() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Card className="p-4">
               <p className="text-xs uppercase text-slate-500">Net revenue</p>
-              <p className="text-xl font-bold text-slate-800">{money(data.current.revenue.net_revenue)}</p>
+              <p className="text-xl font-bold text-slate-800">
+                {money(data.current.revenue.net_revenue)}
+              </p>
               <p className="text-xs text-slate-500">
-                Sales {money(data.current.revenue.sales_net)} − returns {money(data.current.revenue.returns_net)}
+                Sales {money(data.current.revenue.sales_net)} − returns{" "}
+                {money(data.current.revenue.returns_net)}
               </p>
             </Card>
             <Card className="p-4">
               <p className="text-xs uppercase text-slate-500">Gross profit</p>
-              <p className="text-xl font-bold text-primary-700">{money(data.current.gross_profit)}</p>
+              <p className="text-xl font-bold text-primary-700">
+                {money(data.current.gross_profit)}
+              </p>
               <p className="text-xs text-slate-500">
                 COGS {money(data.current.cogs)}
                 {data.current.gross_margin_pct ? ` · margin ${data.current.gross_margin_pct}%` : ""}
@@ -251,9 +296,12 @@ function ProfitLossTab() {
             </Card>
             <Card className="p-4">
               <p className="text-xs uppercase text-slate-500">Losses</p>
-              <p className="text-xl font-bold text-danger-700">{money(data.current.losses.total)}</p>
+              <p className="text-xl font-bold text-danger-700">
+                {money(data.current.losses.total)}
+              </p>
               <p className="text-xs text-slate-500">
-                Damage {money(data.current.losses.damage)} · expiry {money(data.current.losses.expiry)}
+                Damage {money(data.current.losses.damage)} · expiry{" "}
+                {money(data.current.losses.expiry)}
               </p>
             </Card>
           </div>
@@ -269,26 +317,34 @@ function ProfitLossTab() {
                 <p className="text-lg font-semibold">
                   {money(data.comparison.revenue_delta)}{" "}
                   <Badge tone={deltaTone(data.comparison.revenue_delta)}>
-                    {data.comparison.revenue_delta_pct ? `${data.comparison.revenue_delta_pct}%` : "—"}
+                    {data.comparison.revenue_delta_pct
+                      ? `${data.comparison.revenue_delta_pct}%`
+                      : "—"}
                   </Badge>
                 </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Previous revenue</p>
-                <p className="text-lg font-semibold text-slate-600">{money(data.previous.revenue.net_revenue)}</p>
+                <p className="text-lg font-semibold text-slate-600">
+                  {money(data.previous.revenue.net_revenue)}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Net profit change</p>
                 <p className="text-lg font-semibold">
                   {money(data.comparison.net_profit_delta)}{" "}
                   <Badge tone={deltaTone(data.comparison.net_profit_delta)}>
-                    {data.comparison.net_profit_delta_pct ? `${data.comparison.net_profit_delta_pct}%` : "—"}
+                    {data.comparison.net_profit_delta_pct
+                      ? `${data.comparison.net_profit_delta_pct}%`
+                      : "—"}
                   </Badge>
                 </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Previous net profit</p>
-                <p className="text-lg font-semibold text-slate-600">{money(data.previous.net_profit)}</p>
+                <p className="text-lg font-semibold text-slate-600">
+                  {money(data.previous.net_profit)}
+                </p>
               </div>
             </div>
           </Card>
@@ -298,7 +354,9 @@ function ProfitLossTab() {
             <div className="grid grid-cols-2 gap-3 p-4 text-sm">
               <div>
                 <p className="text-xs text-slate-500">Customer ledger movement (period)</p>
-                <p className="font-semibold">{money(data.current.reconciliation.customer_ledger_delta)}</p>
+                <p className="font-semibold">
+                  {money(data.current.reconciliation.customer_ledger_delta)}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Receipts (period)</p>
@@ -327,12 +385,21 @@ function ValuationTab() {
           <p className="text-xs uppercase text-slate-500">Total inventory value (batch cost)</p>
           <p className="text-2xl font-bold text-slate-800">{money(data?.total_value)}</p>
         </Card>
-        <Button size="sm" variant="secondary" onClick={() => apiDownload("/reports/inventory-valuation/?export=csv", "inventory-valuation.csv")}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() =>
+            apiDownload("/reports/inventory-valuation/?export=csv", "inventory-valuation.csv")
+          }
+        >
           Download CSV
         </Button>
       </div>
       <Card>
-        <CardHeader title="Valuation by branch" subtitle={data ? `${data.count} branch(es)` : undefined} />
+        <CardHeader
+          title="Valuation by branch"
+          subtitle={data ? `${data.count} branch(es)` : undefined}
+        />
         <ErrorBanner error={error} />
         {isLoading ? (
           <Spinner />
@@ -378,7 +445,13 @@ function PositionTab() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button size="sm" variant="secondary" onClick={() => apiDownload("/reports/financial-position/?export=csv", "financial-position.csv")}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() =>
+            apiDownload("/reports/financial-position/?export=csv", "financial-position.csv")
+          }
+        >
           Download CSV
         </Button>
       </div>
@@ -406,7 +479,9 @@ function PositionTab() {
             </Card>
             <Card className="p-4">
               <p className="text-xs uppercase text-slate-500">Quarantine value</p>
-              <p className="text-xl font-bold text-slate-600">{money(data.stock_value_quarantine)}</p>
+              <p className="text-xl font-bold text-slate-600">
+                {money(data.stock_value_quarantine)}
+              </p>
             </Card>
             <Card className="p-4">
               <p className="text-xs uppercase text-slate-500">Net working position</p>
@@ -418,7 +493,10 @@ function PositionTab() {
             <CardHeader title="Account balances" />
             <ul className="divide-y divide-slate-100">
               {data.accounts.map((account) => (
-                <li key={account.account} className="flex items-center justify-between px-4 py-2 text-sm">
+                <li
+                  key={account.account}
+                  className="flex items-center justify-between px-4 py-2 text-sm"
+                >
                   <div>
                     <p className="font-medium">{account.name}</p>
                     <p className="text-xs text-slate-500">
@@ -497,7 +575,15 @@ function VisitCoverageTab() {
                       {row.coverage_pct === null ? (
                         "—"
                       ) : (
-                        <Badge tone={row.coverage_pct >= 80 ? "green" : row.coverage_pct >= 50 ? "amber" : "rose"}>
+                        <Badge
+                          tone={
+                            row.coverage_pct >= 80
+                              ? "green"
+                              : row.coverage_pct >= 50
+                                ? "amber"
+                                : "rose"
+                          }
+                        >
                           {row.coverage_pct}%
                         </Badge>
                       )}
@@ -519,7 +605,8 @@ function AttributionTab({ endpoint, label }: { endpoint: string; label: string }
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["attribution", endpoint, dateFrom, dateTo],
-    queryFn: () => api.get<AttributionReport>(`${endpoint}?date_from=${dateFrom}&date_to=${dateTo}`),
+    queryFn: () =>
+      api.get<AttributionReport>(`${endpoint}?date_from=${dateFrom}&date_to=${dateTo}`),
   });
 
   return (
@@ -534,7 +621,12 @@ function AttributionTab({ endpoint, label }: { endpoint: string; label: string }
           size="sm"
           variant="secondary"
           className="self-end"
-          onClick={() => apiDownload(`${endpoint}?date_from=${dateFrom}&date_to=${dateTo}&export=csv`, "attribution.csv")}
+          onClick={() =>
+            apiDownload(
+              `${endpoint}?date_from=${dateFrom}&date_to=${dateTo}&export=csv`,
+              "attribution.csv",
+            )
+          }
         >
           Download CSV
         </Button>
@@ -542,7 +634,11 @@ function AttributionTab({ endpoint, label }: { endpoint: string; label: string }
       <Card>
         <CardHeader
           title={label}
-          subtitle={data ? `Total net revenue ${money(data.total_net_revenue)} across ${data.count} group(s)` : undefined}
+          subtitle={
+            data
+              ? `Total net revenue ${money(data.total_net_revenue)} across ${data.count} group(s)`
+              : undefined
+          }
         />
         <ErrorBanner error={error} />
         {isLoading ? (
@@ -582,11 +678,17 @@ function SalesSummaryTab() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["sales-summary", dateFrom, dateTo],
-    queryFn: () => api.get<SalesSummaryReport>(`/reports/sales-summary/?date_from=${dateFrom}&date_to=${dateTo}`),
+    queryFn: () =>
+      api.get<SalesSummaryReport>(
+        `/reports/sales-summary/?date_from=${dateFrom}&date_to=${dateTo}`,
+      ),
   });
   const purchasesQuery = useQuery({
     queryKey: ["purchases-summary", dateFrom, dateTo],
-    queryFn: () => api.get<PurchasesSummaryReport>(`/reports/purchases-summary/?date_from=${dateFrom}&date_to=${dateTo}`),
+    queryFn: () =>
+      api.get<PurchasesSummaryReport>(
+        `/reports/purchases-summary/?date_from=${dateFrom}&date_to=${dateTo}`,
+      ),
   });
 
   return (
@@ -601,7 +703,12 @@ function SalesSummaryTab() {
           size="sm"
           variant="secondary"
           className="self-end"
-          onClick={() => apiDownload(`/reports/sales-summary/?date_from=${dateFrom}&date_to=${dateTo}&export=csv`, "sales-summary.csv")}
+          onClick={() =>
+            apiDownload(
+              `/reports/sales-summary/?date_from=${dateFrom}&date_to=${dateTo}&export=csv`,
+              "sales-summary.csv",
+            )
+          }
         >
           Download sales CSV
         </Button>
@@ -609,7 +716,12 @@ function SalesSummaryTab() {
           size="sm"
           variant="secondary"
           className="self-end"
-          onClick={() => apiDownload(`/reports/purchases-summary/?date_from=${dateFrom}&date_to=${dateTo}&export=csv`, "purchases-summary.csv")}
+          onClick={() =>
+            apiDownload(
+              `/reports/purchases-summary/?date_from=${dateFrom}&date_to=${dateTo}&export=csv`,
+              "purchases-summary.csv",
+            )
+          }
         >
           Download purchases CSV
         </Button>
@@ -621,7 +733,11 @@ function SalesSummaryTab() {
         <Card>
           <CardHeader
             title="Daily sales"
-            subtitle={data ? `Net ${money(data.totals.net_revenue)} · VAT ${money(data.totals.vat)} · Grand ${money(data.totals.grand_total)}` : undefined}
+            subtitle={
+              data
+                ? `Net ${money(data.totals.net_revenue)} · VAT ${money(data.totals.vat)} · Grand ${money(data.totals.grand_total)}`
+                : undefined
+            }
           />
           {isLoading ? (
             <Spinner />
@@ -641,7 +757,11 @@ function SalesSummaryTab() {
         <Card>
           <CardHeader
             title="Daily purchases"
-            subtitle={purchasesQuery.data ? `Net cost ${money(purchasesQuery.data.totals.net_cost)}` : undefined}
+            subtitle={
+              purchasesQuery.data
+                ? `Net cost ${money(purchasesQuery.data.totals.net_cost)}`
+                : undefined
+            }
           />
           {purchasesQuery.isLoading ? (
             <Spinner />
@@ -684,13 +804,22 @@ function ItemsReportTab() {
         setDateTo={setDateTo}
       >
         <Field label="Search medicine">
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="name contains…" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="name contains…"
+          />
         </Field>
         <Button
           size="sm"
           variant="secondary"
           className="self-end"
-          onClick={() => apiDownload(`/reports/sales-by-item/?${params.toString()}&export=csv`, "sales-by-item.csv")}
+          onClick={() =>
+            apiDownload(
+              `/reports/sales-by-item/?${params.toString()}&export=csv`,
+              "sales-by-item.csv",
+            )
+          }
         >
           Download CSV
         </Button>
@@ -733,7 +862,9 @@ function ItemsReportTab() {
                     ) : null}
                     {data.has_cost_access ? (
                       <td className="px-4 py-2 text-right font-medium text-primary-700">
-                        {row.gross_profit !== null && row.gross_profit !== undefined ? money(row.gross_profit) : "—"}
+                        {row.gross_profit !== null && row.gross_profit !== undefined
+                          ? money(row.gross_profit)
+                          : "—"}
                       </td>
                     ) : null}
                   </tr>
@@ -756,7 +887,8 @@ function CustomersReportTab() {
   if (search) params.set("search", search);
   const { data, isLoading, error } = useQuery({
     queryKey: ["sales-by-customer", dateFrom, dateTo, search],
-    queryFn: () => api.get<SalesByCustomerReport>(`/reports/sales-by-customer/?${params.toString()}`),
+    queryFn: () =>
+      api.get<SalesByCustomerReport>(`/reports/sales-by-customer/?${params.toString()}`),
   });
 
   return (
@@ -774,14 +906,22 @@ function CustomersReportTab() {
           size="sm"
           variant="secondary"
           className="self-end"
-          onClick={() => apiDownload(`/reports/sales-by-customer/?${params.toString()}&export=csv`, "sales-by-customer.csv")}
+          onClick={() =>
+            apiDownload(
+              `/reports/sales-by-customer/?${params.toString()}&export=csv`,
+              "sales-by-customer.csv",
+            )
+          }
         >
           Download CSV
         </Button>
       </DateRangeFilterCard>
 
       <Card>
-        <CardHeader title="Sales by customer" subtitle={data ? `${data.count} customer(s)` : undefined} />
+        <CardHeader
+          title="Sales by customer"
+          subtitle={data ? `${data.count} customer(s)` : undefined}
+        />
         <ErrorBanner error={error} />
         {isLoading ? (
           <Spinner />
@@ -809,7 +949,9 @@ function CustomersReportTab() {
                     <td className="px-4 py-2 text-right">{row.invoices}</td>
                     <td className="px-4 py-2 text-right font-medium">{money(row.net_revenue)}</td>
                     <td className="px-4 py-2 text-right">{money(row.paid)}</td>
-                    <td className="px-4 py-2 text-right text-danger-700">{money(row.outstanding)}</td>
+                    <td className="px-4 py-2 text-right text-danger-700">
+                      {money(row.outstanding)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -827,7 +969,10 @@ function PurchasesTab() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["purchases-summary", dateFrom, dateTo],
-    queryFn: () => api.get<PurchasesSummaryReport>(`/reports/purchases-summary/?date_from=${dateFrom}&date_to=${dateTo}`),
+    queryFn: () =>
+      api.get<PurchasesSummaryReport>(
+        `/reports/purchases-summary/?date_from=${dateFrom}&date_to=${dateTo}`,
+      ),
   });
 
   return (
@@ -855,7 +1000,11 @@ function PurchasesTab() {
       <Card>
         <CardHeader
           title="Daily purchases"
-          subtitle={data ? `Net cost ${money(data.totals.net_cost)} · ${data.totals.purchases} purchase(s)` : undefined}
+          subtitle={
+            data
+              ? `Net cost ${money(data.totals.net_cost)} · ${data.totals.purchases} purchase(s)`
+              : undefined
+          }
         />
         <ErrorBanner error={error} />
         {isLoading ? (
@@ -911,7 +1060,11 @@ function AgingTab() {
       <Card>
         <CardHeader
           title="Receivables aging (customers)"
-          subtitle={receivables.data ? `Total outstanding ${money(receivables.data.totals.total)} across ${receivables.data.count} customer(s)` : undefined}
+          subtitle={
+            receivables.data
+              ? `Total outstanding ${money(receivables.data.totals.total)} across ${receivables.data.count} customer(s)`
+              : undefined
+          }
         />
         <ErrorBanner error={receivables.error} />
         {receivables.isLoading ? (
@@ -925,7 +1078,9 @@ function AgingTab() {
                 <tr>
                   <th className="px-4 py-2">Customer</th>
                   {BUCKETS.map(([key, label]) => (
-                    <th key={key} className="px-4 py-2 text-right">{label}</th>
+                    <th key={key} className="px-4 py-2 text-right">
+                      {label}
+                    </th>
                   ))}
                   <th className="px-4 py-2 text-right">Total</th>
                 </tr>
@@ -952,7 +1107,9 @@ function AgingTab() {
                 <tr>
                   <td className="px-4 py-2">Totals</td>
                   {BUCKETS.map(([key]) => (
-                    <td key={key} className="px-4 py-2 text-right">{money(receivables.data?.totals[key])}</td>
+                    <td key={key} className="px-4 py-2 text-right">
+                      {money(receivables.data?.totals[key])}
+                    </td>
                   ))}
                   <td className="px-4 py-2 text-right">{money(receivables.data?.totals.total)}</td>
                 </tr>
@@ -965,7 +1122,11 @@ function AgingTab() {
       <Card>
         <CardHeader
           title="Payables aging (suppliers)"
-          subtitle={payables.data ? `Total payable ${money(payables.data.totals.total)} across ${payables.data.count} supplier(s)` : undefined}
+          subtitle={
+            payables.data
+              ? `Total payable ${money(payables.data.totals.total)} across ${payables.data.count} supplier(s)`
+              : undefined
+          }
         />
         <ErrorBanner error={payables.error} />
         {payables.isLoading ? (
@@ -979,7 +1140,9 @@ function AgingTab() {
                 <tr>
                   <th className="px-4 py-2">Supplier</th>
                   {BUCKETS.map(([key, label]) => (
-                    <th key={key} className="px-4 py-2 text-right">{label}</th>
+                    <th key={key} className="px-4 py-2 text-right">
+                      {label}
+                    </th>
                   ))}
                   <th className="px-4 py-2 text-right">Total</th>
                 </tr>
@@ -1006,7 +1169,9 @@ function AgingTab() {
                 <tr>
                   <td className="px-4 py-2">Totals</td>
                   {BUCKETS.map(([key]) => (
-                    <td key={key} className="px-4 py-2 text-right">{money(payables.data?.totals[key])}</td>
+                    <td key={key} className="px-4 py-2 text-right">
+                      {money(payables.data?.totals[key])}
+                    </td>
                   ))}
                   <td className="px-4 py-2 text-right">{money(payables.data?.totals.total)}</td>
                 </tr>
@@ -1022,11 +1187,15 @@ function AgingTab() {
 function ExpiryReportTab() {
   const nearExpiry = useQuery({
     queryKey: ["report", "near-expiry", "90"],
-    queryFn: () => api.get<{ count: number; results: ExpiryReportRow[] }>("/inventory/reports/near-expiry/?days=90"),
+    queryFn: () =>
+      api.get<{ count: number; results: ExpiryReportRow[] }>(
+        "/inventory/reports/near-expiry/?days=90",
+      ),
   });
   const expired = useQuery({
     queryKey: ["report", "expired"],
-    queryFn: () => api.get<{ count: number; results: ExpiryReportRow[] }>("/inventory/reports/expired/"),
+    queryFn: () =>
+      api.get<{ count: number; results: ExpiryReportRow[] }>("/inventory/reports/expired/"),
   });
 
   const expiryList = (
@@ -1072,7 +1241,12 @@ function ExpiryReportTab() {
           subtitle={nearExpiry.data ? `${nearExpiry.data.count} batch(es)` : undefined}
         />
         <ErrorBanner error={nearExpiry.error} />
-        {expiryList(nearExpiry.data, nearExpiry.isLoading, "No batches approaching expiry.", "amber")}
+        {expiryList(
+          nearExpiry.data,
+          nearExpiry.isLoading,
+          "No batches approaching expiry.",
+          "amber",
+        )}
       </Card>
       <Card>
         <CardHeader
@@ -1100,7 +1274,8 @@ function StockMovementTab() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["stock-movement", dateFrom, dateTo, page],
-    queryFn: () => api.get<Paginated<InventoryTransaction>>(`/inventory/transactions/?${params.toString()}`),
+    queryFn: () =>
+      api.get<Paginated<InventoryTransaction>>(`/inventory/transactions/?${params.toString()}`),
   });
 
   return (
@@ -1133,7 +1308,10 @@ function StockMovementTab() {
               {data.results.map((txn) => {
                 const positive = !txn.qty_delta.startsWith("-");
                 return (
-                  <li key={txn.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                  <li
+                    key={txn.id}
+                    className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+                  >
                     <div>
                       <p className="text-sm">
                         <span className="font-medium">{txn.medicine_name}</span>{" "}
@@ -1142,15 +1320,27 @@ function StockMovementTab() {
                         </span>
                       </p>
                       <p className="text-xs text-slate-500">
-                        {formatDate(txn.business_date)} · {txn.branch_name} · {txn.source_type || "manual"}
-                        {txn.source_number ? ` #${txn.source_number}` : ""} · {txn.actor_name || "system"}
+                        {formatDate(txn.business_date)} · {txn.branch_name} ·{" "}
+                        {txn.source_type || "manual"}
+                        {txn.source_number ? ` #${txn.source_number}` : ""} ·{" "}
+                        {txn.actor_name || "system"}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Badge tone={txn.pool === "SALEABLE" ? "slate" : txn.pool === "PROMO" ? "blue" : "amber"}>
+                      <Badge
+                        tone={
+                          txn.pool === "SALEABLE"
+                            ? "slate"
+                            : txn.pool === "PROMO"
+                              ? "blue"
+                              : "amber"
+                        }
+                      >
                         {txn.entry_type}
                       </Badge>
-                      <span className={`font-mono text-sm font-semibold ${positive ? "text-primary-700" : "text-danger-700"}`}>
+                      <span
+                        className={`font-mono text-sm font-semibold ${positive ? "text-primary-700" : "text-danger-700"}`}
+                      >
                         {positive ? "+" : ""}
                         {formatQty(txn.qty_delta)}
                       </span>
@@ -1166,6 +1356,715 @@ function StockMovementTab() {
               onChange={setPage}
             />
           </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ─────────────────────────── BI: Inventory DSI ─────────────────────── */
+
+function InventoryDsiTab() {
+  const [filterType, setFilterType] = useState("all"); // all | dead | slow
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
+
+  const params = new URLSearchParams();
+  if (filterType !== "all") params.set("filter", filterType);
+  if (debouncedSearch) params.set("search", debouncedSearch);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["report", "dsi", filterType, debouncedSearch],
+    queryFn: () =>
+      api.get<InventoryDsiReport>(`/reports/inventory-dsi/?${params.toString()}`),
+  });
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader
+          title="Inventory DSI & dead stock"
+          subtitle={
+            data
+              ? `Avg sales window ${data.period_days} days · dead > ${data.dead_days_threshold} days without sale · slow > ${data.slow_dsi_threshold} DSI`
+              : undefined
+          }
+          action={
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm"
+                aria-label="Filter DSI rows"
+              >
+                <option value="all">All stock</option>
+                <option value="dead">Dead stock only</option>
+                <option value="slow">Slow movers only</option>
+              </select>
+              <Input
+                placeholder="Search medicine…"
+                aria-label="Search medicines"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-48"
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() =>
+                  apiDownload(`/reports/inventory-dsi/?${params.toString()}&export=csv`, "inventory-dsi.csv")
+                }
+              >
+                CSV
+              </Button>
+            </div>
+          }
+        />
+        <ErrorBanner error={error} />
+        {isLoading ? (
+          <Spinner />
+        ) : !data || data.results.length === 0 ? (
+          <EmptyState message="No stock with on-hand quantity." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Medicine</th>
+                  <th className="px-4 py-2 text-right">On hand</th>
+                  <th className="px-4 py-2 text-right">Avg daily sales</th>
+                  <th className="px-4 py-2 text-right">DSI (days)</th>
+                  <th className="px-4 py-2 text-right">Last sale</th>
+                  <th className="px-4 py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.results.map((row) => (
+                  <tr key={row.medicine}>
+                    <td className="px-4 py-2">
+                      <span className="font-medium">{row.name}</span>{" "}
+                      <span className="font-mono text-xs text-slate-500">{row.code}</span>
+                    </td>
+                    <td className="px-4 py-2 text-right">{formatQty(row.qty_on_hand)}</td>
+                    <td className="px-4 py-2 text-right">{formatQty(row.avg_daily_sales)}</td>
+                    <td className="px-4 py-2 text-right">
+                      {row.dsi === null ? "—" : row.dsi}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {row.days_since_sale === null ? "never" : `${row.days_since_sale}d`}
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {row.is_dead_stock ? <Badge tone="rose">Dead</Badge> : null}
+                        {row.is_slow_mover ? <Badge tone="amber">Slow</Badge> : null}
+                        {!row.is_dead_stock && !row.is_slow_mover ? (
+                          <Badge tone="green">Healthy</Badge>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ─────────────────────────── BI: Margin analysis ───────────────────── */
+
+function MarginAnalysisTab() {
+  const [dateFrom, setDateFrom] = useState(monthStartIso());
+  const [dateTo, setDateTo] = useState(todayIso());
+  const [groupBy, setGroupBy] = useState("category");
+
+  const params = new URLSearchParams({
+    date_from: dateFrom,
+    date_to: dateTo,
+    group_by: groupBy,
+  });
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["report", "margin", dateFrom, dateTo, groupBy],
+    queryFn: () => api.get<MarginAnalysisReport>(`/reports/margin-analysis/?${params.toString()}`),
+  });
+
+  return (
+    <div className="space-y-4">
+      <DateRangeFilterCard
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        setDateFrom={setDateFrom}
+        setDateTo={setDateTo}
+      >
+        <Field label="Group by">
+          <Select value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
+            <option value="category">Medicine category</option>
+            <option value="generic">Generic</option>
+          </Select>
+        </Field>
+        <div className="flex items-end">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() =>
+              apiDownload(
+                `/reports/margin-analysis/?${params.toString()}&export=csv`,
+                `margin-by-${groupBy}.csv`,
+              )
+            }
+          >
+            CSV
+          </Button>
+        </div>
+      </DateRangeFilterCard>
+      <Card>
+        <CardHeader
+          title={`Margin by ${groupBy === "generic" ? "generic" : "category"}`}
+          subtitle={
+            data
+              ? `Net revenue ${money(data.total_net_revenue)}${
+                  data.total_gross_profit !== null
+                    ? ` · gross profit ${money(data.total_gross_profit)}`
+                    : ""
+                }`
+              : undefined
+          }
+        />
+        <ErrorBanner error={error} />
+        {isLoading ? (
+          <Spinner />
+        ) : !data || data.results.length === 0 ? (
+          <EmptyState message="No sales in this period." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">{groupBy === "generic" ? "Generic" : "Category"}</th>
+                  <th className="px-4 py-2 text-right">Qty</th>
+                  <th className="px-4 py-2 text-right">Gross</th>
+                  <th className="px-4 py-2 text-right">Discount</th>
+                  <th className="px-4 py-2 text-right">Net revenue</th>
+                  {data.has_cost_access ? (
+                    <>
+                      <th className="px-4 py-2 text-right">COGS</th>
+                      <th className="px-4 py-2 text-right">Gross profit</th>
+                      <th className="px-4 py-2 text-right">Margin %</th>
+                    </>
+                  ) : null}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.results.map((row) => (
+                  <tr key={row.id || row.name}>
+                    <td className="px-4 py-2 font-medium">{row.name}</td>
+                    <td className="px-4 py-2 text-right">{formatQty(row.qty)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.gross)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.discount)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.net_revenue)}</td>
+                    {data.has_cost_access ? (
+                      <>
+                        <td className="px-4 py-2 text-right">{money(row.cogs)}</td>
+                        <td className="px-4 py-2 text-right">{money(row.gross_profit)}</td>
+                        <td className="px-4 py-2 text-right">
+                          <Badge
+                            tone={
+                              (row.gross_profit_pct ?? 0) < 0
+                                ? "rose"
+                                : (row.gross_profit_pct ?? 0) < 10
+                                  ? "amber"
+                                  : "green"
+                            }
+                          >
+                            {row.gross_profit_pct?.toFixed(1)}%
+                          </Badge>
+                        </td>
+                      </>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ─────────────────────────── BI: Rep performance ───────────────────── */
+
+function RepPerformanceTab() {
+  const now = new Date();
+  const [fiscalYear, setFiscalYear] = useState(now.getFullYear());
+  const [periodMonth, setPeriodMonth] = useState(now.getMonth() + 1);
+
+  const params = new URLSearchParams({
+    fiscal_year: String(fiscalYear),
+    period_month: String(periodMonth),
+  });
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["report", "rep-performance", fiscalYear, periodMonth],
+    queryFn: () => api.get<RepPerformanceReport>(`/reports/rep-performance/?${params.toString()}`),
+  });
+
+  return (
+    <div className="space-y-4">
+      <Card className="no-print p-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Field label="Fiscal year">
+            <Input
+              type="number"
+              min={2000}
+              max={2100}
+              value={fiscalYear}
+              onChange={(e) => setFiscalYear(Number(e.target.value) || now.getFullYear())}
+            />
+          </Field>
+          <Field label="Month">
+            <Select value={periodMonth} onChange={(e) => setPeriodMonth(Number(e.target.value))}>
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {new Date(2020, i, 1).toLocaleDateString("en-GB", { month: "long" })}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <div className="flex items-end">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                apiDownload(
+                  `/reports/rep-performance/?${params.toString()}&export=csv`,
+                  "rep-performance.csv",
+                )
+              }
+            >
+              CSV
+            </Button>
+          </div>
+        </div>
+      </Card>
+      <Card>
+        <CardHeader
+          title="Rep performance — target vs actual"
+          subtitle={
+            data
+              ? `Actual ${money(data.total_actual)} vs target ${money(data.total_target)} · ${data.count} rep(s)`
+              : undefined
+          }
+        />
+        <ErrorBanner error={error} />
+        {isLoading ? (
+          <Spinner />
+        ) : !data || data.results.length === 0 ? (
+          <EmptyState message="No reps with targets or sales in this period." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Rep</th>
+                  <th className="px-4 py-2">Type</th>
+                  <th className="px-4 py-2 text-right">Target</th>
+                  <th className="px-4 py-2 text-right">Actual</th>
+                  <th className="px-4 py-2 text-right">Gap</th>
+                  <th className="px-4 py-2">Achievement</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.results.map((row) => (
+                  <tr key={row.representative}>
+                    <td className="px-4 py-2">
+                      <span className="font-medium">{row.name}</span>{" "}
+                      <span className="font-mono text-xs text-slate-500">{row.code}</span>
+                      <span className="block text-xs text-slate-500">{row.branch_name}</span>
+                    </td>
+                    <td className="px-4 py-2 text-xs">{row.rep_type}</td>
+                    <td className="px-4 py-2 text-right">{money(row.target_amount)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.actual_sales)}</td>
+                    <td
+                      className={`px-4 py-2 text-right ${
+                        Number(row.gap) > 0 ? "text-danger-700" : "text-primary-700"
+                      }`}
+                    >
+                      {Number(row.gap) > 0 ? "-" : "+"}
+                      {money(Math.abs(Number(row.gap)))}
+                    </td>
+                    <td className="px-4 py-2">
+                      {row.achievement_pct === null ? (
+                        <Badge tone="slate">No target</Badge>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={`h-full rounded-full ${
+                                row.achievement_pct >= 100
+                                  ? "bg-primary-600"
+                                  : row.achievement_pct >= 75
+                                    ? "bg-amber-500"
+                                    : "bg-danger-500"
+                              }`}
+                              style={{ width: `${Math.min(row.achievement_pct, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-medium">{row.achievement_pct}%</span>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ──────────────────────── BI: Collection efficiency ────────────────── */
+
+function CollectionEfficiencyTab() {
+  const [dateFrom, setDateFrom] = useState(monthStartIso());
+  const [dateTo, setDateTo] = useState(todayIso());
+
+  const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["report", "collection-efficiency", dateFrom, dateTo],
+    queryFn: () =>
+      api.get<CollectionEfficiencyReport>(`/reports/collection-efficiency/?${params.toString()}`),
+  });
+
+  const kpi = data?.kpi;
+
+  return (
+    <div className="space-y-4">
+      <DateRangeFilterCard
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        setDateFrom={setDateFrom}
+        setDateTo={setDateTo}
+      />
+      {kpi ? (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Card className="p-4">
+            <p className="text-xs text-slate-500">Invoiced (due in period)</p>
+            <p className="text-lg font-semibold">{money(kpi.total_invoiced)}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-slate-500">Collected</p>
+            <p className="text-lg font-semibold">{money(kpi.total_collected)}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-slate-500">Outstanding</p>
+            <p className="text-lg font-semibold text-danger-700">{money(kpi.total_outstanding)}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-slate-500">Collection efficiency</p>
+            <p
+              className={`text-lg font-semibold ${
+                kpi.collection_efficiency_pct >= 80
+                  ? "text-primary-700"
+                  : kpi.collection_efficiency_pct >= 50
+                    ? "text-amber-600"
+                    : "text-danger-700"
+              }`}
+            >
+              {kpi.collection_efficiency_pct}%
+            </p>
+          </Card>
+        </div>
+      ) : null}
+      <Card>
+        <CardHeader
+          title="Collection efficiency by customer"
+          subtitle={data ? `${data.count} customer(s)` : undefined}
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                apiDownload(
+                  `/reports/collection-efficiency/?${params.toString()}&export=csv`,
+                  "collection-efficiency.csv",
+                )
+              }
+            >
+              CSV
+            </Button>
+          }
+        />
+        <ErrorBanner error={error} />
+        {isLoading ? (
+          <Spinner />
+        ) : !data || data.results.length === 0 ? (
+          <EmptyState message="No invoices due in this period." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Customer</th>
+                  <th className="px-4 py-2 text-right">Invoiced</th>
+                  <th className="px-4 py-2 text-right">Collected</th>
+                  <th className="px-4 py-2 text-right">Outstanding</th>
+                  <th className="px-4 py-2">Efficiency</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.results.map((row) => (
+                  <tr key={row.customer}>
+                    <td className="px-4 py-2">
+                      <span className="font-medium">{row.name}</span>{" "}
+                      <span className="font-mono text-xs text-slate-500">{row.code}</span>
+                    </td>
+                    <td className="px-4 py-2 text-right">{money(row.invoiced)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.collected)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.outstanding)}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className={`h-full rounded-full ${
+                              row.efficiency_pct >= 80
+                                ? "bg-primary-600"
+                                : row.efficiency_pct >= 50
+                                  ? "bg-amber-500"
+                                  : "bg-danger-500"
+                            }`}
+                            style={{ width: `${Math.min(row.efficiency_pct, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium">{row.efficiency_pct}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ─────────────────────── BI: Supplier concentration ────────────────── */
+
+function SupplierConcentrationTab() {
+  const [dateFrom, setDateFrom] = useState(monthStartIso());
+  const [dateTo, setDateTo] = useState(todayIso());
+
+  const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["report", "supplier-concentration", dateFrom, dateTo],
+    queryFn: () =>
+      api.get<SupplierConcentrationReport>(
+        `/reports/supplier-concentration/?${params.toString()}`,
+      ),
+  });
+
+  return (
+    <div className="space-y-4">
+      <DateRangeFilterCard
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        setDateFrom={setDateFrom}
+        setDateTo={setDateTo}
+      />
+      {data ? (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <Card className="p-4">
+            <p className="text-xs text-slate-500">Total purchase spend</p>
+            <p className="text-lg font-semibold">{money(data.total_spend)}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-slate-500">Suppliers</p>
+            <p className="text-lg font-semibold">{data.supplier_count}</p>
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs text-slate-500">High dependency (≥30%)</p>
+            <p
+              className={`text-lg font-semibold ${data.high_dependency_count > 0 ? "text-danger-700" : "text-primary-700"}`}
+            >
+              {data.high_dependency_count}
+            </p>
+          </Card>
+        </div>
+      ) : null}
+      <Card>
+        <CardHeader
+          title="Purchase concentration by supplier"
+          subtitle="Share of confirmed purchases in the period"
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                apiDownload(
+                  `/reports/supplier-concentration/?${params.toString()}&export=csv`,
+                  "supplier-concentration.csv",
+                )
+              }
+            >
+              CSV
+            </Button>
+          }
+        />
+        <ErrorBanner error={error} />
+        {isLoading ? (
+          <Spinner />
+        ) : !data || data.results.length === 0 ? (
+          <EmptyState message="No confirmed purchases in this period." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-2">Supplier</th>
+                  <th className="px-4 py-2 text-right">Purchases</th>
+                  <th className="px-4 py-2 text-right">Spend</th>
+                  <th className="px-4 py-2 text-right">Share %</th>
+                  <th className="px-4 py-2 text-right">Cumulative %</th>
+                  <th className="px-4 py-2">Risk</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.results.map((row) => (
+                  <tr key={row.supplier}>
+                    <td className="px-4 py-2 font-medium">{row.name}</td>
+                    <td className="px-4 py-2 text-right">{row.purchase_count}</td>
+                    <td className="px-4 py-2 text-right">{money(row.total_spend)}</td>
+                    <td className="px-4 py-2 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className={`h-full rounded-full ${row.high_dependency ? "bg-danger-500" : "bg-primary-500"}`}
+                            style={{ width: `${Math.min(row.pct_of_total, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium">{row.pct_of_total}%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs text-slate-500">
+                      {row.cumulative_pct}%
+                    </td>
+                    <td className="px-4 py-2">
+                      {row.high_dependency ? <Badge tone="rose">High dependency</Badge> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ─────────────────────────── BI: Exceptions ────────────────────────── */
+
+const OVERRIDE_LABELS: Record<string, string> = {
+  CREDIT_OVERRIDE: "Credit limit",
+  FEFO_OVERRIDE: "FEFO batch",
+  RX_OVERRIDE: "Rx bypass",
+  PRICE_OVERRIDE: "Price",
+  DUPLICATE_INVOICE: "Duplicate invoice",
+};
+
+function ExceptionsTab() {
+  const [dateFrom, setDateFrom] = useState(monthStartIso());
+  const [dateTo, setDateTo] = useState(todayIso());
+  const [overrideType, setOverrideType] = useState("");
+
+  const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+  if (overrideType) params.set("override_type", overrideType);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["report", "exceptions", dateFrom, dateTo, overrideType],
+    queryFn: () => api.get<ExceptionReport>(`/reports/exceptions/?${params.toString()}`),
+  });
+
+  return (
+    <div className="space-y-4">
+      <DateRangeFilterCard
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        setDateFrom={setDateFrom}
+        setDateTo={setDateTo}
+      >
+        <Field label="Override type">
+          <Select value={overrideType} onChange={(e) => setOverrideType(e.target.value)}>
+            <option value="">All overrides</option>
+            <option value="CREDIT_OVERRIDE">Credit limit</option>
+            <option value="FEFO_OVERRIDE">FEFO batch</option>
+            <option value="RX_OVERRIDE">Rx bypass</option>
+            <option value="DUPLICATE_INVOICE">Duplicate invoice</option>
+          </Select>
+        </Field>
+        <div className="flex items-end">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() =>
+              apiDownload(`/reports/exceptions/?${params.toString()}&export=csv`, "exceptions.csv")
+            }
+          >
+            CSV
+          </Button>
+        </div>
+      </DateRangeFilterCard>
+      <Card>
+        <CardHeader
+          title="Override & exception report"
+          subtitle={
+            data
+              ? `${data.total_exceptions} exception(s) · ${data.invoice_exceptions} invoice / ${data.purchase_exceptions} purchase`
+              : undefined
+          }
+        />
+        <ErrorBanner error={error} />
+        {isLoading ? (
+          <Spinner />
+        ) : !data || data.results.length === 0 ? (
+          <EmptyState message="No overrides in this period. Clean!" />
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {data.results.map((row) => (
+              <li key={`${row.document_type}-${row.document_id}`} className="space-y-2 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {row.document_number ?? "Draft"} ·{" "}
+                      {row.customer_name ?? row.supplier_name ?? ""}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {formatDate(row.business_date)} · {row.document_type === "SALES_INVOICE" ? "Invoice" : "Purchase"} ·{" "}
+                      {row.branch_name} · by {row.confirmed_by || "—"}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold">{money(row.grand_total)}</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {row.overrides.map((override) => (
+                    <Badge key={override.type} tone="rose">
+                      {OVERRIDE_LABELS[override.type] ?? override.type}
+                      {override.reason ? `: ${override.reason}` : ""}
+                    </Badge>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </Card>
     </div>
@@ -1204,9 +2103,19 @@ function ReportsContent() {
       {tab === "Aging" ? <AgingTab /> : null}
       {tab === "Expiry" ? <ExpiryReportTab /> : null}
       {tab === "Stock movement" ? <StockMovementTab /> : null}
-      {tab === "Sales by doctor" ? <AttributionTab endpoint="/reports/sales-by-doctor/" label="Sales by doctor" /> : null}
-      {tab === "Sales by rep" ? <AttributionTab endpoint="/reports/sales-by-rep/" label="Sales by representative" /> : null}
+      {tab === "Sales by doctor" ? (
+        <AttributionTab endpoint="/reports/sales-by-doctor/" label="Sales by doctor" />
+      ) : null}
+      {tab === "Sales by rep" ? (
+        <AttributionTab endpoint="/reports/sales-by-rep/" label="Sales by representative" />
+      ) : null}
       {tab === "Visit coverage" ? <VisitCoverageTab /> : null}
+      {tab === "Inventory DSI" ? <InventoryDsiTab /> : null}
+      {tab === "Margin analysis" ? <MarginAnalysisTab /> : null}
+      {tab === "Rep performance" ? <RepPerformanceTab /> : null}
+      {tab === "Collection efficiency" ? <CollectionEfficiencyTab /> : null}
+      {tab === "Supplier concentration" ? <SupplierConcentrationTab /> : null}
+      {tab === "Exceptions" ? <ExceptionsTab /> : null}
     </div>
   );
 }

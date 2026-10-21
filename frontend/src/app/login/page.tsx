@@ -82,7 +82,11 @@ export default function LoginPage() {
                 required
               />
             </Field>
-            <Button type="submit" className="w-full" disabled={submitting || mfaCode.trim().length < 6}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={submitting || mfaCode.trim().length < 6}
+            >
               {submitting ? "Verifying…" : "Verify and sign in"}
             </Button>
             <button
@@ -124,9 +128,6 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? "Signing in…" : "Sign in"}
             </Button>
-            <p className="text-center text-xs text-slate-500">
-              Default owner: 01700000000 / Admin@1234
-            </p>
           </form>
         )}
       </div>

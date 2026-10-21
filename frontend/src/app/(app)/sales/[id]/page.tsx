@@ -34,8 +34,7 @@ export default function InvoiceDetailPage() {
             variant="secondary"
             disabled={!data}
             onClick={() =>
-              data &&
-              apiDownload(`/sales/${data.id}/print/`, `${data.number ?? "invoice"}.pdf`)
+              data && apiDownload(`/sales/${data.id}/print/`, `${data.number ?? "invoice"}.pdf`)
             }
           >
             Download PDF
@@ -60,15 +59,29 @@ export default function InvoiceDetailPage() {
               </p>
             </div>
             <div className="text-right">
-              <h2 className="text-lg font-semibold uppercase tracking-wide text-slate-700">Invoice</h2>
+              <h2 className="text-lg font-semibold uppercase tracking-wide text-slate-700">
+                Invoice
+              </h2>
               <p className="font-mono text-sm">{data.number ?? "DRAFT"}</p>
               <p className="text-xs text-slate-500">Date: {formatDate(data.business_date)}</p>
-              {data.due_date ? <p className="text-xs text-slate-500">Due: {formatDate(data.due_date)}</p> : null}
+              {data.due_date ? (
+                <p className="text-xs text-slate-500">Due: {formatDate(data.due_date)}</p>
+              ) : null}
               <div className="mt-1 flex justify-end gap-1">
-                <Badge tone={data.payment_status === "PAID" ? "green" : data.payment_status === "PARTIALLY_PAID" ? "amber" : "slate"}>
+                <Badge
+                  tone={
+                    data.payment_status === "PAID"
+                      ? "green"
+                      : data.payment_status === "PARTIALLY_PAID"
+                        ? "amber"
+                        : "slate"
+                  }
+                >
                   {data.payment_status}
                 </Badge>
-                {data.lifecycle !== "CONFIRMED" ? <Badge tone="rose">{data.lifecycle}</Badge> : null}
+                {data.lifecycle !== "CONFIRMED" ? (
+                  <Badge tone="rose">{data.lifecycle}</Badge>
+                ) : null}
               </div>
             </div>
           </div>
@@ -81,7 +94,9 @@ export default function InvoiceDetailPage() {
                 {data.customer_code}
                 {data.customer_phone ? ` · ${data.customer_phone}` : ""}
               </p>
-              {data.customer_address ? <p className="text-xs text-slate-500">{data.customer_address}</p> : null}
+              {data.customer_address ? (
+                <p className="text-xs text-slate-500">{data.customer_address}</p>
+              ) : null}
             </div>
             <div className="text-right text-xs text-slate-500">
               <p>
@@ -89,6 +104,12 @@ export default function InvoiceDetailPage() {
                 {data.confirmed_at ? formatDateTime(data.confirmed_at) : "—"}
               </p>
               <p>{data.notes ? `Notes: ${data.notes}` : ""}</p>
+              <p>
+                {data.prescription_number
+                  ? `Rx: ${data.prescription_number}`
+                  : ""}
+                {data.rx_override ? "Rx override applied. " : ""}
+              </p>
             </div>
           </div>
 
@@ -111,8 +132,12 @@ export default function InvoiceDetailPage() {
                   <td className="py-2 text-slate-500">{item.line_no}</td>
                   <td className="py-2">
                     {item.medicine_name}
-                    {item.is_free_goods ? <span className="ml-1 text-xs text-primary-700">(free)</span> : null}
-                    <span className="block font-mono text-xs text-slate-500">{item.medicine_code}</span>
+                    {item.is_free_goods ? (
+                      <span className="ml-1 text-xs text-primary-700">(free)</span>
+                    ) : null}
+                    <span className="block font-mono text-xs text-slate-500">
+                      {item.medicine_code}
+                    </span>
                   </td>
                   <td className="py-2 font-mono text-xs">{item.batch_number}</td>
                   <td className="py-2 text-right">{formatQty(item.qty)}</td>
@@ -170,7 +195,8 @@ export default function InvoiceDetailPage() {
           </div>
 
           <p className="mt-4 text-center text-xs text-slate-500">
-            This is a computer-generated invoice. {data.credit_override ? "Credit limit override applied. " : ""}
+            This is a computer-generated invoice.{" "}
+            {data.credit_override ? "Credit limit override applied. " : ""}
           </p>
         </div>
       ) : null}

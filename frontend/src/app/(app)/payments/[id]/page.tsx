@@ -43,10 +43,7 @@ export default function ReceiptDetailPage() {
             onClick={async () => {
               if (!data) return;
               try {
-                await apiDownload(
-                  `/payments/${data.id}/print/`,
-                  `${data.number ?? "receipt"}.pdf`,
-                );
+                await apiDownload(`/payments/${data.id}/print/`, `${data.number ?? "receipt"}.pdf`);
               } catch (err) {
                 pushToast(err instanceof ApiError ? err.message : "Download failed", "error");
               }
@@ -70,11 +67,17 @@ export default function ReceiptDetailPage() {
               <p className="text-sm text-slate-600">{data.branch_name}</p>
             </div>
             <div className="text-right">
-              <h2 className="text-base font-semibold uppercase tracking-wide text-slate-700">Money Receipt</h2>
+              <h2 className="text-base font-semibold uppercase tracking-wide text-slate-700">
+                Money Receipt
+              </h2>
               <p className="font-mono text-sm">{data.number}</p>
               <p className="text-xs text-slate-500">Date: {formatDate(data.business_date)}</p>
               <div className="mt-1">
-                {data.status === "ACTIVE" ? <Badge tone="green">Active</Badge> : <Badge tone="rose">Reversed</Badge>}
+                {data.status === "ACTIVE" ? (
+                  <Badge tone="green">Active</Badge>
+                ) : (
+                  <Badge tone="rose">Reversed</Badge>
+                )}
               </div>
             </div>
           </div>
@@ -109,7 +112,10 @@ export default function ReceiptDetailPage() {
                 {data.allocations.map((allocation) => (
                   <tr key={allocation.id}>
                     <td className="py-2 font-mono text-xs">
-                      <Link href={`/sales/${allocation.invoice}`} className="text-primary-700 hover:underline">
+                      <Link
+                        href={`/sales/${allocation.invoice}`}
+                        className="text-primary-700 hover:underline"
+                      >
                         {allocation.invoice_number ?? allocation.invoice}
                       </Link>
                     </td>

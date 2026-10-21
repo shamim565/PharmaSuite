@@ -3,10 +3,30 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner, StickyBar } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+  StickyBar,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
-import type { AdvanceRow, DailyCollectionReport, DueListResponse, DueListRow, FinancialAccount, Paginated } from "@/lib/types";
+import type {
+  AdvanceRow,
+  DailyCollectionReport,
+  DueListResponse,
+  DueListRow,
+  FinancialAccount,
+  Paginated,
+} from "@/lib/types";
 
 function bucketTone(bucket: DueListRow["bucket"]): "slate" | "amber" | "rose" {
   if (bucket === "current") return "slate";
@@ -50,7 +70,10 @@ export default function DuesPage() {
   });
   const advancesQuery = useQuery({
     queryKey: ["customer-advances"],
-    queryFn: () => api.get<{ count: number; total: string; results: AdvanceRow[] }>("/customers/reports/advances/"),
+    queryFn: () =>
+      api.get<{ count: number; total: string; results: AdvanceRow[] }>(
+        "/customers/reports/advances/",
+      ),
   });
   const accountsQuery = useQuery({
     queryKey: ["accounts", "select"],
@@ -117,7 +140,10 @@ export default function DuesPage() {
     }
   };
 
-  const allocatedTotal = Object.values(allocations).reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const allocatedTotal = Object.values(allocations).reduce(
+    (sum, value) => sum + (Number(value) || 0),
+    0,
+  );
   const advancePortion = Math.max((Number(collectAmount) || 0) - allocatedTotal, 0);
 
   return (
@@ -151,15 +177,21 @@ export default function DuesPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Outstanding</p>
-          <p className="text-xl font-bold text-slate-800">{formatMoney(duesQuery.data?.totals.outstanding)}</p>
+          <p className="text-xl font-bold text-slate-800">
+            {formatMoney(duesQuery.data?.totals.outstanding)}
+          </p>
         </Card>
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Overdue</p>
-          <p className="text-xl font-bold text-danger-700">{formatMoney(duesQuery.data?.totals.overdue)}</p>
+          <p className="text-xl font-bold text-danger-700">
+            {formatMoney(duesQuery.data?.totals.overdue)}
+          </p>
         </Card>
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Collected today</p>
-          <p className="text-xl font-bold text-primary-700">{formatMoney(dailyQuery.data?.total)}</p>
+          <p className="text-xl font-bold text-primary-700">
+            {formatMoney(dailyQuery.data?.total)}
+          </p>
         </Card>
         <Card className="p-4">
           <p className="text-xs uppercase text-slate-500">Customer advances</p>
@@ -215,10 +247,14 @@ export default function DuesPage() {
 
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
               {customerRows(collectCustomer.id).map((row) => (
-                <li key={row.invoice} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                <li
+                  key={row.invoice}
+                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+                >
                   <div>
                     <p className="text-sm font-medium">
-                      {row.number} <span className="text-xs text-slate-500">due {formatDate(row.due_date)}</span>
+                      {row.number}{" "}
+                      <span className="text-xs text-slate-500">due {formatDate(row.due_date)}</span>
                     </p>
                     <p className="text-xs text-slate-500">
                       Outstanding {formatMoney(row.outstanding)}
@@ -233,7 +269,9 @@ export default function DuesPage() {
                       placeholder="0.00"
                       aria-label={`Allocate amount for invoice ${row.number}`}
                       value={allocations[row.invoice] ?? ""}
-                      onChange={(e) => setAllocations({ ...allocations, [row.invoice]: e.target.value })}
+                      onChange={(e) =>
+                        setAllocations({ ...allocations, [row.invoice]: e.target.value })
+                      }
                     />
                   </div>
                 </li>
@@ -269,7 +307,10 @@ export default function DuesPage() {
       ) : null}
 
       <Card>
-        <CardHeader title="Open invoices" subtitle={duesQuery.data ? `${duesQuery.data.count} invoice(s)` : undefined} />
+        <CardHeader
+          title="Open invoices"
+          subtitle={duesQuery.data ? `${duesQuery.data.count} invoice(s)` : undefined}
+        />
         <ErrorBanner error={duesQuery.error} />
         {duesQuery.isLoading ? (
           <Spinner />
@@ -303,9 +344,15 @@ export default function DuesPage() {
                           {row.days_overdue > 0 ? `${row.days_overdue}d overdue` : "Current"}
                         </Badge>
                       </td>
-                      <td className="px-4 py-2 text-right font-medium">{formatMoney(row.outstanding)}</td>
+                      <td className="px-4 py-2 text-right font-medium">
+                        {formatMoney(row.outstanding)}
+                      </td>
                       <td className="px-4 py-2 text-right">
-                        <Button size="sm" onClick={() => openCollect(row)} disabled={!accountsQuery.data}>
+                        <Button
+                          size="sm"
+                          onClick={() => openCollect(row)}
+                          disabled={!accountsQuery.data}
+                        >
                           Collect
                         </Button>
                       </td>
@@ -350,7 +397,10 @@ export default function DuesPage() {
           <CardHeader title="Customer advances" subtitle="Unallocated receipts held on account" />
           <ul className="divide-y divide-slate-100">
             {advancesQuery.data.results.map((row) => (
-              <li key={row.customer} className="flex items-center justify-between px-4 py-2 text-sm">
+              <li
+                key={row.customer}
+                className="flex items-center justify-between px-4 py-2 text-sm"
+              >
                 <div>
                   <p className="font-medium">{row.customer_name}</p>
                   <p className="text-xs text-slate-500">
@@ -358,7 +408,9 @@ export default function DuesPage() {
                     {row.phone ? ` · ${row.phone}` : ""}
                   </p>
                 </div>
-                <span className="font-mono font-semibold text-sky-700">{formatMoney(row.advance)}</span>
+                <span className="font-mono font-semibold text-sky-700">
+                  {formatMoney(row.advance)}
+                </span>
               </li>
             ))}
           </ul>

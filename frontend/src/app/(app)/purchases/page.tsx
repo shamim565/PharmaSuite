@@ -4,7 +4,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, Input, Pagination, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Pagination,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { AttachmentPanel } from "@/components/attachments";
 import { ApiError, api } from "@/lib/api";
 import { formatDate, formatMoney, formatQty } from "@/lib/format";
@@ -226,7 +238,10 @@ export default function PurchasesPage() {
   const openReturn = (purchase: Purchase) => {
     setReturnFor(purchase);
     setReturnReason("DAMAGED");
-    const firstReturnable = purchase.items.find((item) => Number(item.qty_base) + Number(item.bonus_qty_base) - Number(item.returned_qty_base) > 0);
+    const firstReturnable = purchase.items.find(
+      (item) =>
+        Number(item.qty_base) + Number(item.bonus_qty_base) - Number(item.returned_qty_base) > 0,
+    );
     setReturnItem(firstReturnable?.id ?? "");
     setReturnQty("");
   };
@@ -265,7 +280,11 @@ export default function PurchasesPage() {
             <ErrorBanner error={createMutation.error} />
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Field label="Supplier" error={fieldError("supplier")}>
-                <Select value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })} required>
+                <Select
+                  value={form.supplier}
+                  onChange={(e) => setForm({ ...form, supplier: e.target.value })}
+                  required
+                >
                   <option value="">Select…</option>
                   {suppliersQuery.data?.results.map((supplier) => (
                     <option key={supplier.id} value={supplier.id}>
@@ -275,7 +294,11 @@ export default function PurchasesPage() {
                 </Select>
               </Field>
               <Field label="Branch" error={fieldError("branch")}>
-                <Select value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} required>
+                <Select
+                  value={form.branch}
+                  onChange={(e) => setForm({ ...form, branch: e.target.value })}
+                  required
+                >
                   <option value="">Select…</option>
                   {branchesQuery.data?.results.map((branch) => (
                     <option key={branch.id} value={branch.id}>
@@ -303,10 +326,17 @@ export default function PurchasesPage() {
 
             <div className="space-y-2">
               {rows.map((row, index) => (
-                <div key={row.key} className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-8">
+                <div
+                  key={row.key}
+                  className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3 lg:grid-cols-8"
+                >
                   <div className="col-span-2">
                     <Field label={`Medicine ${index + 1}`}>
-                      <Select value={row.medicine} onChange={(e) => updateRow(row.key, { medicine: e.target.value })} required>
+                      <Select
+                        value={row.medicine}
+                        onChange={(e) => updateRow(row.key, { medicine: e.target.value })}
+                        required
+                      >
                         <option value="">Select…</option>
                         {medicinesQuery.data?.results.map((medicine) => (
                           <option key={medicine.id} value={medicine.id}>
@@ -317,7 +347,11 @@ export default function PurchasesPage() {
                     </Field>
                   </div>
                   <Field label="Batch #">
-                    <Input value={row.batch_number} onChange={(e) => updateRow(row.key, { batch_number: e.target.value })} required />
+                    <Input
+                      value={row.batch_number}
+                      onChange={(e) => updateRow(row.key, { batch_number: e.target.value })}
+                      required
+                    />
                   </Field>
                   <Field label="Mfg date">
                     <Input
@@ -368,7 +402,9 @@ export default function PurchasesPage() {
                         type="button"
                         size="sm"
                         variant="ghost"
-                        onClick={() => setRows((prev) => prev.filter((item) => item.key !== row.key))}
+                        onClick={() =>
+                          setRows((prev) => prev.filter((item) => item.key !== row.key))
+                        }
                       >
                         Remove line
                       </Button>
@@ -415,7 +451,13 @@ export default function PurchasesPage() {
             </p>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Field label="Pay now (amount)">
-                <Input type="number" step="0.01" min="0" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                />
               </Field>
               <Field label="Method">
                 <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
@@ -465,7 +507,13 @@ export default function PurchasesPage() {
             <ErrorBanner error={payMutation.error} />
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Field label="Amount">
-                <Input type="number" step="0.01" min="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                />
               </Field>
               <Field label="Method">
                 <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
@@ -489,7 +537,10 @@ export default function PurchasesPage() {
                 <Input value={payReference} onChange={(e) => setPayReference(e.target.value)} />
               </Field>
             </div>
-            <Button onClick={() => payMutation.mutate()} disabled={payMutation.isPending || !payAccount || !payAmount}>
+            <Button
+              onClick={() => payMutation.mutate()}
+              disabled={payMutation.isPending || !payAccount || !payAmount}
+            >
               {payMutation.isPending ? "Posting…" : "Post payment"}
             </Button>
           </div>
@@ -518,14 +569,24 @@ export default function PurchasesPage() {
                     {returnFor.items.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.medicine_name} · {item.batch_number} · returnable{" "}
-                        {formatQty(Number(item.qty_base) + Number(item.bonus_qty_base) - Number(item.returned_qty_base))}
+                        {formatQty(
+                          Number(item.qty_base) +
+                            Number(item.bonus_qty_base) -
+                            Number(item.returned_qty_base),
+                        )}
                       </option>
                     ))}
                   </Select>
                 </Field>
               </div>
               <Field label="Quantity">
-                <Input type="number" step="0.001" min="0.001" value={returnQty} onChange={(e) => setReturnQty(e.target.value)} />
+                <Input
+                  type="number"
+                  step="0.001"
+                  min="0.001"
+                  value={returnQty}
+                  onChange={(e) => setReturnQty(e.target.value)}
+                />
               </Field>
               <Field label="Reason">
                 <Select value={returnReason} onChange={(e) => setReturnReason(e.target.value)}>
@@ -595,7 +656,11 @@ export default function PurchasesPage() {
             }
           />
           <div className="p-4">
-            <AttachmentPanel ownerType="PURCHASE" ownerId={filesFor.id} title="Supplier invoice & documents" />
+            <AttachmentPanel
+              ownerType="PURCHASE"
+              ownerId={filesFor.id}
+              title="Supplier invoice & documents"
+            />
           </div>
         </Card>
       ) : null}
@@ -630,27 +695,40 @@ export default function PurchasesPage() {
                   <div>
                     <p className="font-medium">
                       {purchase.number ? (
-                        <Link href={`/purchases/${purchase.id}`} className="hover:underline">{purchase.number}</Link>
+                        <Link href={`/purchases/${purchase.id}`} className="hover:underline">
+                          {purchase.number}
+                        </Link>
                       ) : (
                         "Draft"
                       )}{" "}
-                      <span className="text-xs text-slate-500">{purchase.supplier_invoice_number}</span>
+                      <span className="text-xs text-slate-500">
+                        {purchase.supplier_invoice_number}
+                      </span>
                     </p>
                     <p className="text-xs text-slate-500">
-                      {purchase.supplier_name} · {formatDate(purchase.business_date)} · {purchase.items.length} line(s)
+                      {purchase.supplier_name} · {formatDate(purchase.business_date)} ·{" "}
+                      {purchase.items.length} line(s)
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={lifecycleTone(purchase.lifecycle)}>{purchase.lifecycle}</Badge>
-                    <Badge tone={paymentTone(purchase.payment_status)}>{purchase.payment_status}</Badge>
-                    {purchase.return_status !== "NONE" ? <Badge tone="amber">{purchase.return_status}</Badge> : null}
+                    <Badge tone={paymentTone(purchase.payment_status)}>
+                      {purchase.payment_status}
+                    </Badge>
+                    {purchase.return_status !== "NONE" ? (
+                      <Badge tone="amber">{purchase.return_status}</Badge>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm">
                     Total <strong>{formatMoney(purchase.grand_total)}</strong> · Paid{" "}
                     {formatMoney(purchase.paid_total)} ·{" "}
-                    <span className={Number(purchase.outstanding) > 0 ? "text-danger-700" : "text-primary-700"}>
+                    <span
+                      className={
+                        Number(purchase.outstanding) > 0 ? "text-danger-700" : "text-primary-700"
+                      }
+                    >
                       Outstanding {formatMoney(purchase.outstanding)}
                     </span>
                   </p>
@@ -669,7 +747,8 @@ export default function PurchasesPage() {
                         Pay
                       </Button>
                     ) : null}
-                    {purchase.lifecycle === "CONFIRMED" && purchase.return_status !== "FULLY_RETURNED" ? (
+                    {purchase.lifecycle === "CONFIRMED" &&
+                    purchase.return_status !== "FULLY_RETURNED" ? (
                       <Button size="sm" variant="secondary" onClick={() => openReturn(purchase)}>
                         Return
                       </Button>
@@ -688,11 +767,7 @@ export default function PurchasesPage() {
                         Cancel
                       </Button>
                     ) : null}
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setFilesFor(purchase)}
-                    >
+                    <Button size="sm" variant="secondary" onClick={() => setFilesFor(purchase)}>
                       Files
                     </Button>
                   </div>

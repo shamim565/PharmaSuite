@@ -3,7 +3,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, ConfirmButton, EmptyState, ErrorBanner, Field, Input, Select, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmButton,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  Input,
+  Select,
+  Spinner,
+} from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import type { Branch, Paginated, Role, UserRecord } from "@/lib/types";
 
@@ -145,7 +157,10 @@ export default function UsersPage() {
 
       {showForm ? (
         <Card>
-          <CardHeader title={editing ? `Edit ${editing.full_name}` : "New user"} subtitle="Assign a role and at least one branch." />
+          <CardHeader
+            title={editing ? `Edit ${editing.full_name}` : "New user"}
+            subtitle="Assign a role and at least one branch."
+          />
           <form onSubmit={onSubmit} className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-4">
             <div className="col-span-2 lg:col-span-4">
               <ErrorBanner error={createMutation.error ?? updateMutation.error} />
@@ -197,7 +212,9 @@ export default function UsersPage() {
                     {role.name}
                   </label>
                 ))}
-                {rolesQuery.isLoading ? <span className="text-xs text-slate-500">Loading…</span> : null}
+                {rolesQuery.isLoading ? (
+                  <span className="text-xs text-slate-500">Loading…</span>
+                ) : null}
               </div>
               {fieldError("role_ids") ? (
                 <span className="text-xs text-danger-600">{fieldError("role_ids")}</span>
@@ -217,7 +234,9 @@ export default function UsersPage() {
                     {branch.name}
                   </label>
                 ))}
-                {branchesQuery.isLoading ? <span className="text-xs text-slate-500">Loading…</span> : null}
+                {branchesQuery.isLoading ? (
+                  <span className="text-xs text-slate-500">Loading…</span>
+                ) : null}
               </div>
               {fieldError("branch_ids") ? (
                 <span className="text-xs text-danger-600">{fieldError("branch_ids")}</span>
@@ -254,7 +273,10 @@ export default function UsersPage() {
       ) : null}
 
       <Card>
-        <CardHeader title="Team" subtitle={usersQuery.data ? `${usersQuery.data.count} user(s)` : undefined} />
+        <CardHeader
+          title="Team"
+          subtitle={usersQuery.data ? `${usersQuery.data.count} user(s)` : undefined}
+        />
         <ErrorBanner error={usersQuery.error} />
         {usersQuery.isLoading ? (
           <Spinner />
@@ -266,8 +288,7 @@ export default function UsersPage() {
               <li key={user.id} className="flex flex-wrap items-center justify-between gap-2 p-4">
                 <div>
                   <p className="font-medium">
-                    {user.full_name}{" "}
-                    {user.is_superuser ? <Badge tone="blue">Owner</Badge> : null}
+                    {user.full_name} {user.is_superuser ? <Badge tone="blue">Owner</Badge> : null}
                   </p>
                   <p className="text-xs text-slate-500">
                     {user.mobile}
@@ -279,7 +300,11 @@ export default function UsersPage() {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {user.status === "ACTIVE" ? <Badge tone="green">Active</Badge> : <Badge>Inactive</Badge>}
+                  {user.status === "ACTIVE" ? (
+                    <Badge tone="green">Active</Badge>
+                  ) : (
+                    <Badge>Inactive</Badge>
+                  )}
                   {user.totp_enabled ? <Badge tone="blue">2FA</Badge> : null}
                   <Button size="sm" variant="secondary" onClick={() => openEdit(user)}>
                     Edit

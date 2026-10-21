@@ -10,6 +10,7 @@ import {
   Boxes,
   BriefcaseBusiness,
   Calculator,
+  ClipboardList,
   Coins,
   Ellipsis,
   Home,
@@ -20,6 +21,7 @@ import {
   LayoutDashboard,
   Library,
   Menu,
+  PackageCheck,
   Pill,
   PlusCircle,
   ReceiptText,
@@ -28,6 +30,7 @@ import {
   Settings,
   ShieldCheck,
   Stethoscope,
+  Target,
   Truck,
   Undo2,
   UserCog,
@@ -51,23 +54,47 @@ type NavItem = {
   permission: string;
   altPermission?: string;
   icon: LucideIcon;
+  /**
+   * Explicit slot rank for the mobile bottom nav. The four visible items with
+   * the lowest rank are shown — never derived from array position, so roles
+   * with different permission sets still get a sensible bottom bar.
+   */
+  mobileRank?: number;
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Dashboard", permission: "DASHBOARD_VIEW", icon: LayoutDashboard },
-  { href: "/sales", label: "Sales", permission: "SALE_VIEW", icon: ReceiptText },
-  { href: "/dues", label: "Dues", permission: "PAYMENT_VIEW", icon: Hourglass },
-  { href: "/payments", label: "Payments", permission: "PAYMENT_VIEW", icon: Banknote },
+  { href: "/", label: "Dashboard", permission: "DASHBOARD_VIEW", icon: LayoutDashboard, mobileRank: 1 },
+  { href: "/sales", label: "Sales", permission: "SALE_VIEW", icon: ReceiptText, mobileRank: 2 },
+  { href: "/dues", label: "Dues", permission: "PAYMENT_VIEW", icon: Hourglass, mobileRank: 3 },
+  { href: "/payments", label: "Payments", permission: "PAYMENT_VIEW", icon: Banknote, mobileRank: 4 },
   { href: "/returns", label: "Returns", permission: "SRET_VIEW", icon: Undo2 },
   { href: "/adjustments", label: "Adjustments", permission: "STOCK_VIEW", icon: Scale },
-  { href: "/purchases", label: "Purchases", permission: "PURCHASE_VIEW", icon: ArrowLeftRight },
-  { href: "/inventory", label: "Inventory", permission: "STOCK_VIEW", icon: Boxes },
+  { href: "/purchases", label: "Purchases", permission: "PURCHASE_VIEW", icon: ArrowLeftRight, mobileRank: 6 },
+  {
+    href: "/purchases/orders",
+    label: "Purchase Orders",
+    permission: "PURCHASE_VIEW",
+    icon: ClipboardList,
+  },
+  {
+    href: "/deliveries",
+    label: "Deliveries",
+    permission: "SALE_VIEW",
+    icon: PackageCheck,
+  },
+  { href: "/inventory", label: "Inventory", permission: "STOCK_VIEW", icon: Boxes, mobileRank: 5 },
   { href: "/transfers", label: "Transfers", permission: "STOCK_TRANSFER", icon: ArrowRightLeft },
   { href: "/items", label: "Items", permission: "MEDICINE_VIEW", icon: Pill },
   { href: "/batches", label: "Batches", permission: "STOCK_VIEW", icon: Layers },
-  { href: "/customers", label: "Customers", permission: "CUSTOMER_VIEW", icon: UsersRound },
-  { href: "/doctors", label: "Doctors", permission: "DOCTOR_VIEW", icon: Stethoscope },
-  { href: "/reps", label: "Reps", permission: "REP_VIEW", icon: BriefcaseBusiness },
+  { href: "/customers", label: "Customers", permission: "CUSTOMER_VIEW", icon: UsersRound, mobileRank: 7 },
+  { href: "/doctors", label: "Doctors", permission: "DOCTOR_VIEW", icon: Stethoscope, mobileRank: 9 },
+  { href: "/reps", label: "Reps", permission: "REP_VIEW", icon: BriefcaseBusiness, mobileRank: 8 },
+  {
+    href: "/targets",
+    label: "Targets",
+    permission: "REP_VIEW",
+    icon: Target,
+  },
   { href: "/suppliers", label: "Suppliers", permission: "SUPPLIER_VIEW", icon: Truck },
   { href: "/accounts", label: "Accounts", permission: "ACCOUNT_VIEW", icon: Landmark },
   { href: "/expenses", label: "Expenses", permission: "EXPENSE_VIEW", icon: Calculator },
@@ -75,7 +102,13 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/reports", label: "Reports", permission: "REPORT_VIEW", icon: BarChart3 },
   { href: "/catalog", label: "Catalog", permission: "MEDICINE_MANAGE", icon: Library },
   { href: "/users", label: "Users", permission: "USER_VIEW", icon: UserCog },
-  { href: "/roles", label: "Roles", permission: "ROLE_VIEW", altPermission: "ROLE_MANAGE", icon: KeyRound },
+  {
+    href: "/roles",
+    label: "Roles",
+    permission: "ROLE_VIEW",
+    altPermission: "ROLE_MANAGE",
+    icon: KeyRound,
+  },
   { href: "/branches", label: "Branches", permission: "BRANCH_VIEW", icon: Home },
   { href: "/audit", label: "Audit", permission: "AUDIT_VIEW", icon: ScrollText },
   { href: "/cheques", label: "Cheques", permission: "CHEQUE_VIEW", icon: Coins },
@@ -136,7 +169,11 @@ function NotificationBell() {
           <div className="absolute right-0 z-40 mt-1 w-80 rounded-xl border border-slate-200 bg-white shadow-lg">
             <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
               <p className="text-sm font-semibold text-slate-700">Notifications</p>
-              <Link href="/notifications" onClick={() => setOpen(false)} className="text-xs text-primary-700 hover:underline">
+              <Link
+                href="/notifications"
+                onClick={() => setOpen(false)}
+                className="text-xs text-primary-700 hover:underline"
+              >
                 View all
               </Link>
             </div>
@@ -149,7 +186,9 @@ function NotificationBell() {
                       onClick={() => openItem(item)}
                     >
                       <p className="text-sm font-medium">{item.title}</p>
-                      {item.body ? <p className="truncate text-xs text-slate-500">{item.body}</p> : null}
+                      {item.body ? (
+                        <p className="truncate text-xs text-slate-500">{item.body}</p>
+                      ) : null}
                     </button>
                   </li>
                 ))}
@@ -188,8 +227,20 @@ function GlobalSearch() {
     { key: "customers", label: "Customers", fields: ["code", "name", "phone"], href: "/customers" },
     { key: "suppliers", label: "Suppliers", fields: ["code", "name", "phone"], href: "/suppliers" },
     { key: "doctors", label: "Doctors", fields: ["code", "name"], href: "/doctors" },
-    { key: "invoices", label: "Invoices", fields: ["number", "customer__name"], href: "/sales", hrefFor: (row) => `/sales/${row.id}` },
-    { key: "purchases", label: "Purchases", fields: ["number", "supplier__name"], href: "/purchases", hrefFor: (row) => `/purchases/${row.id}` },
+    {
+      key: "invoices",
+      label: "Invoices",
+      fields: ["number", "customer__name"],
+      href: "/sales",
+      hrefFor: (row) => `/sales/${row.id}`,
+    },
+    {
+      key: "purchases",
+      label: "Purchases",
+      fields: ["number", "supplier__name"],
+      href: "/purchases",
+      hrefFor: (row) => `/purchases/${row.id}`,
+    },
   ];
 
   type FlatRow = { key: string; sectionKey: string; label: string; href: string };
@@ -255,14 +306,20 @@ function GlobalSearch() {
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
           <div className="absolute left-0 right-0 z-40 mt-1 max-h-96 overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
-            {searchQuery.isFetching && !hasAny ? <p className="p-3 text-sm text-slate-500">Searching…</p> : null}
-            {!hasAny && !searchQuery.isFetching ? <p className="p-3 text-sm text-slate-500">No results.</p> : null}
+            {searchQuery.isFetching && !hasAny ? (
+              <p className="p-3 text-sm text-slate-500">Searching…</p>
+            ) : null}
+            {!hasAny && !searchQuery.isFetching ? (
+              <p className="p-3 text-sm text-slate-500">No results.</p>
+            ) : null}
             {sections.map((section) => {
               const rows = flat.filter((row) => row.sectionKey === section.key);
               if (!rows.length) return null;
               return (
                 <div key={section.key} className="border-b border-slate-100 last:border-0">
-                  <p className="px-3 pt-2 text-xs font-bold uppercase tracking-wide text-slate-500">{section.label}</p>
+                  <p className="px-3 pt-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                    {section.label}
+                  </p>
                   {rows.map((row) => {
                     const index = flat.indexOf(row);
                     return (
@@ -293,12 +350,16 @@ function BranchSwitcher({ compact = false }: { compact?: boolean }) {
   const queryClient = useQueryClient();
   const branchesQuery = useQuery({
     queryKey: ["branches", "switcher"],
-    queryFn: () => api.get<{ count: number; results: Array<{ id: string; name: string }> }>("/branches/?page_size=200"),
+    queryFn: () =>
+      api.get<{ count: number; results: Array<{ id: string; name: string }> }>(
+        "/branches/?page_size=200",
+      ),
     enabled: Boolean(user),
   });
   const switchMutation = useMutation({
     meta: { successMessage: "Branch switched" },
-    mutationFn: (id: string) => api.patch<{ default_branch_id: string }>("/auth/me/", { default_branch_id: id }),
+    mutationFn: (id: string) =>
+      api.patch<{ default_branch_id: string }>("/auth/me/", { default_branch_id: id }),
     onSuccess: (data) => {
       if (user) setUser({ ...user, default_branch_id: data.default_branch_id });
       queryClient.invalidateQueries();
@@ -316,7 +377,9 @@ function BranchSwitcher({ compact = false }: { compact?: boolean }) {
       }`}
     >
       {branchesQuery.data.results.map((branch) => (
-        <option key={branch.id} value={branch.id}>{branch.name}</option>
+        <option key={branch.id} value={branch.id}>
+          {branch.name}
+        </option>
       ))}
     </select>
   );
@@ -335,6 +398,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       (item.altPermission ? hasPerm(item.altPermission) : false),
   );
 
+  /**
+   * Mobile bottom nav slots are explicitly configured via mobileRank:
+   * take the four visible, ranked items (lowest rank first), falling back to
+   * NAV_ITEMS order for unranked items if fewer than four are ranked.
+   */
+  const mobileItems = (() => {
+    const visible = items;
+    const ranked = visible
+      .filter((item) => item.mobileRank !== undefined)
+      .sort((a, b) => (a.mobileRank ?? 0) - (b.mobileRank ?? 0));
+    if (ranked.length >= 4) return ranked.slice(0, 4);
+    const picked = new Set(ranked.map((item) => item.href));
+    return [...ranked, ...visible.filter((item) => !picked.has(item.href))].slice(0, 4);
+  })();
+
   const handleSignOut = async () => {
     await signOut();
     router.replace("/login");
@@ -343,7 +421,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const nav = (
     <nav className="space-y-1">
       {items.map((item) => {
-        const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+        const active =
+          pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
         return (
           <Link
             key={item.href}
@@ -446,8 +525,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-slate-200 bg-white lg:hidden"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
-          {items.slice(0, 4).map((item) => {
-            const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+          {mobileItems.map((item) => {
+            const active =
+              pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             return (
               <Link
                 key={item.href}
