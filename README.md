@@ -77,6 +77,11 @@ idempotency keys, and permission-gated overrides.
 
 More in [`docs/screenshots/`](docs/screenshots/).
 
+The Security screen lists every signed-in device and can revoke one or all other
+sessions:
+
+![Active sessions](docs/screenshots/security-sessions.png)
+
 ## Architecture
 
 ```mermaid
