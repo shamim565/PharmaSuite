@@ -64,7 +64,7 @@ jobs:
         run: uv run coverage run -m pytest -q
 
       - name: Coverage
-        run: uv run coverage report --fail-under=71
+        run: uv run coverage report --fail-under=72
 
   frontend:
     name: Frontend (typecheck + build)

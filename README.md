@@ -12,7 +12,7 @@ inventory, transactional invoicing, customer and supplier ledgers, cheque lifecy
 expense approvals, field-force CRM, and a full audit trail. Django REST backend,
 Next.js 15 PWA frontend.
 
-**Verified in this repository:** 154 backend tests passing · 60+ models · 65
+**Verified in this repository:** 162 backend tests passing · 60+ models · 65
 permissions across 9 roles.
 
 ![PharmaSuite dashboard](docs/screenshots/dashboard.png)
@@ -54,6 +54,8 @@ idempotency keys, and permission-gated overrides.
 - **Runs the field force.** Doctors, chambers, visits, samples linked to inventory,
   representatives, and territories.
 - **Leaves an audit trail.** Before/after snapshots, request ID, IP, and user agent.
+- **Tracks sessions per device.** Every login is a revocable session; the Security
+  screen lists devices and can revoke one or all other sessions.
 
 ## Screenshots
 
@@ -109,7 +111,7 @@ thin.
 | Auth | SimpleJWT + pyotp | 15-min access token, rotating 30-day refresh cookie, TOTP |
 | Frontend | Next.js 15, React 19, TypeScript | App Router, TanStack Query, Tailwind 4, PWA |
 | PDFs | ReportLab | invoices, purchase orders, receipts |
-| Quality | pytest, Ruff, ESLint, Prettier, TypeScript strict, GitHub Actions | 154 tests, 76% line coverage |
+| Quality | pytest, Ruff, ESLint, Prettier, TypeScript strict, GitHub Actions | 162 tests, 77% line coverage |
 
 ## Quick start
 
@@ -187,7 +189,7 @@ USE_SQLITE=True uv run python manage.py runserver 8000
 Interactive documentation is served by drf-spectacular:
 
 - Swagger UI: `http://localhost:8000/api/v1/docs/`
-- OpenAPI 3.0 schema: `http://localhost:8000/api/v1/schema/` — **195 documented paths**
+- OpenAPI 3.0 schema: `http://localhost:8000/api/v1/schema/` — **198 documented paths**
 
 ![Swagger UI](docs/screenshots/api-docs.png)
 
@@ -217,8 +219,8 @@ make test-docker   # inside the api container
 Current result:
 
 ```
-154 passed, 3 warnings in 11.21s
-coverage: 76% line coverage
+162 passed
+coverage: 77% line coverage
 ```
 
 Coverage spans inventory posting and concurrency, sales controls, RBAC guards,

@@ -10,7 +10,7 @@
 
 ## Verification
 
-- [ ] `make test` passes (154 tests)
+- [ ] `make test` passes (162 tests)
 - [ ] `make lint` passes (Ruff + TypeScript)
 - [ ] New or changed behaviour has a test
 - [ ] Migration created and applied (if models changed)
