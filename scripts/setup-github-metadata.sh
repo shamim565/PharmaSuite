@@ -42,7 +42,7 @@ echo
 echo "Description and topics updated for $REPO."
 echo
 echo "Remaining steps (GitHub web UI only):"
-echo "  1. Repo -> Settings -> General -> Social preview: upload a 1280x640 image."
+echo "  1. Repo -> Settings -> General -> Social preview: upload docs/social-preview.png."
 echo "  2. Profile -> Customize your pins: pin PharmaSuite first, then five others."
 echo "  3. Create <owner>/<owner>/README.md with a short profile and project links."
 echo "  4. Add the live demo URL only after the API health check returns HTTP 200."
