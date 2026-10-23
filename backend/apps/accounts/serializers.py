@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.accounts.models import Permission, Role, User
+from apps.accounts.models import Permission, Role, User, UserSession
 from apps.branches.models import Branch
 
 
@@ -214,3 +214,15 @@ class UserUpdateSerializer(serializers.Serializer):
 class LoginSerializer(serializers.Serializer):
     identifier = serializers.CharField(max_length=254)
     password = serializers.CharField(write_only=True)
+
+
+class UserSessionSerializer(serializers.ModelSerializer):
+    current = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserSession
+        fields = ["sid", "user_agent", "ip", "created_at", "last_seen_at", "revoked_at", "current"]
+
+    def get_current(self, obj) -> bool:
+        current_sid = self.context.get("current_sid")
+        return bool(current_sid) and str(obj.sid) == str(current_sid)

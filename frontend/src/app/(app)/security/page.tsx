@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAuth } from "@/app/providers";
@@ -15,7 +15,8 @@ import {
   Spinner,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { CurrentUser } from "@/lib/types";
+import { formatDateTime } from "@/lib/format";
+import type { CurrentUser, UserSession } from "@/lib/types";
 
 export default function SecurityPage() {
   const { user, setUser } = useAuth();
@@ -179,6 +180,83 @@ export default function SecurityPage() {
           </div>
         )}
       </Card>
+
+      <SessionsCard />
     </div>
+  );
+}
+
+function SessionsCard() {
+  const queryClient = useQueryClient();
+  const sessions = useQuery({
+    queryKey: ["sessions"],
+    queryFn: () => api.get<{ count: number; results: UserSession[] }>("/auth/sessions/"),
+  });
+  const revoke = useMutation({
+    meta: { successMessage: "Session revoked" },
+    mutationFn: (sid: string) => api.delete(`/auth/sessions/${sid}/`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+  const revokeAll = useMutation({
+    meta: { successMessage: "Other sessions revoked" },
+    mutationFn: () => api.post("/auth/sessions/revoke-all/", {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+
+  const rows = sessions.data?.results ?? [];
+
+  return (
+    <Card>
+      <CardHeader
+        title="Active sessions"
+        subtitle="Devices signed in to your account. Revoke anything you do not recognise."
+      />
+      <div className="space-y-3 p-4">
+        <ErrorBanner error={sessions.error ?? revoke.error ?? revokeAll.error} />
+        {sessions.isLoading ? (
+          <Spinner />
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-slate-500">No sessions found.</p>
+        ) : (
+          <ul className="space-y-2">
+            {rows.map((session) => (
+              <li
+                key={session.sid}
+                className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 last:border-0"
+              >
+                <div>
+                  <p className="text-sm text-slate-700">
+                    {session.user_agent || "Unknown device"}{" "}
+                    {session.current ? <Badge tone="green">This device</Badge> : null}
+                    {session.revoked_at ? <Badge tone="slate">Revoked</Badge> : null}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {session.ip || "unknown IP"} · last seen {formatDateTime(session.last_seen_at)}
+                  </p>
+                </div>
+                {!session.current && !session.revoked_at ? (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={revoke.isPending}
+                    onClick={() => revoke.mutate(session.sid)}
+                  >
+                    Revoke
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={revokeAll.isPending}
+          onClick={() => revokeAll.mutate()}
+        >
+          {revokeAll.isPending ? "Revoking…" : "Revoke all other sessions"}
+        </Button>
+      </div>
+    </Card>
   );
 }

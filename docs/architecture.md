@@ -139,6 +139,9 @@ never deletions. This preserves history and makes the audit trail meaningful.
 - Refresh rotation with blacklist-after-rotation.
 - Login throttling, failed-attempt lockout, password history, forced password change.
 - Optional TOTP 2FA with a two-step login challenge.
+- Each login creates a `UserSession`; the refresh token carries a `sid` claim. The
+  Security screen lists sessions and can revoke one device or all others. Password
+  changes and deactivation revoke every session.
 - Request IDs are attached to logs and audit entries.
 
 ## Asynchronous work

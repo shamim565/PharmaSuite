@@ -66,6 +66,16 @@ export type CurrentUser = {
   permissions: string[];
 };
 
+export type UserSession = {
+  sid: string;
+  user_agent: string;
+  ip: string | null;
+  created_at: string;
+  last_seen_at: string;
+  revoked_at: string | null;
+  current: boolean;
+};
+
 export type UserRecord = {
   id: string;
   full_name: string;

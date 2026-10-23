@@ -1,3 +1,5 @@
+import uuid
+
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.db import models
 from django.utils import timezone
@@ -197,3 +199,21 @@ class LoginAttempt(BaseModel):
 class PasswordHistory(BaseModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="password_history")
     password_hash = models.CharField(max_length=300)
+
+
+class UserSession(BaseModel):
+    """A signed-in device/client. The refresh token carries the ``sid`` claim."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="sessions")
+    sid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    user_agent = models.CharField(max_length=300, blank=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    last_seen_at = models.DateTimeField(default=timezone.now)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "revoked_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} {self.sid}"

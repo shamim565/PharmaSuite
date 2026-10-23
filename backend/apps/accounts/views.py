@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import mixins, status, viewsets
@@ -12,7 +13,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts import services
-from apps.accounts.models import Permission, Role, User
+from apps.accounts.models import Permission, Role, User, UserSession
 from apps.accounts.serializers import (
     LoginSerializer,
     MeSerializer,
@@ -24,6 +25,7 @@ from apps.accounts.serializers import (
     RoleUpdateSerializer,
     UserCreateSerializer,
     UserSerializer,
+    UserSessionSerializer,
     UserUpdateSerializer,
 )
 from apps.common.exceptions import APIError
@@ -63,7 +65,8 @@ class LoginView(APIView):
             return Response(
                 {"mfa_required": True, "mfa_token": services.issue_mfa_token(user)}
             )
-        access, refresh = services.issue_tokens(user)
+        session = services.create_session(user, request)
+        access, refresh = services.issue_tokens(user, session=session)
         return _auth_response(request, user, access, refresh)
 
 
@@ -88,7 +91,8 @@ class MfaLoginView(APIView):
         mfa_token = str(request.data.get("mfa_token") or "")
         code = str(request.data.get("code") or "")
         user = services.complete_mfa_login(mfa_token, code)
-        access, refresh = services.issue_tokens(user)
+        session = services.create_session(user, request)
+        access, refresh = services.issue_tokens(user, session=session)
         from apps.audit.services import log_action
 
         log_action(
@@ -165,12 +169,58 @@ class LogoutView(APIView):
         raw = request.COOKIES.get(settings.REFRESH_COOKIE_NAME)
         if raw:
             try:
-                RefreshToken(raw).blacklist()
+                token = RefreshToken(raw)
+                sid = token.get("sid")
+                if sid:
+                    UserSession.objects.filter(
+                        sid=sid, user_id=token.get("user_id")
+                    ).update(revoked_at=timezone.now())
+                token.blacklist()
             except TokenError:
                 pass
         response = Response(status=status.HTTP_204_NO_CONTENT)
         response.delete_cookie(settings.REFRESH_COOKIE_NAME, path=settings.REFRESH_COOKIE_PATH)
         return response
+
+
+@extend_schema(responses=UserSessionSerializer(many=True))
+class SessionListView(APIView):
+    """Active and historical sessions for the signed-in user."""
+
+    def get(self, request):
+        rows = list(UserSession.objects.filter(user=request.user).order_by("-created_at"))
+        current_sid = getattr(request.auth, "payload", {}).get("sid")
+        data = UserSessionSerializer(
+            rows, many=True, context={"current_sid": current_sid}
+        ).data
+        return Response({"count": len(data), "results": data})
+
+
+@extend_schema(request=None, responses={204: None})
+class SessionRevokeView(APIView):
+    def delete(self, request, sid):
+        session = UserSession.objects.filter(
+            user=request.user, sid=sid, revoked_at__isnull=True
+        ).first()
+        if session is None:
+            raise APIError("NOT_FOUND", "Session not found.", status.HTTP_404_NOT_FOUND)
+        services.revoke_session(session)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(request=None, responses=OpenApiTypes.OBJECT)
+class SessionRevokeAllView(APIView):
+    """Revoke every session except the one making the request."""
+
+    def post(self, request):
+        current_sid = getattr(request.auth, "payload", {}).get("sid")
+        candidates = UserSession.objects.filter(
+            user=request.user, revoked_at__isnull=True
+        )
+        if current_sid:
+            candidates = candidates.exclude(sid=current_sid)
+        revoked = candidates.update(revoked_at=timezone.now())
+        return Response({"revoked": revoked})
 
 
 class MeView(APIView):

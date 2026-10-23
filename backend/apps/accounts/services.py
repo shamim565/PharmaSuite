@@ -22,6 +22,7 @@ from apps.accounts.models import (
     User,
     UserBranch,
     UserRole,
+    UserSession,
     UserStatus,
 )
 from apps.audit.services import log_action
@@ -96,12 +97,33 @@ def authenticate_user(request, identifier: str, password: str) -> User:
     return user
 
 
-def issue_tokens(user: User) -> tuple[str, str]:
+def create_session(user: User, request=None) -> UserSession:
+    """Register a device/client session for a successful login."""
+    meta = client_meta(request)
+    return UserSession.objects.create(
+        user=user,
+        ip=meta.get("ip") or None,
+        user_agent=meta.get("user_agent", ""),
+    )
+
+
+def issue_tokens(user: User, session: UserSession | None = None) -> tuple[str, str]:
     refresh = RefreshToken.for_user(user)
+    if session is not None:
+        refresh["sid"] = str(session.sid)
     return str(refresh.access_token), str(refresh)
 
 
+def revoke_session(session: UserSession) -> None:
+    if session.revoked_at is None:
+        session.revoked_at = timezone.now()
+        session.save(update_fields=["revoked_at", "updated_at"])
+
+
 def revoke_all_sessions(user: User) -> int:
+    UserSession.objects.filter(user=user, revoked_at__isnull=True).update(
+        revoked_at=timezone.now()
+    )
     count = 0
     for token in OutstandingToken.objects.filter(user=user):
         _, created = BlacklistedToken.objects.get_or_create(token=token)
@@ -119,20 +141,27 @@ def handle_refresh(raw_token: str, request) -> tuple[User, str, str]:
         refresh = RefreshToken(raw_token)
     except TokenError as exc:
         user = None
+        payload = None
         try:
             payload = UntypedToken(raw_token)
             user = User.objects.filter(id=payload.get("user_id")).first()
         except TokenError:
             payload = None
         if user is not None:
-            revoke_all_sessions(user)
+            sid = payload.get("sid") if payload is not None else None
+            if sid:
+                session = UserSession.objects.filter(user=user, sid=sid).first()
+                if session is not None:
+                    revoke_session(session)
+            else:
+                revoke_all_sessions(user)
             log_action(
                 actor=None,
                 action="refresh_reuse_detected",
                 entity_type="User",
                 entity_id=user.id,
                 request=request,
-                after={"reason": str(exc)},
+                after={"reason": str(exc), "sid": str(sid) if sid else None},
             )
         raise APIError(
             "INVALID_REFRESH_TOKEN",
@@ -144,9 +173,31 @@ def handle_refresh(raw_token: str, request) -> tuple[User, str, str]:
     if user is None or user.status != UserStatus.ACTIVE:
         raise APIError("INVALID_REFRESH_TOKEN", "Session expired. Please sign in again.", status.HTTP_401_UNAUTHORIZED)
 
+    sid = refresh.get("sid")
+    if sid:
+        session = UserSession.objects.filter(
+            user=user, sid=sid, revoked_at__isnull=True
+        ).first()
+        if session is None:
+            raise APIError(
+                "SESSION_REVOKED",
+                "This session has been revoked. Please sign in again.",
+                status.HTTP_401_UNAUTHORIZED,
+            )
+    else:
+        # Legacy token issued before session tracking: upgrade it on first refresh.
+        session = create_session(user, request)
+
+    session.last_seen_at = timezone.now()
+    meta = client_meta(request)
+    session.ip = meta.get("ip") or session.ip
+    session.user_agent = meta.get("user_agent") or session.user_agent
+    session.save(update_fields=["last_seen_at", "ip", "user_agent", "updated_at"])
+
     access = str(refresh.access_token)
     refresh.blacklist()
     new_refresh = RefreshToken.for_user(user)
+    new_refresh["sid"] = str(session.sid)
     return user, access, str(new_refresh)
 
 
