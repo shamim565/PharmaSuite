@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 import pytest
+from django.db import connection
 from django.utils import timezone
 
 from apps.common.exceptions import APIError
@@ -197,6 +198,10 @@ def test_increase_posts_positive_stock(branch, batch, actor):
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.skipif(
+    connection.vendor != "postgresql",
+    reason="Concurrency semantics require PostgreSQL row locking (SQLite locks the whole table).",
+)
 def test_concurrent_same_key_creates_one_adjustment(branch, batch, actor, stock_in):
     import threading
 

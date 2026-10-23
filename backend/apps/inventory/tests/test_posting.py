@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 import pytest
+from django.db import connection
 from django.utils import timezone
 
 from apps.catalog.models import BatchStatus, MedicineBatch
@@ -208,6 +209,10 @@ def test_missing_balance_row_is_created(branch, medicine, make_batch):
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.skipif(
+    connection.vendor != "postgresql",
+    reason="Concurrency semantics require PostgreSQL row locking (SQLite locks the whole table).",
+)
 def test_concurrent_same_key_posts_only_once(branch, medicine, make_batch, actor):
     import threading
 
