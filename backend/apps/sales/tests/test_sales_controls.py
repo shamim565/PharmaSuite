@@ -1,5 +1,6 @@
 """Enforcement of sale override permissions and cancel/scope guards."""
 
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -232,3 +233,67 @@ def test_create_invoice_rejects_out_of_scope_branch(
 
     assert response.status_code == 403
     assert response.json()["code"] == "BRANCH_SCOPE_EXCEEDED"
+
+
+def test_rx_override_requires_permission(
+    branch, customer, actor, unit, stock_in
+):
+    """Rx bypass must require SALE_OVERRIDE_RX, mirroring credit/FEFO overrides."""
+    from apps.catalog.models import Medicine, MedicineBatch
+
+    rx_medicine = Medicine.objects.create(
+        code="RX-001",
+        name="Morphine 10mg",
+        base_unit=unit,
+        purchase_price=Decimal("10.00"),
+        selling_price=Decimal("12.00"),
+        mrp=Decimal("13.00"),
+        reorder_level=Decimal("0.000"),
+        rx_required=True,
+    )
+    batch = MedicineBatch.objects.create(
+        branch=branch,
+        medicine=rx_medicine,
+        batch_number="RX-B1",
+        expiry_date=timezone.localdate() + timedelta(days=365),
+        unit_cost=Decimal("10.0000"),
+    )
+    stock_in(batch, "5")
+
+    invoice = SalesInvoice.objects.create(
+        branch=branch,
+        customer=customer,
+        business_date=timezone.localdate(),
+    )
+    SalesInvoiceItem.objects.create(
+        invoice=invoice,
+        line_no=1,
+        medicine=rx_medicine,
+        qty=Decimal("1"),
+        unit_price=Decimal("12.0000"),
+        vat_rate=Decimal("0"),
+        vat_amount=Decimal("0"),
+    )
+
+    grant_role(actor, ["SALE_CONFIRM"], branch_scope=BranchScope.ALL)
+    client = APIClient()
+    client.force_authenticate(actor)
+
+    response = client.post(
+        f"/api/v1/sales/{invoice.id}/confirm/",
+        {"rx_override": True, "rx_override_reason": "No prescription on file"},
+        format="json",
+    )
+    assert response.status_code == 403
+    assert response.json()["code"] == "PERMISSION_DENIED"
+
+    grant_role(actor, ["SALE_OVERRIDE_RX"])
+    response = client.post(
+        f"/api/v1/sales/{invoice.id}/confirm/",
+        {"rx_override": True, "rx_override_reason": "No prescription on file"},
+        format="json",
+    )
+    assert response.status_code == 200
+    invoice.refresh_from_db()
+    assert invoice.rx_override is True
+    assert invoice.rx_override_reason == "No prescription on file"

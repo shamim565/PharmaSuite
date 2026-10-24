@@ -826,11 +826,18 @@ export default function SalesPage() {
                   <input
                     type="checkbox"
                     checked={rxOverride}
+                    disabled={!hasPerm("SALE_OVERRIDE_RX")}
                     onChange={(e) => setRxOverride(e.target.checked)}
                   />
                   No prescription captured (override, audited)
                 </label>
-                {rxOverride ? (
+                {!hasPerm("SALE_OVERRIDE_RX") ? (
+                  <p className="text-xs text-sky-700">
+                    Enter the prescription number or select a prescribing doctor. An override
+                    requires the SALE_OVERRIDE_RX permission.
+                  </p>
+                ) : null}
+                {rxOverride && hasPerm("SALE_OVERRIDE_RX") ? (
                   <Input
                     placeholder="Override reason (required)"
                     value={rxOverrideReason}

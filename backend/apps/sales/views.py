@@ -280,6 +280,17 @@ class SalesInvoiceViewSet(
                     "Permission SALE_OVERRIDE_CREDIT is required to override credit controls.",
                     status_code=403,
                 )
+        if bool(request.data.get("rx_override")):
+            user = request.user
+            if not (
+                user.is_superuser
+                or "SALE_OVERRIDE_RX" in user.effective_permission_codes
+            ):
+                raise APIError(
+                    "PERMISSION_DENIED",
+                    "Permission SALE_OVERRIDE_RX is required to bypass the prescription requirement.",
+                    status_code=403,
+                )
         payment_payload = request.data.get("payment")
         payment = None
         if payment_payload and Decimal(str(payment_payload.get("amount") or "0")) > 0:
