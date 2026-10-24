@@ -20,25 +20,55 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from apps.accounting.models import AccountType, ExpenseCategory, FinancialAccount
-from apps.accounting.services import post_account_transaction
+from apps.accounting.models import (
+    AccountType,
+    ExpenseCategory,
+    FinancialAccount,
+    Income,
+    IncomeCategory,
+)
+from apps.accounting.services import create_income, post_account_transaction
 from apps.accounts.models import Role, User, UserBranch, UserRole, UserStatus
 from apps.branches.models import Branch, BranchType
 from apps.catalog.models import (
     Generic,
     Manufacturer,
     Medicine,
+    MedicineBatch,
     MedicineCategory,
     Unit,
     UnitType,
 )
+from apps.doctors.models import (
+    Doctor,
+    DoctorCategory,
+    DoctorChamber,
+    DoctorMedicine,
+    DoctorType,
+    DoctorVisit,
+    VisitOutcome,
+    VisitStatus,
+)
+from apps.doctors.services import complete_visit, mark_visit_missed
 from apps.inventory.models import (
     AdjustmentReason,
+    AdjustmentStatus,
     AdjustmentType,
+    EntryType,
     StockAdjustment,
     StockBalance,
+    StockPool,
+    StockTransfer,
+    WarehouseLocation,
 )
-from apps.inventory.services import create_stock_adjustment
+from apps.inventory.services import (
+    MovementLine,
+    approve_stock_adjustment,
+    confirm_stock_transfer,
+    create_stock_adjustment,
+    create_stock_transfer,
+    post_transactions,
+)
 from apps.payments.models import Cheque, Payment
 from apps.payments.services import (
     clear_cheque,
@@ -46,8 +76,36 @@ from apps.payments.services import (
     deposit_cheque,
     record_customer_payment,
 )
+from apps.purchases.credit_models import SupplierCreditNote, SupplierCreditNoteReason
+from apps.purchases.credit_services import (
+    create_supplier_credit_note,
+    settle_supplier_credit_note,
+)
 from apps.purchases.models import Purchase, PurchaseItem
+from apps.purchases.po_models import PurchaseOrder
+from apps.purchases.po_services import (
+    approve_purchase_order,
+    convert_po_to_purchase,
+    create_purchase_order,
+    submit_purchase_order,
+)
 from apps.purchases.services import compute_line_totals, compute_purchase_totals, confirm_purchase
+from apps.representatives.models import (
+    AssignmentEntityType,
+    Representative,
+    RepresentativeAssignment,
+    RepresentativeType,
+    SalesTarget,
+    Territory,
+    TerritoryType,
+)
+from apps.representatives.services import assign
+from apps.sales.delivery_models import DeliveryChallan
+from apps.sales.delivery_services import (
+    complete_delivery_challan,
+    create_challan_from_invoice,
+    dispatch_delivery_challan,
+)
 from apps.sales.models import (
     Customer,
     CustomerType,
@@ -144,24 +202,45 @@ class Command(BaseCommand):
         medicines = self._catalog()
         suppliers = self._suppliers()
         customers = self._customers()
+        reps = self._representatives(branches, customers, today)
         purchases = self._purchases(branches, suppliers, medicines, owner, today)
-        invoices = self._sales(branches, customers, medicines, owner, today)
+        locations = self._warehouse_locations(branches)
+        purchase_orders = self._purchase_orders(branches, suppliers, medicines, owner, today)
+        invoices = self._sales(branches, customers, medicines, owner, today, reps)
         payments = self._payments(branches, customers, invoices, owner, today)
         cheques = self._cheques(branches, customers, invoices, owner, today)
         returns = self._returns(invoices, owner, today)
         adjustments = self._adjustments(branches, owner, today)
+        expiry_adjustment = self._expiry_adjustment(branches, owner, today)
+        credit_notes = self._supplier_credit_notes(
+            branches, suppliers, expiry_adjustment, owner, today
+        )
+        deliveries = self._deliveries(invoices, owner, today)
+        targets = self._sales_targets(reps, branches, today)
+        doctors = self._doctors_and_visits(reps, medicines, branches, owner, today)
+        transfers = self._stock_transfers(branches, owner, today)
         expenses = self._expenses(branches, owner, today)
+        incomes = self._income(branches, owner, today)
 
         self._summary(
             branches=branches,
             medicines=medicines,
             purchases=purchases,
+            purchase_orders=purchase_orders,
             invoices=invoices,
+            deliveries=deliveries,
             payments=payments,
             cheques=cheques,
             returns=returns,
             adjustments=adjustments,
+            credit_notes=credit_notes,
+            targets=targets,
+            reps=reps,
+            doctors=doctors,
+            transfers=transfers,
             expenses=expenses,
+            incomes=incomes,
+            locations=locations,
             owner_mobile=options["owner_mobile"],
             keep_owner_password=options["keep_owner_password"],
         )
@@ -324,6 +403,8 @@ class Command(BaseCommand):
                     "reorder_level": Decimal("2000") if index == 1 else Decimal("50"),
                     "shelf_life_months": 24,
                     "near_expiry_days": 90,
+                    # Azithromycin and Ceftriaxone are demo Rx-only medicines.
+                    "rx_required": index in (4, 20),
                 },
             )
             medicines.append(medicine)
@@ -456,7 +537,8 @@ class Command(BaseCommand):
             created.append(purchase)
         return created
 
-    def _sales(self, branches, customers, medicines, owner, today) -> list[SalesInvoice]:
+    def _sales(self, branches, customers, medicines, owner, today, reps=None) -> list[SalesInvoice]:
+        sales_reps = (reps or {}).get("sales") or []
         plan = [
             ("demo:sale-1", "DHK", 0, 14, [(0, 6), (5, 3)]),
             ("demo:sale-2", "DHK", 1, 11, [(2, 4), (7, 2), (9, 1)]),
@@ -479,6 +561,7 @@ class Command(BaseCommand):
                 customer=customer,
                 business_date=business_date,
                 notes="Demo seed invoice",
+                sales_rep=sales_reps[0] if branch_code == "DHK" and sales_reps else None,
             )
             subtotal = Decimal("0")
             for line_no, (medicine_index, qty_raw) in enumerate(rows, start=1):
@@ -544,6 +627,95 @@ class Command(BaseCommand):
             invoice.due_date = today + timedelta(days=customer.credit_days)
             invoice.save()
             invoices.append(invoice)
+
+        # An invoice confirmed with an explicit batch (FEFO override) so the
+        # Exceptions report and audit trail have a real example.
+        exception_key = "demo:sale-exception-1"
+        if not SalesInvoice.objects.filter(idempotency_key=exception_key).exists():
+            branch = branches["DHK"]
+            customer = customers[1]
+            balance = (
+                StockBalance.objects.filter(branch=branch, qty_on_hand__gte=50)
+                .select_related("medicine", "batch")
+                .order_by("created_at")
+                .first()
+            )
+            if balance is not None:
+                qty = Decimal("20")
+                unit_price = resolve_unit_price(balance.medicine, customer)
+                invoice = SalesInvoice.objects.create(
+                    branch=branch,
+                    customer=customer,
+                    business_date=today - timedelta(days=4),
+                    notes="Demo: customer requested a later-expiry batch",
+                    fefo_override=True,
+                    fefo_override_reason="Customer requested a specific batch",
+                    idempotency_key=exception_key,
+                )
+                SalesInvoiceItem.objects.create(
+                    invoice=invoice,
+                    line_no=1,
+                    medicine=balance.medicine,
+                    batch=balance.batch,
+                    batch_number=balance.batch.batch_number,
+                    qty=qty,
+                    unit_price=unit_price,
+                    line_discount=Decimal("0"),
+                    vat_rate=Decimal("0"),
+                    vat_amount=Decimal("0"),
+                    line_net=(unit_price * qty).quantize(Decimal("0.01")),
+                )
+                invoice.subtotal = (unit_price * qty).quantize(Decimal("0.01"))
+                invoice.grand_total = (unit_price * qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                invoice.due_date = invoice.business_date + timedelta(days=customer.credit_days)
+                invoice.save()
+                confirm_sale(invoice=invoice, actor=owner, idempotency_key=exception_key)
+                invoice.refresh_from_db()
+                invoices.append(invoice)
+
+        # A draft containing an Rx-only medicine — confirm it in the UI to see
+        # the prescription number / doctor requirement and the audited override.
+        rx_key = "demo:sale-rx-draft"
+        if not SalesInvoice.objects.filter(idempotency_key=rx_key).exists():
+            branch = branches["DHK"]
+            customer = customers[2]
+            rx_medicine = medicines[3]  # Azithromycin (rx_required)
+            balance = (
+                StockBalance.objects.filter(
+                    branch=branch, medicine=rx_medicine, qty_on_hand__gte=20
+                )
+                .select_related("batch")
+                .first()
+            )
+            if balance is not None:
+                invoice = SalesInvoice.objects.create(
+                    branch=branch,
+                    customer=customer,
+                    business_date=today,
+                    notes="Demo Rx draft — confirm with a prescription number",
+                    idempotency_key=rx_key,
+                )
+                qty = Decimal("10")
+                unit_price = resolve_unit_price(rx_medicine, customer)
+                SalesInvoiceItem.objects.create(
+                    invoice=invoice,
+                    line_no=1,
+                    medicine=rx_medicine,
+                    batch_number="",
+                    qty=qty,
+                    unit_price=unit_price,
+                    line_discount=Decimal("0"),
+                    vat_rate=Decimal("0"),
+                    vat_amount=Decimal("0"),
+                    line_net=(unit_price * qty).quantize(Decimal("0.01")),
+                )
+                invoice.subtotal = (unit_price * qty).quantize(Decimal("0.01"))
+                invoice.grand_total = (unit_price * qty).quantize(
+                    Decimal("1"), rounding=ROUND_HALF_UP
+                )
+                invoice.due_date = today + timedelta(days=customer.credit_days)
+                invoice.save()
+                invoices.append(invoice)
 
         return invoices
 
@@ -710,18 +882,568 @@ class Command(BaseCommand):
             )
         return created
 
+    # ------------------------------------------------------------ people / CRM
+
+    def _representatives(self, branches, customers, today) -> dict:
+        region = Territory.objects.get_or_create(
+            name="Dhaka Region",
+            parent=None,
+            defaults={"territory_type": TerritoryType.REGION},
+        )[0]
+        area = Territory.objects.get_or_create(
+            name="Dhaka Metro",
+            parent=region,
+            defaults={"territory_type": TerritoryType.AREA},
+        )[0]
+        dhk_territory = Territory.objects.get_or_create(
+            name="Mirpur–Uttara",
+            parent=area,
+            defaults={"territory_type": TerritoryType.TERRITORY},
+        )[0]
+        ctg_region = Territory.objects.get_or_create(
+            name="Chattogram Region",
+            parent=None,
+            defaults={"territory_type": TerritoryType.REGION},
+        )[0]
+        ctg_territory = Territory.objects.get_or_create(
+            name="Agrabad–Pahartali",
+            parent=ctg_region,
+            defaults={"territory_type": TerritoryType.TERRITORY},
+        )[0]
+
+        sales_user = User.objects.filter(mobile="01700000015").first()
+        medical_user = User.objects.filter(mobile="01700000016").first()
+
+        def rep(code, name, rep_type, branch_code, territory, user=None, phone=""):
+            representative, _ = Representative.objects.get_or_create(
+                code=code,
+                defaults={
+                    "name": name,
+                    "rep_type": rep_type,
+                    "branch": branches[branch_code],
+                    "user": user,
+                    "phone": phone,
+                    "joined_at": today - timedelta(days=420),
+                },
+            )
+            if representative.user_id is None and user is not None:
+                representative.user = user
+                representative.save(update_fields=["user", "updated_at"])
+            if not RepresentativeAssignment.objects.filter(
+                representative=representative,
+                entity_type=AssignmentEntityType.TERRITORY,
+                entity_id=territory.id,
+                effective_to__isnull=True,
+            ).exists():
+                assign(
+                    representative=representative,
+                    entity_type=AssignmentEntityType.TERRITORY,
+                    entity_id=territory.id,
+                    effective_from=today - timedelta(days=400),
+                )
+            return representative
+
+        sales_rep_dhk = rep(
+            "REP-001", "Rakibul Hasan", RepresentativeType.SALES, "DHK",
+            dhk_territory, sales_user, "+880 1711 100001",
+        )
+        sales_rep_ctg = rep(
+            "REP-002", "Sumaiya Akter", RepresentativeType.SALES, "CTG",
+            ctg_territory, None, "+880 1711 100002",
+        )
+        medical_rep = rep(
+            "REP-003", "Dr. Imran Chowdhury", RepresentativeType.MEDICAL, "DHK",
+            dhk_territory, medical_user, "+880 1711 100003",
+        )
+
+        # Customer coverage for the Dhaka rep (first three customers).
+        for customer in customers[:3]:
+            if not RepresentativeAssignment.objects.filter(
+                representative=sales_rep_dhk,
+                entity_type=AssignmentEntityType.CUSTOMER,
+                entity_id=customer.id,
+                effective_to__isnull=True,
+            ).exists():
+                assign(
+                    representative=sales_rep_dhk,
+                    entity_type=AssignmentEntityType.CUSTOMER,
+                    entity_id=customer.id,
+                    effective_from=today - timedelta(days=300),
+                )
+
+        return {
+            "sales": [sales_rep_dhk, sales_rep_ctg],
+            "medical": [medical_rep],
+            "territories": {
+                "dhk": dhk_territory,
+                "ctg": ctg_territory,
+            },
+        }
+
+    def _warehouse_locations(self, branches) -> list[WarehouseLocation]:
+        locations: list[WarehouseLocation] = []
+        layout = [("A", "R1", "B1"), ("A", "R1", "B2"), ("A", "R2", "B1"), ("B", "R1", "B1")]
+        for branch in branches.values():
+            for zone, rack, bin_code in layout:
+                location, _ = WarehouseLocation.objects.get_or_create(
+                    branch=branch,
+                    zone=zone,
+                    rack=rack,
+                    bin=bin_code,
+                )
+                locations.append(location)
+
+        # Assign a location label to seeded batches that do not have one.
+        for branch in branches.values():
+            labels = [loc.label for loc in locations if loc.branch_id == branch.id]
+            batches = MedicineBatch.objects.filter(branch=branch, location="").order_by("created_at")
+            for index, batch in enumerate(batches):
+                batch.location = labels[index % len(labels)]
+                batch.save(update_fields=["location", "updated_at"])
+        return locations
+
+    # ------------------------------------------------------- procurement / ops
+
+    def _purchase_orders(self, branches, suppliers, medicines, owner, today) -> list[PurchaseOrder]:
+        plan = [
+            ("demo:po-1", "DHK", 0, [0, 1], "DRAFT"),
+            ("demo:po-2", "DHK", 1, [2, 3], "SUBMITTED"),
+            ("demo:po-3", "CTG", 2, [10, 11], "APPROVED"),
+            ("demo:po-4", "DHK", 0, [6, 7], "FULLY_RECEIVED"),
+        ]
+        orders: list[PurchaseOrder] = []
+        for key, branch_code, supplier_index, medicine_indexes, target_status in plan:
+            existing = PurchaseOrder.objects.filter(idempotency_key=key).first()
+            if existing is not None:
+                orders.append(existing)
+                continue
+
+            po = create_purchase_order(
+                branch=branches[branch_code],
+                supplier=suppliers[supplier_index],
+                business_date=today - timedelta(days=2),
+                expected_delivery_date=today + timedelta(days=5),
+                notes="Demo purchase order",
+                items=[
+                    {
+                        "medicine": medicines[index],
+                        "qty_ordered": Decimal("300"),
+                        "unit_cost": medicines[index].purchase_price,
+                        "line_discount": Decimal("0"),
+                        "vat_rate": Decimal("0"),
+                    }
+                    for index in medicine_indexes
+                ],
+                actor=owner,
+                idempotency_key=key,
+            )
+            if target_status in ("SUBMITTED", "APPROVED", "FULLY_RECEIVED"):
+                po = submit_purchase_order(purchase_order=po, actor=owner)
+            if target_status in ("APPROVED", "FULLY_RECEIVED"):
+                po = approve_purchase_order(purchase_order=po, actor=owner)
+            if target_status == "FULLY_RECEIVED":
+                grn = convert_po_to_purchase(
+                    purchase_order=po,
+                    actor=owner,
+                    supplier_invoice_number=f"DEMO-PO-GRN-{po.id.hex[:6].upper()}",
+                    supplier_invoice_date=today - timedelta(days=1),
+                    idempotency_key="demo:po-4:convert",
+                )
+                if grn.lifecycle == "DRAFT":
+                    confirm_purchase(
+                        purchase=grn,
+                        actor=owner,
+                        idempotency_key="demo:po-4:convert:confirm",
+                    )
+                orders.append(po)
+                continue
+            orders.append(po)
+        return orders
+
+    def _expiry_adjustment(self, branches, owner, today) -> StockAdjustment | None:
+        key = "demo:expiry-adjustment-1"
+        existing = StockAdjustment.objects.filter(idempotency_key=key).first()
+        if existing is not None:
+            return existing
+
+        balance = (
+            StockBalance.objects.filter(branch=branches["DHK"], qty_on_hand__gte=60)
+            .select_related("medicine", "batch")
+            .order_by("-batch__expiry_date")
+            .first()
+        )
+        if balance is None:
+            return None
+        adjustment = create_stock_adjustment(
+            branch=branches["DHK"],
+            adjustment_type=AdjustmentType.DECREASE,
+            reason_code=AdjustmentReason.EXPIRY_WRITE_OFF,
+            business_date=today - timedelta(days=1),
+            notes="Demo expired stock write-off (approved, returnable to supplier)",
+            items_data=[
+                {
+                    "medicine": balance.medicine,
+                    "batch": balance.batch,
+                    "qty": Decimal("20"),
+                }
+            ],
+            actor=owner,
+            idempotency_key=key,
+        )
+        approver = User.objects.filter(mobile="01700000011").first()
+        if (
+            adjustment.status == AdjustmentStatus.PENDING_APPROVAL
+            and approver is not None
+        ):
+            approve_stock_adjustment(adjustment=adjustment, actor=approver)
+            adjustment.refresh_from_db()
+        return adjustment
+
+    def _supplier_credit_notes(self, branches, suppliers, expiry_adjustment, owner, today) -> list:
+        notes = []
+        open_key = "demo:credit-note-1"
+        existing = SupplierCreditNote.objects.filter(idempotency_key=open_key).first()
+        if existing is None:
+            existing = create_supplier_credit_note(
+                branch=branches["DHK"],
+                supplier=suppliers[0],
+                business_date=today - timedelta(days=1),
+                amount=(expiry_adjustment.total_value if expiry_adjustment else Decimal("850.00")),
+                reason_code=SupplierCreditNoteReason.EXPIRY_RETURN,
+                reference="SUP-CN-EXP-001",
+                notes="Credit for expired stock returned to manufacturer",
+                adjustment=expiry_adjustment,
+                actor=owner,
+                idempotency_key=open_key,
+            )
+        notes.append(existing)
+
+        settled_key = "demo:credit-note-2"
+        existing_settled = SupplierCreditNote.objects.filter(
+            idempotency_key=settled_key
+        ).first()
+        if existing_settled is None:
+            existing_settled = create_supplier_credit_note(
+                branch=branches["DHK"],
+                supplier=suppliers[1],
+                business_date=today - timedelta(days=10),
+                amount=Decimal("1200.00"),
+                reason_code=SupplierCreditNoteReason.DAMAGED_RETURN,
+                reference="SUP-CN-DMG-002",
+                notes="Credit received for damaged cartons",
+                actor=owner,
+                idempotency_key=settled_key,
+            )
+            settle_supplier_credit_note(credit_note=existing_settled, actor=owner)
+            existing_settled.refresh_from_db()
+        notes.append(existing_settled)
+        return notes
+
+    def _deliveries(self, invoices, owner, today) -> list[DeliveryChallan]:
+        confirmed = [invoice for invoice in invoices if invoice.lifecycle == "CONFIRMED"]
+        challans: list[DeliveryChallan] = []
+        plan = [
+            ("demo:challan-1", 0, "PREPARED", "Karim Mia", "DHK-T-11"),
+            ("demo:challan-2", 1, "DISPATCHED", "Shafiq Ahmed", "DHK-T-12"),
+            ("demo:challan-3", 2, "DELIVERED", "Rafiqul Islam", "DHK-T-13"),
+        ]
+        for key, invoice_index, target_status, driver, vehicle in plan:
+            existing = DeliveryChallan.objects.filter(idempotency_key=key).first()
+            if existing is not None:
+                challans.append(existing)
+                continue
+            if invoice_index >= len(confirmed):
+                continue
+            challan = create_challan_from_invoice(
+                invoice=confirmed[invoice_index],
+                delivery_person=driver,
+                delivery_phone="+880 1811 20000" + str(invoice_index),
+                vehicle_no=vehicle,
+                notes="Demo delivery run",
+                actor=owner,
+                idempotency_key=key,
+            )
+            if target_status in ("DISPATCHED", "DELIVERED"):
+                challan = dispatch_delivery_challan(challan=challan, actor=owner)
+            if target_status == "DELIVERED":
+                challan = complete_delivery_challan(
+                    challan=challan,
+                    actor=owner,
+                    recipient_name="Demo Recipient",
+                    recipient_phone="+880 1811 29999",
+                )
+            challans.append(challan)
+        return challans
+
+    def _sales_targets(self, reps, branches, today) -> list[SalesTarget]:
+        targets = []
+        plan = [
+            (reps["sales"][0], branches["DHK"], "25000.00", "20000.00", 80),
+            (reps["sales"][1], branches["CTG"], "30000.00", "24000.00", 60),
+            (reps["medical"][0], branches["DHK"], "0.00", "0.00", 40),
+        ]
+        for representative, branch, amount, collection, visits in plan:
+            target, _ = SalesTarget.objects.get_or_create(
+                representative=representative,
+                fiscal_year=today.year,
+                period_month=today.month,
+                defaults={
+                    "branch": branch,
+                    "target_amount": Decimal(amount),
+                    "target_collection": Decimal(collection),
+                    "target_visits": visits,
+                    "notes": "Demo monthly target",
+                },
+            )
+            targets.append(target)
+        return targets
+
+    def _doctors_and_visits(self, reps, medicines, branches, owner, today) -> dict:
+        medical_rep = reps["medical"][0]
+        dhk = branches["DHK"]
+        territory = reps["territories"]["dhk"]
+
+        doctors = []
+        for code, name, specialty, category in (
+            ("DOC-001", "Dr. Ayesha Rahman", "Cardiology", DoctorCategory.A),
+            ("DOC-002", "Dr. Mahmudul Karim", "Medicine", DoctorCategory.B),
+        ):
+            doctor, _ = Doctor.objects.get_or_create(
+                code=code,
+                defaults={
+                    "name": name,
+                    "specialty": specialty,
+                    "degrees": "MBBS, FCPS",
+                    "doctor_type": DoctorType.CONSULTANT,
+                    "category": category,
+                    "potential_rating": "High" if category == DoctorCategory.A else "Medium",
+                    "territory": territory,
+                    "visit_frequency_target": 4 if category == DoctorCategory.A else 2,
+                    "phones": ["+880 1911 300001"],
+                },
+            )
+            DoctorChamber.objects.get_or_create(
+                doctor=doctor,
+                name=f"{name} Chamber",
+                defaults={
+                    "address": "Dhanmondi, Dhaka",
+                    "visiting_hours": "6:00 PM – 9:00 PM",
+                },
+            )
+            for medicine_index in (0, 5, 9):
+                DoctorMedicine.objects.get_or_create(
+                    doctor=doctor,
+                    medicine=medicines[medicine_index],
+                    effective_from=today - timedelta(days=90),
+                    defaults={"priority": "First line", "strength_note": "As prescribed"},
+                )
+            if not RepresentativeAssignment.objects.filter(
+                representative=medical_rep,
+                entity_type=AssignmentEntityType.DOCTOR,
+                entity_id=doctor.id,
+                effective_to__isnull=True,
+            ).exists():
+                assign(
+                    representative=medical_rep,
+                    entity_type=AssignmentEntityType.DOCTOR,
+                    entity_id=doctor.id,
+                    effective_from=today - timedelta(days=120),
+                )
+            doctors.append(doctor)
+
+        # Promo stock for sample dispensing (doctor visits issue from PROMO).
+        sample_balance = (
+            StockBalance.objects.filter(branch=dhk, qty_on_hand__gte=50)
+            .select_related("medicine", "batch")
+            .order_by("created_at")
+            .first()
+        )
+        if sample_balance is not None:
+            post_transactions(
+                branch=dhk,
+                lines=[
+                    MovementLine(
+                        medicine=sample_balance.medicine,
+                        batch=sample_balance.batch,
+                        qty_delta=Decimal("100"),
+                        unit_cost=sample_balance.batch.unit_cost,
+                        pool=StockPool.PROMO,
+                    )
+                ],
+                entry_type=EntryType.BONUS,
+                source_type="DEMO_PROMO_STOCK",
+                source_number="DEMO-PROMO-1",
+                business_date=today - timedelta(days=20),
+                actor=owner,
+                idempotency_key="demo:promo-stock-1",
+            )
+
+        visits = []
+        completed_plan = (
+            doctors[0], today - timedelta(days=3), VisitOutcome.PRESCRIBING,
+            "Detail: antihypertensives",
+        )
+        existing_completed = DoctorVisit.objects.filter(
+            doctor=completed_plan[0],
+            representative=medical_rep,
+            planned_date=completed_plan[1],
+        ).first()
+        if existing_completed is None:
+            visit = DoctorVisit.objects.create(
+                doctor=completed_plan[0],
+                representative=medical_rep,
+                branch=dhk,
+                planned_date=completed_plan[1],
+                purpose="Demo visit",
+                created_by=owner,
+            )
+            samples = []
+            if sample_balance is not None:
+                samples = [
+                    {
+                        "medicine": sample_balance.medicine,
+                        "batch": sample_balance.batch,
+                        "qty": Decimal("5"),
+                    }
+                ]
+            visit = complete_visit(
+                visit=visit,
+                actor=owner,
+                visited_at=timezone.now() - timedelta(days=3),
+                purpose=completed_plan[3],
+                products_discussed=[medicines[0].name, medicines[9].name],
+                outcome=completed_plan[2],
+                next_visit_date=today + timedelta(days=14),
+                notes="Demo completed visit",
+                samples=samples,
+            )
+            visits.append(visit)
+        else:
+            visits.append(existing_completed)
+
+        missed_date = today - timedelta(days=1)
+        existing_missed = DoctorVisit.objects.filter(
+            doctor=doctors[1], representative=medical_rep, planned_date=missed_date
+        ).first()
+        if existing_missed is None:
+            missed = DoctorVisit.objects.create(
+                doctor=doctors[1],
+                representative=medical_rep,
+                branch=dhk,
+                planned_date=missed_date,
+                purpose="Demo planned visit",
+                created_by=owner,
+            )
+            missed = mark_visit_missed(
+                visit=missed, reason="Doctor unavailable — emergency surgery", actor=owner
+            )
+            visits.append(missed)
+        else:
+            visits.append(existing_missed)
+
+        planned_date = today + timedelta(days=2)
+        existing_planned = DoctorVisit.objects.filter(
+            doctor=doctors[0], representative=medical_rep, planned_date=planned_date
+        ).first()
+        if existing_planned is None:
+            planned = DoctorVisit.objects.create(
+                doctor=doctors[0],
+                representative=medical_rep,
+                branch=dhk,
+                planned_date=planned_date,
+                purpose="Follow-up on new prescriptions",
+                created_by=owner,
+            )
+            visits.append(planned)
+        else:
+            visits.append(existing_planned)
+
+        return {"doctors": doctors, "visits": visits}
+
+    def _stock_transfers(self, branches, owner, today) -> list[StockTransfer]:
+        key = "demo:transfer-1"
+        existing = StockTransfer.objects.filter(idempotency_key=key).first()
+        if existing is not None:
+            return [existing]
+        balance = (
+            StockBalance.objects.filter(branch=branches["DHK"], qty_on_hand__gte=100)
+            .select_related("medicine", "batch")
+            .order_by("created_at")
+            .first()
+        )
+        if balance is None:
+            return []
+        transfer = create_stock_transfer(
+            from_branch=branches["DHK"],
+            to_branch=branches["CTG"],
+            business_date=today - timedelta(days=1),
+            notes="Demo inter-branch replenishment",
+            items_data=[
+                {
+                    "medicine": balance.medicine,
+                    "batch": balance.batch,
+                    "qty": Decimal("50"),
+                }
+            ],
+            actor=owner,
+            idempotency_key=key,
+        )
+        transfer = confirm_stock_transfer(transfer=transfer, actor=owner)
+        return [transfer]
+
+    def _income(self, branches, owner, today) -> list:
+        created = []
+        plan = [
+            ("demo:income-1", "Interest income", "2500.00", "MAIN-BANK", "Bank interest", 5),
+            ("demo:income-2", "Scrap sales", "800.00", "MAIN-CASH", "Empty carton sale", 1),
+        ]
+        for key, category_name, amount, account_code, source, days_ago in plan:
+            existing = Income.objects.filter(idempotency_key=key).first()
+            if existing is not None:
+                created.append(existing)
+                continue
+            category, _ = IncomeCategory.objects.get_or_create(name=category_name)
+            account = FinancialAccount.objects.get(code=account_code)
+            created.append(
+                create_income(
+                    branch=branches["MAIN"],
+                    category=category,
+                    amount=Decimal(amount),
+                    account=account,
+                    business_date=today - timedelta(days=days_ago),
+                    source=source,
+                    reference=f"DEMO-INC-{len(created) + 1:03d}",
+                    note="Demo income",
+                    actor=owner,
+                    idempotency_key=key,
+                )
+            )
+        return created
+
     # ---------------------------------------------------------------- output
 
     def _summary(self, **kwargs) -> None:
         self.stdout.write("")
         self.stdout.write(self.style.SUCCESS("Demo seed complete"))
-        self.stdout.write(f"  branches:   {Branch.objects.count()} ({', '.join(kwargs['branches'])})")
-        self.stdout.write(f"  medicines:  {Medicine.objects.count()}")
-        self.stdout.write(f"  purchases:  {Purchase.objects.count()}")
-        self.stdout.write(f"  invoices:   {SalesInvoice.objects.count()}")
-        self.stdout.write(f"  payments:   {Payment.objects.count()}")
-        self.stdout.write(f"  cheques:    {Cheque.objects.count()}")
-        self.stdout.write(f"  adjustments:{StockAdjustment.objects.count()}")
+        self.stdout.write(f"  branches:        {Branch.objects.count()} ({', '.join(kwargs['branches'])})")
+        self.stdout.write(f"  medicines:       {Medicine.objects.count()}")
+        self.stdout.write(f"  representatives: {Representative.objects.count()}")
+        self.stdout.write(f"  doctors:         {Doctor.objects.count()}")
+        self.stdout.write(f"  purchases:       {Purchase.objects.count()}")
+        self.stdout.write(f"  purchase orders: {PurchaseOrder.objects.count()}")
+        self.stdout.write(f"  invoices:        {SalesInvoice.objects.count()}")
+        self.stdout.write(f"  deliveries:      {DeliveryChallan.objects.count()}")
+        self.stdout.write(f"  payments:        {Payment.objects.count()}")
+        self.stdout.write(f"  cheques:         {Cheque.objects.count()}")
+        self.stdout.write(f"  returns:         {len(kwargs.get('returns') or [])}")
+        self.stdout.write(f"  adjustments:     {StockAdjustment.objects.count()}")
+        self.stdout.write(f"  credit notes:    {SupplierCreditNote.objects.count()}")
+        self.stdout.write(f"  targets:         {SalesTarget.objects.count()}")
+        self.stdout.write(f"  visits:          {DoctorVisit.objects.count()}")
+        self.stdout.write(f"  transfers:       {StockTransfer.objects.count()}")
+        self.stdout.write(f"  locations:       {WarehouseLocation.objects.count()}")
+        self.stdout.write(f"  income:          {Income.objects.count()}")
+        self.stdout.write(f"  expenses:        {kwargs['expenses'] and len(kwargs['expenses'])}")
         self.stdout.write("")
         self.stdout.write("Login with any of these (all use the same demo password):")
         if kwargs["keep_owner_password"]:
@@ -732,5 +1454,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  accountant   01700000012  / {DEMO_PASSWORD}")
         self.stdout.write(f"  sales        01700000013  / {DEMO_PASSWORD}")
         self.stdout.write(f"  warehouse    01700000014  / {DEMO_PASSWORD}")
+        self.stdout.write(f"  sales rep    01700000015  / {DEMO_PASSWORD}")
+        self.stdout.write(f"  medical rep  01700000016  / {DEMO_PASSWORD}")
         self.stdout.write("")
         self.stdout.write("Next: `make up`, open http://localhost:3000 and log in.")
