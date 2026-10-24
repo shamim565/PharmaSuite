@@ -172,6 +172,11 @@ def convert_po_to_purchase(
     idempotency_key: str | None = None,
 ) -> Purchase:
     """Create a draft Purchase (GRN) from an approved Purchase Order."""
+    if idempotency_key:
+        existing_purchase = Purchase.objects.filter(idempotency_key=idempotency_key).first()
+        if existing_purchase is not None:
+            return existing_purchase
+
     po = PurchaseOrder.objects.select_for_update().get(id=purchase_order.id)
     if po.status not in (PurchaseOrderStatus.APPROVED, PurchaseOrderStatus.PARTIALLY_RECEIVED):
         raise APIError(

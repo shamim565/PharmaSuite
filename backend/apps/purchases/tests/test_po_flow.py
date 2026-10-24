@@ -120,3 +120,21 @@ def test_po_create_is_idempotent(branch, supplier, medicine, actor):
         ],
     )
     assert first.id == second.id
+
+
+def test_convert_to_purchase_is_idempotent(branch, supplier, medicine, actor):
+    po = _create_po(branch, supplier, medicine, actor)
+    po = approve_purchase_order(purchase_order=po, actor=actor)
+
+    kwargs = dict(
+        purchase_order=po,
+        actor=actor,
+        supplier_invoice_number="SI-IDEMP-1",
+        supplier_invoice_date=timezone.localdate(),
+        idempotency_key="po-convert-key-1",
+    )
+    first = convert_po_to_purchase(**kwargs)
+    second = convert_po_to_purchase(**kwargs)
+
+    assert first.id == second.id
+    assert po.__class__.objects.get(id=po.id).fulfilled_by_id == first.id
