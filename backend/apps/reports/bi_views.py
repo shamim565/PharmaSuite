@@ -505,7 +505,7 @@ class SupplierConcentrationView(APIView):
             entry = supplier_map.setdefault(sid, {
                 "supplier": row["supplier_id"],
                 "name": row["supplier__name"],
-                "code": row["supplier__code"] if hasattr(row, "code") else "",
+                "code": row["supplier__code"] or "",
                 "total_spend": ZERO,
                 "purchase_count": 0,
             })
