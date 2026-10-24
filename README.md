@@ -148,10 +148,22 @@ Demo logins (created by `seed-demo`, password `Demo@1234`):
 | Accountant | `01700000012` |
 | Sales operator | `01700000013` |
 | Warehouse manager | `01700000014` |
+| Sales representative | `01700000015` |
+| Medical representative | `01700000016` |
 
 `seed-demo` resets the owner password to the demo value. Pass
 `--keep-owner-password` (`make seed-demo` calls the command directly) if you need
 to preserve an existing password.
+
+The seed also creates demo warehouse locations, purchase orders in every status,
+delivery challans (prepared/dispatched/delivered), monthly sales targets,
+representatives/territories, doctors with visits and samples, a draft Rx-only
+invoice, an FEFO-override invoice for the exception report, supplier credit
+notes (open + settled), an inter-branch transfer, and income vouchers.
+
+> Upgrading an existing database? Run
+> `uv run python manage.py seed_rbac --sync-permissions` to pick up new
+> permission codes such as `SALE_OVERRIDE_RX`.
 
 ### Run without Docker
 
